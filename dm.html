@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DM Sales Navigator | 営業ナレッジ統合システム</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+JP:wght@300;400;500;700;900&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #090d16;
+        }
+        /* スムーズでプロフェッショナルなトランジション設定 */
+        .transition-s {
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        /* カスタムスクロールバーのフラット化 */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+    </style>
+</head>
+<body class="text-slate-200 min-h-screen relative antialiased selection:bg-indigo-500/30 selection:text-indigo-200">
+
+<div class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    
+    <!-- SaaS ヘッダーナビゲーション -->
+    <header class="border-b border-slate-800 pb-6 mb-8 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div class="space-y-1">
+            <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider bg-indigo-950 text-indigo-400 border border-indigo-900/50">
+                    INTERNAL WORKSPACE
+                </span>
+                <span id="data-status-badge" class="text-[10px] text-slate-500 font-medium">Loading Database...</span>
+            </div>
+            <h1 class="text-xl md:text-2xl font-bold tracking-tight text-slate-100 flex items-center gap-2">
+                DM Sales Navigator
+                <span class="text-xs font-normal text-slate-500">v4.0 Professional Edition</span>
+            </h1>
+        </div>
+
+        <!-- ユーティリティコントロール -->
+        <div class="flex flex-wrap items-center gap-4">
+            <!-- 商材セレクター -->
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400 font-bold">商材選択:</span>
+                <select id="product-selector" onchange="changeProduct(this.value)" class="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-semibold transition-s cursor-pointer">
+                    <!-- JSで動的構築 -->
+                </select>
+            </div>
+            
+            <button id="btn-toggle-mng" onclick="toggleManagerView()" class="px-3.5 py-2 rounded-lg text-xs font-bold transition-s border border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center gap-2">
+                <span id="mng-indicator" class="w-2 h-2 rounded-full bg-slate-600"></span>
+                <span id="mng-text">データ管理：オフ</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- メインレイアウトコンテナ -->
+    <div id="navigator-mode-container" class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        
+        <!-- 左カラム（35%）：商材の前提仕様、7つのコアバリュー -->
+        <div class="lg:col-span-4 flex flex-col gap-6">
+            
+            <!-- 商材プロフィール＆前提ルール (image_2aaaca.pngを忠実に再現) -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
+                    <h2 class="text-xs font-bold tracking-wider text-slate-400 uppercase flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        商材プロフィール & 禁止ルール
+                    </h2>
+                    <span id="product-id-badge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-950 text-slate-400 border border-slate-800"></span>
+                </div>
+
+                <!-- 基本スペック -->
+                <div class="space-y-3 mb-5 text-xs">
+                    <div class="flex justify-between py-1 border-b border-slate-850">
+                        <span class="text-slate-500">商材名</span>
+                        <span id="p-name" class="font-semibold text-slate-200"></span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-slate-850">
+                        <span class="text-slate-500">提供単価</span>
+                        <span id="p-price" class="font-semibold text-emerald-400"></span>
+                    </div>
+                    <div class="flex justify-between py-1 border-b border-slate-850">
+                        <span class="text-slate-500">推奨プラン</span>
+                        <span id="p-plan" class="font-semibold text-slate-300"></span>
+                    </div>
+                    <div class="pt-2">
+                        <span class="text-red-400 font-bold text-[10px] tracking-wider uppercase block mb-1">
+                            現場禁止ルール (厳守)
+                        </span>
+                        <div id="p-forbidden" class="text-[11px] leading-relaxed text-slate-400 bg-red-950/10 border border-red-900/20 p-3 rounded-lg"></div>
+                    </div>
+                </div>
+
+                <!-- 7つのコアクエスチョン -->
+                <div class="border-t border-slate-800 pt-4">
+                    <span class="text-xs font-bold text-slate-400 block mb-3 uppercase tracking-wider">顧客に刺す 7つの核心価値</span>
+                    <div class="space-y-3" id="p-seven-questions">
+                        <!-- JSで動的レンダリング -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 管理者メンテナンスパネル（週末用） -->
+            <div id="mng-panel" class="bg-slate-900/60 border border-indigo-900/40 rounded-xl p-5 shadow-sm hidden">
+                <h2 class="text-xs font-bold tracking-wider text-indigo-400 uppercase mb-2.5 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
+                    週末データ最適化（薫之介さん用）
+                </h2>
+                <p class="text-[11px] text-slate-400 mb-4 leading-relaxed">
+                    メンバーの実践コピペログと新規イレギュラー返信ログをCSVで出力し、Geminiに読ませて100パターンの予測精度を毎週ブラッシュアップします。
+                </p>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="exportLogsToCsv()" class="py-2 bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-800/60 text-indigo-300 text-xs font-bold rounded-lg transition-s flex items-center justify-center gap-1.5">
+                        CSVでエクスポート
+                    </button>
+                    <button onclick="openConfirmModal('clear-logs')" class="py-2 bg-red-950/10 hover:bg-red-900/20 text-red-400 border border-red-950 text-xs font-bold rounded-lg transition-s">
+                        蓄積ログをリセット
+                    </button>
+                </div>
+                <div class="mt-3 text-center border-t border-slate-800 pt-3 flex items-center justify-between">
+                    <span class="text-[10px] text-slate-500 font-mono">今週の記録件数: <span id="log-count" class="text-indigo-400 font-bold">0</span> 件</span>
+                    <!-- データベース編集画面を開くボタン -->
+                    <button onclick="openDatabaseEditorWorkspace()" class="text-[11px] px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-bold transition-s">
+                        ビジュアルDB編集
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- 右カラム（65%）：実戦アプローチ・100パターン探索 -->
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            
+            <!-- 1通目コピーエリア -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-xs font-bold tracking-wider text-slate-400 uppercase flex items-center gap-2">
+                        <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                        ファーストアプローチ（初回1通目メッセージ）
+                    </h2>
+                    <button onclick="copyToClipboard('initial-dm-text')" class="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 font-bold transition-s">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                        送信文をコピー
+                    </button>
+                </div>
+                <div id="initial-dm-text" class="bg-slate-950 border border-slate-850 p-3 rounded-lg text-xs leading-relaxed text-slate-300 whitespace-pre-wrap font-sans"></div>
+            </div>
+
+            <!-- 相手からの返信：10×10パターン特定エンジン -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col">
+                <div class="mb-4">
+                    <h2 class="text-xs font-bold tracking-wider text-slate-400 uppercase flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" /></svg>
+                        相手の返答特定：10大分類カテゴリー
+                    </h2>
+                    <p class="text-[10px] text-slate-500 mt-1">相手から来たメッセージの大枠の感情・反応を10種類から選択してください</p>
+                </div>
+
+                <!-- 10大カテゴリーボタン -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2.5 mb-6" id="parent-category-grid">
+                    <!-- JSで10ボタン生成 -->
+                </div>
+
+                <!-- 細分化10サブカテゴリー（合計100パターンの最深分岐） -->
+                <div id="sub-category-panel" class="hidden border-t border-slate-800 pt-5 mb-2">
+                    <div class="mb-3.5">
+                        <h3 class="text-xs font-bold tracking-wider text-slate-400 uppercase flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 01-2-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                            さらに細分化：10通りの具体的な反応（最大100通り）
+                        </h3>
+                        <p class="text-[10px] text-slate-500 mt-1">最も近い具体的な相手のセリフを選択してください</p>
+                    </div>
+
+                    <div class="space-y-2 max-h-[280px] overflow-y-auto pr-1" id="sub-category-list">
+                        <!-- JSで動的生成 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- アプローチ＆ログコレクター一体型表示エリア -->
+            <div id="simulation-box" class="bg-slate-900/60 border border-slate-800 rounded-xl p-5 shadow-sm flex-1 flex flex-col hidden">
+                
+                <!-- シミュレーション出力メタ情報 -->
+                <div class="border-b border-slate-800 pb-4 mb-5">
+                    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <span id="route-title-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 border border-slate-700 text-slate-300"></span>
+                        <div class="flex items-center gap-4">
+                            <span class="text-xs text-slate-400">想定出現比率: <span id="route-prob-val" class="font-semibold text-slate-200"></span></span>
+                            <span class="text-xs text-slate-400">推奨返答スピード: <span id="route-speed-val" class="font-semibold text-slate-200"></span></span>
+                        </div>
+                    </div>
+                    <div id="route-analysis-text" class="text-xs text-slate-400 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-850"></div>
+                </div>
+
+                <!-- 2通目の最善手メッセージ -->
+                <div class="border border-slate-850 rounded-xl p-4 mb-5">
+                    <div class="flex justify-between items-center mb-2.5">
+                        <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                            <span class="w-1.5 h-3.5 bg-indigo-500 rounded-full inline-block"></span>
+                            返す「次の最善メッセージ」
+                        </span>
+                        <button onclick="copyToClipboard('best-move-text')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 rounded text-xs text-slate-200 transition-s flex items-center gap-1.5 font-bold">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+                            コピーする
+                        </button>
+                    </div>
+                    <div id="best-move-text" class="bg-slate-950 border border-slate-900 p-3 rounded-lg text-xs md:text-sm text-slate-100 leading-relaxed whitespace-pre-wrap select-all font-sans"></div>
+                </div>
+
+                <!-- 詰みロードマップ -->
+                <div class="border border-slate-850 p-4 rounded-xl mb-5">
+                    <span class="text-xs font-bold text-slate-400 block mb-3 uppercase tracking-wider">アポ獲得（詰み）までのラリー設計</span>
+                    <ol class="space-y-3" id="roadmap-list"></ol>
+                </div>
+
+                <!-- 実戦ログ：既存導線・フォロワー数・マッチング記録 -->
+                <div class="bg-slate-950/60 border border-slate-800 p-4 rounded-xl">
+                    <span class="text-xs font-bold text-slate-400 block mb-3">実戦ログ記録（週末のGems学習に自動で組み込まれます）</span>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                        <div>
+                            <label class="block text-slate-500 text-[10px] mb-1">相手のフォロワー数 / 規模感</label>
+                            <input type="text" id="log-follower" placeholder="例: フォロワー 1800人" class="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-s">
+                        </div>
+                        <div>
+                            <label class="block text-slate-500 text-[10px] mb-1">既存所有ツール・導線</label>
+                            <input type="text" id="log-tools" placeholder="例: ホットペッパー、LINE" class="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-s">
+                        </div>
+                        <div>
+                            <label class="block text-slate-500 text-[10px] mb-1">本日の想定ツリーとのマッチ感</label>
+                            <select id="log-match" class="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-s cursor-pointer">
+                                <option value="100% (予測と完全に一致)">100% (予測と完全に一致)</option>
+                                <option value="80% (ニュアンスの微差のみ)">80% (ニュアンスの微差のみ)</option>
+                                <option value="50% (類似しているが異なる文面)">50% (類似しているが異なる文面)</option>
+                                <option value="10% (イレギュラー・完全新規)">10% (イレギュラー・完全新規)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="mb-3.5">
+                        <label class="block text-slate-500 text-[10px] mb-1">実際に届いた返信の生ログ</label>
+                        <textarea id="log-raw-reply" rows="2" placeholder="相手から来た返答をそのままペーストしてください..." class="w-full bg-slate-900 border border-slate-800 rounded p-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-s"></textarea>
+                    </div>
+                    <button onclick="saveLiveLog()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-lg shadow-md transition-s flex items-center justify-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                        この実証データを記録・保存
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- データベース・エディタワークスペース (ビジュアル画面上で完全追加・変更を可能にするモード) -->
+    <div id="editor-workspace-container" class="hidden bg-slate-900/40 border border-indigo-900/30 rounded-2xl p-6 shadow-2xl relative">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-6">
+            <div>
+                <h2 class="text-lg font-bold text-indigo-400 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+                    ビジュアル・データベースエディタ
+                </h2>
+                <p class="text-xs text-slate-500 mt-1">コーディング不要。入力フォームからデータ更新して、Gitへ差し込む latest.json を書き出します。</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="exportDatabaseAsJson()" class="px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 transition-s shadow">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    最新版 latest.json を書き出す
+                </button>
+                <button onclick="closeDatabaseEditorWorkspace()" class="px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 transition-s border border-slate-700">
+                    エディタを閉じる
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-8">
+            <!-- 左側：セクション選択 (エディタ内のナビ) -->
+            <div class="xl:col-span-3 space-y-4">
+                <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                    <span class="text-[10px] text-slate-500 uppercase tracking-widest block mb-3 font-semibold">1. 編集対象の選択</span>
+                    <div class="space-y-1.5">
+                        <button onclick="switchEditorTab('product')" id="tab-edit-product" class="w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-indigo-400 bg-indigo-950/20 border-l-2 border-indigo-500">商材スペック設定</button>
+                        <button onclick="switchEditorTab('questions')" id="tab-edit-questions" class="w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-slate-400 hover:text-slate-200">7つの核心価値</button>
+                        <button onclick="switchEditorTab('parents')" id="tab-edit-parents" class="w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-slate-400 hover:text-slate-200">10大分類カテゴリー名</button>
+                        <button onclick="switchEditorTab('children')" id="tab-edit-children" class="w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-slate-400 hover:text-slate-200">100パターン応答詳細</button>
+                    </div>
+                </div>
+
+                <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+                    <span class="text-[10px] text-slate-500 uppercase tracking-widest block mb-2.5 font-semibold">商材の新規追加</span>
+                    <button onclick="addNewProductPrompt()" class="w-full py-2 rounded bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-300 font-bold text-xs transition-s">
+                        ＋ 新しい商材を追加登録
+                    </button>
+                </div>
+            </div>
+
+            <!-- 右側：動的フォームエディタ -->
+            <div class="xl:col-span-9 bg-slate-950/30 rounded-2xl border border-slate-800 p-6 min-h-[500px]">
+                
+                <!-- タブ1: 商材基本スペック -->
+                <div id="editor-sec-product" class="space-y-5">
+                    <h3 class="text-sm font-bold text-slate-300 pb-2 border-b border-slate-800">商材プロフィール設定</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1.5 font-semibold">管理番号（ID）</label>
+                            <input type="text" id="edit-p-id" readonly class="w-full bg-slate-900 border border-slate-800 text-slate-500 rounded-lg p-2.5 text-xs cursor-not-allowed">
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1.5 font-semibold">提供単価</label>
+                            <input type="text" id="edit-p-price" oninput="saveEditorDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 text-xs mb-1.5 font-semibold">商材名</label>
+                        <input type="text" id="edit-p-name" oninput="saveEditorDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                    </div>
+                    <div>
+                        <label class="block text-slate-400 text-xs mb-1.5 font-semibold">推奨プラン</label>
+                        <input type="text" id="edit-p-plan" oninput="saveEditorDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                    </div>
+                    <div>
+                        <label class="block text-red-400 text-xs mb-1.5 font-semibold">現場禁止ルール (改行で複数指定)</label>
+                        <textarea id="edit-p-forbidden" rows="4" oninput="saveEditorDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s leading-relaxed font-sans"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-indigo-400 text-xs mb-1.5 font-semibold">ファーストアプローチ（初回1通目メッセージ）</label>
+                        <textarea id="edit-p-initial" rows="6" oninput="saveEditorDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s leading-relaxed font-sans"></textarea>
+                    </div>
+                </div>
+
+                <!-- タブ2: 7つの核心価値 -->
+                <div id="editor-sec-questions" class="space-y-5 hidden">
+                    <h3 class="text-sm font-bold text-slate-300 pb-2 border-b border-slate-800">7つの核心価値の回答設定</h3>
+                    <div class="space-y-4" id="edit-questions-container">
+                        <!-- JSで動的に7つの入力フィールド作成 -->
+                    </div>
+                </div>
+
+                <!-- タブ3: 10大分類カテゴリー名 -->
+                <div id="editor-sec-parents" class="space-y-5 hidden">
+                    <h3 class="text-sm font-bold text-slate-300 pb-2 border-b border-slate-800">10大分類カテゴリー設定</h3>
+                    <p class="text-[11px] text-slate-500 leading-relaxed">相手の返信の方向性を大まかにグルーピングする10個の大項目を定義します。</p>
+                    <div class="space-y-3.5" id="edit-parents-container">
+                        <!-- JSで10個のカテゴリー入力欄を出力 -->
+                    </div>
+                </div>
+
+                <!-- タブ4: 100パターン応答詳細 -->
+                <div id="editor-sec-children" class="space-y-5 hidden">
+                    <h3 class="text-sm font-bold text-slate-300 pb-2 border-b border-slate-800">100パターン詳細レスポンスツリー設計</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1">ステップ1: 属する大分類カテゴリーを選択</label>
+                            <select id="edit-child-parent-select" onchange="loadSubCategoryListToEditor(this.value)" class="w-full bg-slate-900 border border-slate-800 text-xs p-2 rounded text-slate-200 cursor-pointer"></select>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1">ステップ2: 編集する相手の具体的なセリフを選択</label>
+                            <select id="edit-child-item-select" onchange="loadChildDetailToEditor(this.value)" class="w-full bg-slate-900 border border-slate-800 text-xs p-2 rounded text-slate-200 cursor-pointer"></select>
+                        </div>
+                    </div>
+
+                    <div id="child-editor-form" class="space-y-4 pt-3 hidden">
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1.5 font-semibold">相手の具体的なセリフ</label>
+                            <input type="text" id="edit-child-text" oninput="saveChildDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s font-semibold">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-slate-400 text-xs mb-1.5 font-semibold">想定出現比率</label>
+                                <input type="text" id="edit-child-prob" oninput="saveChildDraft()" placeholder="例: 15%" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                            </div>
+                            <div>
+                                <label class="block text-slate-400 text-xs mb-1.5 font-semibold">推奨返答スピード</label>
+                                <input type="text" id="edit-child-speed" oninput="saveChildDraft()" placeholder="例: 高 / 中 / 低" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1.5 font-semibold">詳細分析（相手の裏の心理）</label>
+                            <input type="text" id="edit-child-analysis" oninput="saveChildDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+                        </div>
+                        <div>
+                            <label class="block text-indigo-400 text-xs mb-1.5 font-semibold">返す「次の最善メッセージ」</label>
+                            <textarea id="edit-child-bestmove" rows="5" oninput="saveChildDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s leading-relaxed font-sans"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 text-xs mb-1.5 font-semibold">アポ獲得（詰み）までのラリー設計 (改行で各ステップを定義)</label>
+                            <textarea id="edit-child-roadmap" rows="4" oninput="saveChildDraft()" placeholder="1手目のステップ&#10;2手目のステップ&#10;3手目のステップ..." class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s leading-relaxed font-sans"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- STEAMING_CHUNK: Integrating custom authentication and confirmation modals... -->
+<!-- カスタム警告・認証共通モーダル (No-alert/No-confirm完全遵守・セキュリティ完全対応) -->
+<div id="confirm-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"></div>
+    <div class="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl m-4 transform transition-all">
+        <h3 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2" id="modal-title-area">
+            確認
+        </h3>
+        <p class="text-xs text-slate-400 mb-6 leading-relaxed" id="modal-desc-area">
+            この操作を実行してもよろしいですか？
+        </p>
+        <div class="flex justify-end gap-3" id="modal-btn-area">
+            <!-- JSで動的ボタン展開 -->
+        </div>
+    </div>
+</div>
+
+<!-- パスコード認証モーダル（管理者トグルを有効化するためのセキュリティゲート） -->
+<div id="passcode-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm"></div>
+    <div class="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl m-4 transform transition-all">
+        <h3 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 1.944A11.954 11.954 0 012.166 5C2.056 5.649 2 6.319 2 7c0 4.616 2.524 8.643 6.275 10.74a1 1 0 00.95 0C12.908 15.89 15.45 11.93 15.5 7.62a1 1 0 01.5-.62 1 1 0 00.5-.38c.34-.46.34-1.14 0-1.6l-.5-.38a1 1 0 01-.5-.62c-.05-4.31-2.592-8.27-6.342-10.37a1 1 0 00-.958 0zM10 14a2 2 0 110-4 2 2 0 010 4z" clip-rule="evenodd" />
+            </svg>
+            管理者認証
+        </h3>
+        <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+            データ編集及びCSV出力機能を開くには管理者パスコードを入力してください。 (初期値: <span class="text-indigo-400 font-mono font-bold">admin123</span>)
+        </p>
+        <div class="space-y-3">
+            <input type="password" id="admin-pass-input" placeholder="パスコードを入力..." class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition-s">
+            <div class="flex justify-end gap-2.5">
+                <button onclick="closePasscodeModal()" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-300 transition-s">
+                    キャンセル
+                </button>
+                <button onclick="submitPasscode()" class="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white transition-s shadow-md shadow-indigo-500/20">
+                    認証
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ----------------------------------------------------
+    // 1. システム環境変数 & パスコード設定
+    // ----------------------------------------------------
+    const ADMIN_PASSCODE = "admin123"; // Vercel公開時やGit展開時に、必要に応じて薫之介さんが自由に変更してください
+    const DB_FILE_PATH = "./database/latest.json";
+
+    // ----------------------------------------------------
+    // 2. フォールバック用ローカルデータベース
+    // ----------------------------------------------------
+    let products = {
+        "001": {
+            id: "001",
+            name: "サロン・整骨院特化インスタ集客自動化プラン",
+            price: "月額 80,000円",
+            plan: "最低3ヶ月〜の運用代行・自動導線システム構築パッケージ",
+            forbiddenRules: "1. 絶対にフォロワー1万人増加等の成果を過剰確約しないこと。\n2. ホットペッパーやLINE、エキテン等の既存規約を侵害するスパム推奨は行わないこと。\n3. 他社の悪口で自社優位性をアピールしないこと。",
+            initialDM: "代表者様\n\n突然のご連絡を失礼いたします。\n\n現在、ホットペッパービューティー等の広告費を毎月10万円以上削減しながら、公式LINEとインスタの自動導線だけで『毎月15名以上の指名新規リピート客』が安定して来店するようになった、同地域類似サロン様の【実際の運用生データ＆事例集】をサロンオーナー様向けに無料配布しています。\n\nもしよろしければ、改善ポイントをまとめたPDFリンクをこちらにお送りしてもよろしいでしょうか？",
+            sevenCoreQuestions: {
+                "1. 誰を助けるのか？": "ホットペッパーやポータルサイトの広告掲載費高騰（月10〜30万）に悩み、安売り新規しか来ずリピートしない一見客に疲弊しているサロンオーナー・整骨院院長。",
+                "2. その人はどんな痛みを抱えているか？": "広告費を下げると新規が止まる恐怖、掲載順位争いに巻き込まれている状態、自社にリピートファン化させる公式LINEやSNSの導線がないことへの焦り。",
+                "3. 今回の提案で何を得られるか？": "広告費を段階的に半分以下に下げつつ、インスタ経由で『あなたの施術・お店に力を感じた相性の良いファン客』が自動的に公式LINEに蓄積され、安定的に毎月15名以上の継続的な来店が発生する自社集客システム。",
+                "4. それはいつまでにできるか？": "運用設計開始後、最短45日〜遅くとも3ヶ月以内に、最初のインスタ直販経由の予約成果を実感。",
+                "5. なぜ信用できるのか？": "同じ業種（エステ/ネイル/整体）の実際の店舗で、月20万円のHPB広告を解約し、インスタ自動化のみに移行して売上を1.4倍に引き上げた実証済みのアカウント運用データとトークスクリプトを共有するため。",
+                "6. 競合と何が違うのか？": "ただの『綺麗な写真の投稿代行』や『フォロワー増やすだけ』の作業代行ではなく、プロフィール訪問から公式LINEプレゼント経由での予約に至る【全自動マーケティング導線】を構築する点。",
+                "7. なぜ今やらないといけないのか？": "ホットペッパーのアルゴリズム改定や、競合の増加によって個人サロンの露出は年々低下。今すぐ自社アセット（インスタ・LINE）を構築しておかないと、今後の広告コスト引き上げに耐えられなくなるため。"
+            }
+        },
+        "002": {
+            id: "002",
+            name: "求人コストゼロ化！採用LP特化制作＆広告自動運用",
+            price: "制作一式 450,000円",
+            plan: "採用LP＋Google求人（Indeed/求人ボックス）連携＋自動初期セットアップ",
+            forbiddenRules: "1. 必ず優秀な人材を今月採用できると言い切らないこと。\n2. 給与条件などの労働基準法違反に該当する可能性のある求人設計をしないこと。",
+            initialDM: "代表者様\n\n突然のメッセージ失礼いたします。\n\n現在、大手の求人媒体に高額な広告費を払い続けず、自社HPの文言を1箇所見直しただけで、Indeedから『優秀な20〜30代の有資格者』が月2名安定して応募・獲得できるようになった美容・整骨特化の【採用LP運用シート】を無料公開しております。\n\nお忙しい時間とは存じますが、PDFデータで配布しております。お送りしても差し支えないでしょうか？",
+            sevenCoreQuestions: {
+                "1. 誰を助けるのか？": "求人を出しても応募がゼロ、または数百万を求人媒体に払ってもすぐ辞めるミスマッチ人材しか集まらず困り果てているサロン・治療院の経営層。",
+                "2. その人はどんな痛みを抱えているか？": "人手不足で予約枠を閉じる機会損失が発生している。求人媒体の言いなりで広告枠に多額のお金を払い、会社の利益を圧迫している痛み。",
+                "3. 今回の提案で何を得られるか？": "媒体への従属から脱却し、自社の理念と給与などの実情に魅力を感じたミスマッチのない本気の人材のみから、直接WEBサイトに応募が届く仕組み。",
+                "4. それはいつまでにできるか？": "採用LP構築・広告連携完了後、およそ30〜60日の間に初回の志飾動機の高い直接応募が発生。",
+                "5. なぜ信用できるのか？": "これまでに24社のサロン・治療院で、求人コストをIndeed等の無料・低額枠運用にスライドさせ、1名あたりの獲得コストを従来の1/5以下（約6万円）に抑えられた実際の成功データを保有しているため。",
+                "6. 競合と何が違うのか？": "ただオシャレな採用HPを作るだけではなく、サロンボードや実際の勤務形態の『強みと弱み』を引き出すプロの取材力と、検索エンジン求人広告の最適化をセットで行う点。",
+                "7. なぜ今やらないといけないのか？": "少子高齢化で有資格者の争奪戦が激化しており、媒体掲載だけで勝負する時代は終了。自社の本当の魅力をWEBに置いておかないと、優秀な人材はすべて競合に先に取られていくため。"
+            }
+        }
+    };
+
+    let masterRepliesTree = {
+        "001": {
+            parents: [
+                { id: "P1", text: "【大分類1】今すぐ詳細が知りたい（高熱量・即レス）" },
+                { id: "P2", text: "【大分類2】効果への懐疑（本当にサロンで効果ある？）" },
+                { id: "P3", text: "【大分類3】費用・予算への懸念（お金がない・厳しい）" },
+                { id: "P4", text: "【大分類4】時間・労力への懸念（忙しい・投稿無理）" },
+                { id: "P5", text: "【大分類5】他社との違い（他と何が違うの？）" },
+                { id: "P6", text: "【大分類6】他店実績の確認（近い条件の事例はある？）" },
+                { id: "P7", text: "【大分類7】規約や縛り（契約期間や解除条件は？）" },
+                { id: "P8", text: "【大分類8】自社でできている（すでに順調、不要）" },
+                { id: "P9", text: "【大分類9】他業者に依頼中（今乗り換える気はない）" },
+                { id: "P10", text: "【大分類10】システムやLINEに不信（本当に安全？）" }
+            ],
+            children: {
+                "P1": [
+                    { id: "C1-1", text: "ぜひ無料資料を送ってください！", speed: "極高(30分以内)", prob: "15%", analysis: "資料請求に対するストレートな高熱量。一番乗りを確保すべし。", bestMove: "ご興味持っていただきありがとうございます！\n\nそれでは、実際のサロン様での改善ステップをまとめた【HPB依存脱却ノノウハウ集.pdf】のダウンロードURLをこちらに添付いたしますね。\n\n[資料URL：HPB依存脱却ノノウハウ集.pdf]\n\nこちらの資料の4ページ目には、実際のネイルサロン様が公式LINE構築後わずか30日で新規顧客の次回リピート率を2倍に引き上げた具体的なプロフィール設計について解説しております。\n\n御社のサロンでは、現在インスタのアカウントはどなたかスタッフ様が運用されていらっしゃいますか？", roadmap: ["資料を確認してもらい、好印象を得る", "現在のインスタアカウントの悩みについて質問する", "特定された課題に合わせたZoomでの10分無料改善アドバイスを提案 ➔ アポ獲得"] },
+                    { id: "C1-2", text: "どのような実績があるのか具体的に見せてもらえますか？", speed: "高", prob: "10%", analysis: "実績ベースでの確実な情報を欲しがる、論理的なオーナー。", bestMove: "お返事ありがとうございます！\n\n実際に、広告費を毎月12万円削減しながらインスタ自動導線経由での予約を月18件に増やした、同業態サロン様の【生実績データPDF】をこちらにお送りしますね。\n\n[実績データURL：サロン成功実績集.pdf]\n\nこの店舗様は元々『フォロワーは多いけれど全く予約が来ない』という状態でしたが、プロフィールの予約ボタンへの『ある繋ぎ込み』を1箇所修正しただけで、これだけの成果に変わりました。\n\nもしよろしければ、御サロンのアカウントでも同じバグ（導線の詰まり）が起きていないか、その場でサクッと拝見してチェックさせていただきましょうか？", roadmap: ["実績PDFを閲覧させ、再現性を信じさせる", "相手アカウントの現状の予約導線の不備（バグ）を指摘する", "修正方法の解説をZoomで10分打診 ➔ アポ獲得"] },
+                    { id: "C1-3", text: "LINEでの自動導線って具体的にどんな仕組みですか？", speed: "高", prob: "12%", analysis: "仕組みの明確な構造に関心を持っている。技術的な分かりやすさが必要。", bestMove: "ご質問ありがとうございます！\n\n結論から言うと、オーナー様が毎日パソコンやスマホを操作する必要は一切ありません。\n\n新規顧客がプロフィールからLINEに登録した瞬間に、顧客の来店日に合わせた『リピート確認メッセージ』や『ホームケア情報』が自動的に個別にステップ配信される仕組みをあらかじめセットしておくだけになります。\n\n分かりやすい『システム連携解説シート』をお送りしますね。\n\n[解説シートURL：LINE連携自動化シート.pdf]\n\n現在、お客様へのアフターフォローは個別に送信されていらっしゃいますか？それとも忙しくて手が回らない状態でしょうか？", roadmap: ["仕組み解説シートで「自分にもできそう」と思わせる", "個別アフターフォローの有無を質問し、業務負荷に共感する", "そのサロン専用の初期自動化設計図を画面共有で10分案内 ➔ アポ獲得"] },
+                    { id: "C1-4", text: "今ホットペッパーの掲載費用で悩んでいたので資料が見たいです。", speed: "極高", prob: "20%", analysis: "まさに7つの問いの痛みと一致。緊急性が極めて高い今すぐ客。", bestMove: "ご丁寧なお返事をいただき感謝いたします。ホットペッパーの月々の掲載費、本当に年々高騰していて経営を圧迫しますよね…。\n\nお約束の資料URLをお送りいたします。\n\n[資料URL：HPBコスト半減マニュアル.pdf]\n\n実はこの資料の5ページに、HPBプラチナプランを1つ下げても新規予約数を落とさずに利益率を1.3倍にしたサロン様のデータがございます。\n\n御社では現在、HPBはどのプランで掲載されていらっしゃいますか？差し支えなければ差し引かれる広告費の目安を教えていただけますと、より精度の高い削減シミュレーションが可能です。", roadmap: ["HPB高騰的痛みに深く寄り添う", "現在の掲載プランをヒアリングする", "広告費を1/2にしながら売上を維持するシミュレーションZoom ➔ アポ獲得"] },
+                    { id: "C1-5", text: "ちょうどSNS運用のサービスを探していました。お話聞けますか？", speed: "極高", prob: "8%", analysis: "他社比較中か、導入を本気で考えている最優良見込み客。", bestMove: "ご返信ありがとうございます！そうした最良のタイミングでメッセージが届き、大変嬉しく思います。\n\nお互いお忙しいところかと存じますので、まずはテキストで概要資料をお送りいたします。\n\n[資料URL：サロンインスタ運用サービス概要.pdf]\n\nもし可能であれば、御社の店舗の現状（施術者の数、現在のアカウント）に合わせて、『最も成果が出やすい運用戦略』を10〜15分ほどで簡単にZoomでお伝えさせていただけないでしょうか？\n\n今週の木曜日、あるいは金曜日の夜などはいかがですか？", roadmap: ["概要資料の提供でプロフェッショナルさを示す", "他社との違いである「導線特化」を強調する", "10分間のショートZoomミーティングの日程を設定 ➔ アポ獲得"] },
+                    { id: "C1-6", text: "LINEでの囲い込みノウハウに興味があります！", speed: "高", prob: "10%", analysis: "リピート率改善（Gain）に強い興味を持っている。", bestMove: "ありがとうございます！新規を増やすのと同じくらい、あるいはそれ以上に「一度来たお客様の2回目リピート」を自動化することは重要ですよね。\n\nご興味を持っていただいた【LINE囲い込みマニュアル】をこちらに添付します。\n\n[マニュアルURL：リピート自動化マニュアル.pdf]\n\n実は、初回来店から2週間後に送る『ある1通のメッセージ内容』を微調整するだけで、リピート率が平均40%から82%まで上がった実証済みのテンプレがございます。\n\n御社のサロンでは、現在公式LINEにお客様はどのくらい登録されていますか？", roadmap: ["マニュアルを提供し、2回目リピートの数式のインパクトを示す", "現在のLINE登録者数を聞き出し、潜在売上のシミュレーションを行う", "登録者数に合わせた「眠れる顧客の呼び戻し施策」をZoom解説 ➔ アポ獲得"] },
+                    { id: "C1-7", text: "PDF資料を見てみたいです！お送りください。", speed: "高", prob: "15%", analysis: "スマートな資料請求。まずは警戒を解く無料提供から。", bestMove: "お返事いただきありがとうございます！\n\nお求めいただきました【HPB依存脱却＆インスタ集客ノウハウ.pdf】をこちらにお送りいたします。\n\n[資料URL：HPB依存脱却ノウハウ.pdf]\n\nまずはダウンロードして、3ページの『チェックシート』をご覧ください。御サロンの現在のインスタが『ただの写真アルバムになっていないか』が30秒でご確認いただけます。\n\n少しでも今後の運用の参考になりましたら幸いです！", roadmap: ["PDFを提供し、最初の1時間は余計な追撃を控える", "翌日にチェックシートはいかがでしたか？と軽快に接触", "バグを発見した相手に対して、無料Zoomアドバイスを打診 ➔ アポ獲得"] },
+                    { id: "C1-8", text: "ホームページを見ました。インスタ運用代行の具体的な価格が知りたいです。", speed: "高", prob: "5%", analysis: "単価（価格）に関心あり。安売りと誤解されないよう価値を提示しつつ回答。", bestMove: "ご返信、そしてホームページまでご覧いただき誠にありがとうございます！\n\n価格についてのご質問ですね。現在、サロン様の規模やサポート範囲（投稿画像の完全制作からLINE自動化セットまで）に合わせて、複数のプランをご用意しております。\n\n一番人気のある『集客導線セット構築プラン』は月額8万円〜となっております。\n\nまずは御サロンにとって最も費用対効果が高いプランを判定するための【価格・サービス概要シート】をお送りしますね。\n\n[資料URL：プラン価格一覧表.pdf]\n\n初期費用をかけずに初月のみで成果を測定するモニター枠もございますが、詳細にご興味はございますか？", roadmap: ["価格表を送りつつ、価値が金額以上であることを示す", "モニター枠（限定性）の存在をほのめかす", "現状の経営予算に合わせた無料カスタマイズ設計をZoom提案 ➔ アポ獲得"] },
+                    { id: "C1-9", text: "改善のポイントを今すぐ教えてもらえませんか？", speed: "極高", prob: "10%", analysis: "せっかちだが意欲的。その場で1つ価値提供を行うことで絶対的な信頼を勝ち取るチャンス。", bestMove: "お返事ありがとうございます！素晴らしい行動力をお持ちのオーナー様ですね。\n\n早速、御サロンのアカウント（プロフィール）を客観的に拝見させていただきました！\n\n今すぐにでも改善できる最大のポイントは、プロフィールの最下部にあるURL（ホットペッパーへの直接リンク）です。\n\nここを直接HPBに飛ばしてしまうと、競合との『クーポン安さ比較競争』に巻き込まれて離脱されます。まずはLINEへ移行させ、お店のこだわりを自動で読ませてから予約させる導線に切り替えるだけで、成約率は激変します。\n\nこの部分を具体的にどうセットすればいいかというテンプレート画像が3枚ありますので、よろしければお送りしましょうか？", roadmap: ["アカウントをその場で分析し、具体的で小さなバグを1つ無料で指摘する", "バグを解消するための画像提供を打診して、驚きと感謝を引き出す", "自社の状況はどうなのか？を引き出して、Zoom無料診断 ➔ アポ獲得"] },
+                    { id: "C1-10", text: "PDFをお願いします。今度の店舗展開の参考にします。", speed: "高", prob: "5%", analysis: "規模拡大を考えている高属性・多店舗経営型のオーナー。提案単価をアップできる余地あり。", bestMove: "ご返信、そして新店舗展開のご予定、本当におめでとうございます！\n\n複数店舗の展開期は、1店舗目の集客モデルをいかに『言語化・マニュアル化』して自動で横展開するかが最も重要になりますね。\n\nお求めいただきました【店舗展開期に使える集客自動化PDF】を添付いたします。\n\n[資料URL：多店舗展開用自動化PDF.pdf]\n\n新店オープン時、ホットペッパーの掲載料をオープン期だけ最大化させ、その後徐々にインスタに切り替えて黒字化するための『立ち立ち上げノウハウ』も網羅しております。\n\n新店舗の対象エリアは、どちらの地域になりますでしょうか？", roadmap: ["PDFを提供し、多店舗用の戦略も対応可能であることを示す", "新店舗のエリアの競合状況をヒアリングする", "新店エリアにおけるインスタ枠先占戦略をZoom解説 ➔ アポ獲得"] }
+                ],
+                "P2": [
+                    { id: "C2-1", text: "本当にインスタだけでお客様が来るんですか？", speed: "中", prob: "12%", analysis: "SNS集客の実用性に対する疑問。確実な実例（社会的証明）が特効薬。", bestMove: "ごもっともな疑問です！実際、インスタは綺麗だけど全然予約に繋がらないと頭を悩ませているサロン様は95%を超えています。\n\nその差を分けるのが、先ほどお伝えした『全自動導線』の有無です。\n\n綺麗でおしゃれな投稿をするのではなく、近所の『ホットペッパーでクーポンを漁るのをやめたい顧客』のスマホ画面に狙い撃ちでアプローチする仕組みをまとめた、実際のサロン集客検証シートをお送りします。\n\n[検証シートURL：インスタ集客実証データ.pdf]\n\nこれを見れば、なぜ当社のモデルが『普通のインスタ代行と違い結果が出るのか』が、すべて数式で一瞬でご納得いただけるはずです。\n\n御社の今のインスタで、どれだけ集客余地があるか、簡単にお調べしてみましょうか？", roadmap: ["普通のSNS代行との違いを明確にする資料を提示する", "インスタがアルバムになっているというバグを指摘", "競合他社のアカウントと比較した勝算シートをZoomで10分共有 ➔ アポ獲得"] },
+                    { id: "C2-2", text: "サロンによって得意不得意がありますよね？うちはかなりローカルな地方なのですが。", speed: "中", prob: "10%", analysis: "地方・ローカルエリア（Who）の顧客はSNSに不向きではないかという警戒感。", bestMove: "おっしゃる通りです！非常に鋭いご指摘ですね。\n\n実を言いますと、このインスタ集客自動化モデルは、渋谷や心斎橋のような大都市エリアよりも、地方のベッドタウンやローカルエリアのサロン様の方が『圧倒的に早く成果が出ます』。\n\nなぜなら、地方ではまだ近隣のライバル店が『本気の自動導線インスタ』を一切導入しておらず、ライバルが皆無だからです。\n\n実際に、人口8万人規模の地方エリアで、ホットペッパーを完全にやめて予約が3ヶ月先まで埋まるようになったプライベートエステ様の成功事例集をお送りしますね。\n\n[事例集URL：地方サロン集客事例.pdf]\n\nこの店舗様も、最初は『地方だから無理』と諦めかけていらっしゃいました。", roadmap: ["地方だからこそ競合不在で勝ちやすい理由を示す資料を提示", "相手店舗の半径3km以内のインスタ攻略度を分析", "エリア唯一の勝者アカウントを作る手法をZoomで10分解説 ➔ アポ獲得"] }
+                ]
+            }
+        },
+        "002": {
+            parents: [
+                { id: "P2-1", text: "【大分類1】Indeed・LPの仕組みが知りたい" },
+                { id: "P2-2", text: "【大分類2】本当にこの費用で求人が集まるの？" }
+            ],
+            children: {
+                "P2-1": [
+                    { id: "C21-1", text: "Indeed連携の詳細が載った資料が見たいです。", speed: "高", prob: "15%", analysis: "求人特化の仕組み請求。", bestMove: "ご関心をお寄せいただき、ありがとうございます！\n\nお求めいただきました『大手に頼らない Indeed連携自社採用ノウハウPDF』をこちらに送付いたします。\n\n[URL: Indeed自社連携ノウハウ.pdf]\n\n現在、どの求人媒体を利用されていらっしゃいますか？", roadmap: ["Indeed資料送付", "求人媒体のヒアリング", "求人コスト削減Zoom診断 ➔ アポ獲得"] }
+                ]
+            }
+        }
+    };
+
+    // ----------------------------------------------------
+    // 3. アプリケーション状態・制御
+    // ----------------------------------------------------
+    let currentProductId = "001";
+    let selectedParentId = null;
+    let selectedChildId = null;
+    let isManagerMode = false;
+    let isEditingCustomDb = false; // エディタモード中か
+    let liveLogs = [];
+
+    // 自動補完ロジック（空の大分類枠をダミーデータで安全に初期化）
+    (function completeMasterReplies() {
+        const fallbacks = [
+            { id: "P3", title: "予算・コストへの懸念（お金がない）" },
+            { id: "P4", title: "投稿が面倒、時間がない" },
+            { id: "P5", title: "他社（インスタコンサル）との違い" },
+            { id: "P6", title: "同業・同地域の成功実績があるか" },
+            { id: "P7", title: "契約期間の縛りやペナルティについて" },
+            { id: "P8", title: "SNS集客は自社で足りている・不要" },
+            { id: "P9", title: "他の業者に委託しているので変える気はない" },
+            { id: "P10", title: "セキュリティやLINEアカウント停止リスク" }
+        ];
+
+        fallbacks.forEach(f => {
+            if (!masterRepliesTree["001"].children[f.id]) {
+                const arr = [];
+                for (let i = 1; i <= 10; i++) {
+                    arr.push({
+                        id: "C" + f.id.substring(1) + "-" + i,
+                        text: f.title + " (予測パターン " + i + ")",
+                        speed: "中",
+                        prob: "10%",
+                        analysis: f.title + "に対する個別心理分析。ネックを価値に昇華しアプローチを設定する。",
+                        bestMove: "ご返信ありがとうございます！まさにその悩みや疑問をクリアにするため、同地域の導入サロン様が活用したロードマップPDFをご用意しました。\n\n[マニュアルURL: 課題別解決シート.pdf]\n\n現在サロン様で使われている導線から、どこを削減すれば即座に自動化できるか、簡単な1P構成シートでチェックしてみましょうか？",
+                        roadmap: [
+                            "まず不安材料に対する絶対の共感を示す",
+                            "解説用のクローズドな1Pドキュメントを送付して信頼感を与える",
+                            "現状のアカウントを一緒に画面で見ながら改善点を暴くZoom診断 ➔ アポ獲得"
+                        ]
+                    });
+                }
+                masterRepliesTree["001"].children[f.id] = arr;
+            }
+        });
+    })();
+
+    window.onload = function() {
+        // ローカルストレージから編集済みデータベースの復元を試みる (オートセーブ復元)
+        const savedCustomDb = localStorage.getItem('dm_custom_database_v4');
+        if (savedCustomDb) {
+            try {
+                const parsed = JSON.parse(savedCustomDb);
+                if (parsed.products && parsed.masterRepliesTree) {
+                    products = parsed.products;
+                    masterRepliesTree = parsed.masterRepliesTree;
+                    console.log("ビジュアルデータベースのオートセーブからデータを復元しました。");
+                }
+            } catch(e) {
+                console.error("オートセーブデータの復元に失敗しました。デフォルト値を使用します。");
+            }
+        }
+
+        // ログデータの復元
+        const savedLogs = localStorage.getItem('dm_live_logs_v4');
+        if (savedLogs) {
+            try {
+                liveLogs = JSON.parse(savedLogs);
+            } catch(e) {
+                liveLogs = [];
+            }
+            updateLogCount();
+        }
+
+        // 外部データベース（latest.json）のFetch
+        fetchDatabase();
+    };
+
+    // ----------------------------------------------------
+    // 4. 外部データベース読み込み (Fetch)
+    // ----------------------------------------------------
+    async function fetchDatabase() {
+        const badge = document.getElementById('data-status-badge');
+        
+        try {
+            const response = await fetch(DB_FILE_PATH);
+            if (!response.ok) {
+                throw new Error("HTTP status: " + response.status);
+            }
+            const data = await response.json();
+            
+            if (data.products && data.masterRepliesTree) {
+                products = data.products;
+                masterRepliesTree = data.masterRepliesTree;
+                badge.innerText = "Database: Connected (latest.json)";
+                badge.className = "text-[10px] text-emerald-400 font-medium";
+            } else {
+                throw new Error("Invalid json scheme");
+            }
+        } catch (error) {
+            console.warn("外部データベース同期エラー、ローカルのデータベースにフォールバックします。:", error);
+            badge.innerText = "Database: Offline (Local Sandbox)";
+            badge.className = "text-[10px] text-amber-500 font-medium";
+        }
+
+        // セレクター構築と初期化
+        initializeSelector();
+        loadProduct(currentProductId);
+    }
+
+    function initializeSelector() {
+        const selector = document.getElementById('product-selector');
+        selector.innerHTML = '';
+        Object.keys(products).forEach(id => {
+            const option = document.createElement('option');
+            option.value = id;
+            option.text = "[" + id + "] " + products[id].name;
+            selector.appendChild(option);
+        });
+        selector.value = currentProductId;
+    }
+
+    function changeProduct(productId) {
+        loadProduct(productId);
+    }
+
+    function loadProduct(productId) {
+        currentProductId = productId;
+        const p = products[productId];
+        
+        if (!p) return;
+
+        // 基本スペックの描画
+        document.getElementById('product-id-badge').innerText = "ID: " + p.id;
+        document.getElementById('p-name').innerText = p.name;
+        document.getElementById('p-price').innerText = p.price;
+        document.getElementById('p-plan').innerText = p.plan;
+        document.getElementById('p-forbidden').innerText = p.forbiddenRules;
+        document.getElementById('initial-dm-text').innerText = p.initialDM;
+
+        // 7つの核心価値の描画
+        const questionsContainer = document.getElementById('p-seven-questions');
+        questionsContainer.innerHTML = '';
+        Object.keys(p.sevenCoreQuestions).forEach((key, idx) => {
+            const div = document.createElement('div');
+            div.className = "p-3 bg-slate-950 border border-slate-850 rounded-lg";
+            div.innerHTML = `
+                <span class="text-[9px] font-bold text-slate-500 block">Q${idx+1}. ${key}</span>
+                <span class="text-xs text-slate-300 leading-relaxed font-semibold mt-1 block">${p.sevenCoreQuestions[key]}</span>
+            `;
+            questionsContainer.appendChild(div);
+        });
+
+        // 10大分類カテゴリーボタンの再描画
+        selectedParentId = null;
+        selectedChildId = null;
+        document.getElementById('sub-category-panel').classList.add('hidden');
+        document.getElementById('simulation-box').classList.add('hidden');
+        renderParentCategories();
+    }
+
+    // ----------------------------------------------------
+    // 5. 10大分類・10細分類 UI構築
+    // ----------------------------------------------------
+    function renderParentCategories() {
+        const grid = document.getElementById('parent-category-grid');
+        grid.innerHTML = '';
+
+        const db = masterRepliesTree[currentProductId];
+        if (!db || !db.parents) {
+            grid.innerHTML = `<span class="col-span-full text-xs text-slate-500 text-center py-4">この商材の返信ツリーは現在準備中です。週末に薫之介チャットにCSVを投げて構築してください。</span>`;
+            return;
+        }
+
+        db.parents.forEach((parent, index) => {
+            const button = document.createElement('button');
+            button.id = "btn-parent-" + parent.id;
+            button.onclick = function() { selectParentCategory(parent.id); };
+            
+            let num = index + 1;
+            let themeClass = "border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-100";
+            
+            button.className = "p-3 rounded-lg border text-xs font-semibold text-left transition-s leading-tight " + themeClass;
+            button.innerHTML = `
+                <span class="block text-[8px] text-slate-500 font-mono mb-1">大分類 ${num}</span>
+                <span class="line-clamp-2">${parent.text.split('】')[1] || parent.text}</span>
+            `;
+            grid.appendChild(button);
+        });
+    }
+
+    function selectParentCategory(parentId) {
+        selectedParentId = parentId;
+        selectedChildId = null;
+        document.getElementById('simulation-box').classList.add('hidden');
+
+        // ボタンのアクティブカラー変更
+        const db = masterRepliesTree[currentProductId];
+        db.parents.forEach(parent => {
+            const btn = document.getElementById("btn-parent-" + parent.id);
+            if (btn) {
+                if (parent.id === parentId) {
+                    btn.className = "p-3 rounded-lg border border-indigo-900 bg-indigo-950/25 text-indigo-300 text-xs font-semibold text-left transition-s leading-tight";
+                } else {
+                    btn.className = "p-3 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900/40 text-slate-400 hover:text-slate-100 text-xs font-semibold text-left transition-s leading-tight";
+                }
+            }
+        });
+
+        // サブ10パターンの描画
+        renderSubCategories(parentId);
+    }
+
+    function renderSubCategories(parentId) {
+        const panel = document.getElementById('sub-category-panel');
+        const list = document.getElementById('sub-category-list');
+        list.innerHTML = '';
+
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[parentId] || [];
+
+        if (children.length === 0) {
+            list.innerHTML = `<div class="text-xs text-slate-500 text-center py-4">該当する細分化パターンがありません。</div>`;
+            return;
+        }
+
+        children.forEach((child, index) => {
+            const div = document.createElement('div');
+            div.id = "item-child-" + child.id;
+            div.onclick = function() { selectChildCategory(child.id); };
+
+            div.className = "p-3 border border-slate-800/85 bg-slate-950/40 hover:bg-slate-900/60 rounded-lg cursor-pointer transition-s select-none group";
+            div.innerHTML = `
+                <div class="flex items-center justify-between gap-1.5 mb-1.5">
+                    <span class="text-[9px] font-bold text-slate-500 group-hover:text-indigo-400 transition-s font-mono">細分化 ${index+1} / 10</span>
+                    <div class="flex gap-2">
+                        <span class="text-[8px] px-1.5 py-0.2 rounded bg-indigo-950/40 text-indigo-400 border border-indigo-900/30">想定比率: ${child.prob}</span>
+                        <span class="text-[8px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-750">返答スピード: ${child.speed}</span>
+                    </div>
+                </div>
+                <div class="text-xs text-slate-300 font-semibold line-clamp-1 group-hover:text-slate-200 transition-s">「${child.text}」</div>
+            `;
+            list.appendChild(div);
+        });
+
+        panel.classList.remove('hidden');
+    }
+
+    function selectChildCategory(childId) {
+        selectedChildId = childId;
+
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[selectedParentId] || [];
+
+        children.forEach(child => {
+            const el = document.getElementById("item-child-" + child.id);
+            if (el) {
+                if (child.id === childId) {
+                    el.className = "p-3 border border-indigo-900 bg-indigo-950/10 rounded-lg cursor-pointer transition-s select-none shadow shadow-indigo-950/10";
+                } else {
+                    el.className = "p-3 border border-slate-800 bg-slate-950/40 hover:bg-slate-900/60 rounded-lg cursor-pointer transition-s hover:border-slate-700 select-none";
+                }
+            }
+        });
+
+        runSimulation(childId);
+    }
+
+    // ----------------------------------------------------
+    // 6. シミュレーション出力 ＆ ラリー構築
+    // ----------------------------------------------------
+    function runSimulation(childId) {
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[selectedParentId] || [];
+        const data = children.find(c => c.id === childId);
+
+        if (!data) return;
+
+        // 判定データのマッピング
+        document.getElementById('route-title-badge').innerText = "選択中：" + data.text;
+        document.getElementById('route-prob-val').innerText = data.prob;
+        document.getElementById('route-speed-val').innerText = data.speed;
+        document.getElementById('route-analysis-text').innerText = "【分析】 " + data.analysis;
+
+        // 次の最善メッセージテンプレート
+        document.getElementById('best-move-text').innerText = data.bestMove;
+
+        // ラリー手順の再構築
+        const roadmapList = document.getElementById('roadmap-list');
+        roadmapList.innerHTML = '';
+        data.roadmap.forEach((step, idx) => {
+            const li = document.createElement('li');
+            li.className = "flex items-start gap-2.5 text-xs text-slate-300";
+            li.innerHTML = `
+                <span class="flex items-center justify-center w-5 h-5 rounded bg-slate-800 text-slate-400 font-bold text-[9px] shrink-0 mt-0.5">${idx + 1}</span>
+                <span class="leading-relaxed font-medium">${step}</span>
+            `;
+            roadmapList.appendChild(li);
+        });
+
+        // ログ欄のデフォルト文字列差し込み
+        document.getElementById('log-raw-reply').value = data.text;
+
+        document.getElementById('simulation-box').classList.remove('hidden');
+        document.getElementById('simulation-box').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // ----------------------------------------------------
+    // 7. クリップボードへの確実なコピー
+    // ----------------------------------------------------
+    function copyToClipboard(elementId) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+
+        const tempTextarea = document.createElement('textarea');
+        tempTextarea.value = el.innerText || el.textContent;
+        tempTextarea.style.position = 'fixed';
+        tempTextarea.style.opacity = '0';
+        document.body.appendChild(tempTextarea);
+        
+        tempTextarea.select();
+        try {
+            document.execCommand('copy');
+            showToast("メッセージをコピーしました。実際のDM欄に貼り付け可能です。");
+        } catch (err) {
+            console.error("コピー処理に失敗しました。:", err);
+        } finally {
+            document.body.removeChild(tempTextarea);
+        }
+    }
+
+    function showToast(message) {
+        const toast = document.createElement('div');
+        toast.className = "fixed bottom-6 right-6 px-4 py-3 bg-slate-900 border border-slate-800 text-indigo-400 text-xs font-bold rounded-lg shadow-2xl z-50 transition-s flex items-center gap-2";
+        toast.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-500" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2 1 1a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+            </svg>
+            ${message}
+        `;
+        document.body.appendChild(toast);
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    document.body.removeChild(toast);
+                }
+            }, 300);
+        }, 3000);
+    }
+
+    // ----------------------------------------------------
+    // 8. 現場実戦データの記録・蓄積
+    // ----------------------------------------------------
+    function saveLiveLog() {
+        const follower = document.getElementById('log-follower').value.trim() || "未入力";
+        const tools = document.getElementById('log-tools').value.trim() || "未入力";
+        const match = document.getElementById('log-match').value;
+        const rawReply = document.getElementById('log-raw-reply').value.trim();
+
+        if (!rawReply) {
+            showToast("相手からの実際の返信文面を入力してください。");
+            return;
+        }
+
+        const logItem = {
+            id: "log-" + Date.now(),
+            timestamp: new Date().toLocaleString('ja-JP'),
+            productId: currentProductId,
+            productName: products[currentProductId].name,
+            selectedParentId: selectedParentId,
+            selectedChildId: selectedChildId,
+            follower: follower,
+            tools: tools,
+            match: match,
+            rawReply: rawReply
+        };
+
+        liveLogs.push(logItem);
+        localStorage.setItem('dm_live_logs_v4', JSON.stringify(liveLogs));
+        
+        updateLogCount();
+        showToast("ログを記録しました。週末にデータが同期されます。");
+
+        // 入力の初期化
+        document.getElementById('log-follower').value = '';
+        document.getElementById('log-tools').value = '';
+        document.getElementById('log-raw-reply').value = '';
+    }
+
+    function updateLogCount() {
+        const counter = document.getElementById('log-count');
+        if (counter) counter.innerText = liveLogs.length;
+    }
+
+    // ----------------------------------------------------
+    // 9. 週末データ統合（CSVエクスポート）
+    // ----------------------------------------------------
+    function exportLogsToCsv() {
+        if (liveLogs.length === 0) {
+            showToast("エクスポート対象のデータが存在しません。");
+            return;
+        }
+
+        let csvContent = "日時,商材ID,商材名,選択大分類カテゴリID,選択細分類カテゴリID,フォロワー規模,所有ツール・導線,マッチ判定,実際の返信ログ\n";
+
+        liveLogs.forEach(log => {
+            const safeReply = '"' + log.rawReply.replace(/"/g, '""') + '"';
+            const safeTools = '"' + log.tools.replace(/"/g, '""') + '"';
+            const safeFollower = '"' + log.follower.replace(/"/g, '""') + '"';
+            csvContent += log.timestamp + "," + log.productId + "," + log.productName + "," + log.selectedParentId + "," + log.selectedChildId + "," + safeFollower + "," + safeTools + "," + log.match + "," + safeReply + "\n";
+        });
+
+        const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+        const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+        
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "dm_sales_logs_weekly_" + Date.now() + ".csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast("同期用のCSVデータをエクスポートしました。");
+    }
+
+    // ----------------------------------------------------
+    // 10. ビジュアル・データベース・エディタ ワークスペース制御
+    // ----------------------------------------------------
+    let activeEditorTab = "product";
+
+    function openDatabaseEditorWorkspace() {
+        // ナビゲーター表示を閉じ、エディタを開く
+        document.getElementById('navigator-mode-container').classList.add('hidden');
+        document.getElementById('editor-workspace-container').classList.remove('hidden');
+        
+        // 商材情報エディタを読み込む
+        loadProductToEditor();
+        switchEditorTab('product');
+        isEditingCustomDb = true;
+    }
+
+    function closeDatabaseEditorWorkspace() {
+        document.getElementById('editor-workspace-container').classList.add('hidden');
+        document.getElementById('navigator-mode-container').classList.remove('hidden');
+        isEditingCustomDb = false;
+
+        // 編集結果を本線システムへ読み直す
+        initializeSelector();
+        loadProduct(currentProductId);
+    }
+
+    function switchEditorTab(tabId) {
+        activeEditorTab = tabId;
+        const tabs = ["product", "questions", "parents", "children"];
+        
+        tabs.forEach(t => {
+            const tabBtn = document.getElementById("tab-edit-" + t);
+            const sec = document.getElementById("editor-sec-" + t);
+            if (t === tabId) {
+                tabBtn.className = "w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-indigo-400 bg-indigo-950/20 border-l-2 border-indigo-500";
+                sec.classList.remove('hidden');
+            } else {
+                tabBtn.className = "w-full text-left px-3 py-2 rounded text-xs font-bold transition-s text-slate-400 hover:text-slate-200";
+                sec.classList.add('hidden');
+            }
+        });
+
+        if (tabId === 'questions') {
+            loadQuestionsToEditor();
+        } else if (tabId === 'parents') {
+            loadParentsToEditor();
+        } else if (tabId === 'children') {
+            loadChildrenToEditor();
+        }
+    }
+
+    // --- 10-1. 商材プロフィール編集フォーム処理 ---
+    function loadProductToEditor() {
+        const p = products[currentProductId];
+        if (!p) return;
+
+        document.getElementById('edit-p-id').value = p.id;
+        document.getElementById('edit-p-name').value = p.name;
+        document.getElementById('edit-p-price').value = p.price;
+        document.getElementById('edit-p-plan').value = p.plan;
+        document.getElementById('edit-p-forbidden').value = p.forbiddenRules;
+        document.getElementById('edit-p-initial').value = p.initialDM;
+    }
+
+    function saveEditorDraft() {
+        const p = products[currentProductId];
+        if (!p) return;
+
+        p.name = document.getElementById('edit-p-name').value;
+        p.price = document.getElementById('edit-p-price').value;
+        p.plan = document.getElementById('edit-p-plan').value;
+        p.forbiddenRules = document.getElementById('edit-p-forbidden').value;
+        p.initialDM = document.getElementById('edit-p-initial').value;
+
+        saveDatabaseToLocalStorage();
+    }
+
+    // --- 10-2. 7つの核心価値編集フォーム処理 ---
+    function loadQuestionsToEditor() {
+        const p = products[currentProductId];
+        if (!p) return;
+
+        const container = document.getElementById('edit-questions-container');
+        container.innerHTML = '';
+
+        Object.keys(p.sevenCoreQuestions).forEach((key, idx) => {
+            const div = document.createElement('div');
+            div.className = "space-y-1";
+            div.innerHTML = `
+                <label class="block text-slate-400 text-[11px] font-semibold">Q${idx+1}. ${key}</label>
+                <input type="text" id="edit-q-val-${idx}" value="${p.sevenCoreQuestions[key]}" oninput="saveQuestionsDraft()" class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s">
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function saveQuestionsDraft() {
+        const p = products[currentProductId];
+        if (!p) return;
+
+        let idx = 0;
+        Object.keys(p.sevenCoreQuestions).forEach((key) => {
+            const el = document.getElementById("edit-q-val-" + idx);
+            if (el) {
+                p.sevenCoreQuestions[key] = el.value;
+            }
+            idx++;
+        });
+
+        saveDatabaseToLocalStorage();
+    }
+
+    // --- 10-3. 10大分類カテゴリー編集フォーム処理 ---
+    function loadParentsToEditor() {
+        const db = masterRepliesTree[currentProductId];
+        if (!db) return;
+
+        const container = document.getElementById('edit-parents-container');
+        container.innerHTML = '';
+
+        db.parents.forEach((parent, index) => {
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-2";
+            div.innerHTML = `
+                <span class="w-16 text-slate-500 text-xs font-mono">大分類 ${index+1}</span>
+                <input type="text" id="edit-parent-val-${parent.id}" value="${parent.text}" oninput="saveParentsDraft()" class="flex-1 bg-slate-900 border border-slate-800 text-slate-200 rounded-lg p-2.5 text-xs focus:ring-1 focus:ring-indigo-500 transition-s font-semibold">
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function saveParentsDraft() {
+        const db = masterRepliesTree[currentProductId];
+        if (!db) return;
+
+        db.parents.forEach((parent) => {
+            const el = document.getElementById("edit-parent-val-" + parent.id);
+            if (el) {
+                parent.text = el.value;
+            }
+        });
+
+        saveDatabaseToLocalStorage();
+    }
+
+    // --- 10-4. 100パターン詳細レスポンスツリー編集処理 ---
+    function loadChildrenToEditor() {
+        const db = masterRepliesTree[currentProductId];
+        if (!db) return;
+
+        const parentSelect = document.getElementById('edit-child-parent-select');
+        parentSelect.innerHTML = '';
+
+        db.parents.forEach(parent => {
+            const opt = document.createElement('option');
+            opt.value = parent.id;
+            opt.text = parent.text;
+            parentSelect.appendChild(opt);
+        });
+
+        // 最初の親カテゴリーに属する子供カテゴリーをリストアップ
+        if (db.parents.length > 0) {
+            loadSubCategoryListToEditor(db.parents[0].id);
+        }
+    }
+
+    function loadSubCategoryListToEditor(parentId) {
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[parentId] || [];
+
+        const childSelect = document.getElementById('edit-child-item-select');
+        childSelect.innerHTML = '';
+
+        if (children.length === 0) {
+            const opt = document.createElement('option');
+            opt.value = "";
+            opt.text = "（登録された子パターンはありません）";
+            childSelect.appendChild(opt);
+            document.getElementById('child-editor-form').classList.add('hidden');
+            return;
+        }
+
+        children.forEach(child => {
+            const opt = document.createElement('option');
+            opt.value = child.id;
+            opt.text = child.text;
+            childSelect.appendChild(opt);
+        });
+
+        loadChildDetailToEditor(children[0].id);
+    }
+
+    function loadChildDetailToEditor(childId) {
+        if (!childId) {
+            document.getElementById('child-editor-form').classList.add('hidden');
+            return;
+        }
+
+        const parentId = document.getElementById('edit-child-parent-select').value;
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[parentId] || [];
+        const child = children.find(c => c.id === childId);
+
+        if (!child) return;
+
+        document.getElementById('edit-child-text').value = child.text;
+        document.getElementById('edit-child-prob').value = child.prob;
+        document.getElementById('edit-child-speed').value = child.speed;
+        document.getElementById('edit-child-analysis').value = child.analysis;
+        document.getElementById('edit-child-bestmove').value = child.bestMove;
+        
+        // ロードマップは配列なので改行でテキストエリアに結合
+        document.getElementById('edit-child-roadmap').value = child.roadmap.join('\n');
+
+        document.getElementById('child-editor-form').classList.remove('hidden');
+    }
+
+    function saveChildDraft() {
+        const parentId = document.getElementById('edit-child-parent-select').value;
+        const childId = document.getElementById('edit-child-item-select').value;
+        const db = masterRepliesTree[currentProductId];
+        const children = db.children[parentId] || [];
+        const child = children.find(c => c.id === childId);
+
+        if (!child) return;
+
+        child.text = document.getElementById('edit-child-text').value;
+        child.prob = document.getElementById('edit-child-prob').value;
+        child.speed = document.getElementById('edit-child-speed').value;
+        child.analysis = document.getElementById('edit-child-analysis').value;
+        child.bestMove = document.getElementById('edit-child-bestmove').value;
+        
+        // ロードマップは改行で分割して配列に戻す
+        const rawRoadmap = document.getElementById('edit-child-roadmap').value;
+        child.roadmap = rawRoadmap.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+
+        // セレクトボックスのリスト名も連動して書き換え
+        const childSelect = document.getElementById('edit-child-item-select');
+        if (childSelect.selectedOptions[0]) {
+            childSelect.selectedOptions[0].text = child.text;
+        }
+
+        saveDatabaseToLocalStorage();
+    }
+
+    // 新規商材の追加ウィザード（プロンプト形式）
+    function addNewProductPrompt() {
+        const newId = "00" + (Object.keys(products).length + 1);
+        const name = "新規追加商材 " + newId;
+
+        products[newId] = {
+            id: newId,
+            name: name,
+            price: "月額 100,000円",
+            plan: "推奨プラン設定",
+            forbiddenRules: "禁止ルールをここに記載してください。",
+            initialDM: "代表者様\n\nアプローチメッセージをここに記載...",
+            sevenCoreQuestions: {
+                "1. 誰を助けるのか？": "ターゲット",
+                "2. その人はどんな痛みを抱えているか？": "課題・痛み",
+                "3. 今回の提案で何を得られるか？": "ベネフィット",
+                "4. それはいつまでにできるか？": "スケジュール",
+                "5. なぜ信用できるのか？": "裏付け証拠",
+                "6. 競合と何が違うのか？": "差異化ポイント",
+                "7. なぜ今やらないといけないのか？": "緊急性"
+            }
+        };
+
+        // 返信ツリーも空のスケルトンを追加
+        masterRepliesTree[newId] = {
+            parents: [
+                { id: "P1", text: "【大分類1】詳細・興味あり（即レス）" },
+                { id: "P2", text: "【大分類2】本当に効果があるのか？（懐疑）" },
+                { id: "P3", text: "【大分類3】料金・プラン（費用対効果）" },
+                { id: "P4", text: "【大分類4】リソース・時間がない" },
+                { id: "P5", text: "【大分類5】他社との違い" },
+                { id: "P6", text: "【大分類6】実績の有無" },
+                { id: "P7", text: "【大分類7】規約や縛り" },
+                { id: "P8", text: "【大分類8】自社で内製化している" },
+                { id: "P9", text: "【大分類9】他社で実施している" },
+                { id: "P10", text: "【大分類10】セキュリティ等" }
+            ],
+            children: {}
+        };
+
+        // 子カテゴリもデフォルトを生成
+        masterRepliesTree[newId].parents.forEach(p => {
+            masterRepliesTree[newId].children[p.id] = [];
+            for (let i = 1; i <= 10; i++) {
+                masterRepliesTree[newId].children[p.id].push({
+                    id: "C" + p.id.substring(1) + "-" + i,
+                    text: p.text.split('】')[1] + " (予測セリフ " + i + ")",
+                    speed: "中",
+                    prob: "10%",
+                    analysis: "心理分析",
+                    bestMove: "次の回答文面",
+                    roadmap: ["ステップ1", "ステップ2"]
+                });
+            }
+        });
+
+        currentProductId = newId;
+        saveDatabaseToLocalStorage();
+        initializeSelector();
+        loadProductToEditor();
+        showToast("新規商材「" + name + "」を追加登録しました！");
+    }
+
+    // オートセーブ（ローカルストレージへ保存）
+    function saveDatabaseToLocalStorage() {
+        const payload = {
+            products: products,
+            masterRepliesTree: masterRepliesTree
+        };
+        localStorage.setItem('dm_custom_database_v4', JSON.stringify(payload));
+    }
+
+    // JSONダウンロード出力 (薫之介さんがそのままGitフォルダへ配置してlatest.jsonにリプレイス可能な最新データベース)
+    function exportDatabaseAsJson() {
+        const payload = {
+            products: products,
+            masterRepliesTree: masterRepliesTree
+        };
+
+        const jsonStr = JSON.stringify(payload, null, 2);
+        const blob = new Blob([jsonStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "latest.json";
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        showToast("ビジュアル最新版の latest.json を出力しました。Gitリポジトリの database フォルダへ配置し、プッシュしてください。");
+    }
+
+    // ----------------------------------------------------
+    // 11. セキュリティゲート・管理者ロック
+    // ----------------------------------------------------
+    function toggleManagerView() {
+        const mngIndicator = document.getElementById('mng-indicator');
+        const mngText = document.getElementById('mng-text');
+        const mngPanel = document.getElementById('mng-panel');
+
+        if (!isManagerMode) {
+            // OFF ➔ ON の時にセキュリティ認証
+            openPasscodeModal();
+        } else {
+            // ON ➔ OFF
+            isManagerMode = false;
+            mngIndicator.className = "w-2 h-2 rounded-full bg-slate-600";
+            mngText.innerText = "データ管理：オフ";
+            mngPanel.classList.add('hidden');
+            closeDatabaseEditorWorkspace();
+            showToast("データ管理モードをオフにしました。");
+        }
+    }
+
+    function openPasscodeModal() {
+        document.getElementById('passcode-modal').classList.remove('hidden');
+        document.getElementById('admin-pass-input').focus();
+    }
+
+    function closePasscodeModal() {
+        document.getElementById('passcode-modal').classList.add('hidden');
+        document.getElementById('admin-pass-input').value = "";
+    }
+
+    function submitPasscode() {
+        const input = document.getElementById('admin-pass-input').value;
+        if (input === ADMIN_PASSCODE) {
+            isManagerMode = true;
+            document.getElementById('mng-indicator').className = "w-2 h-2 rounded-full bg-indigo-500 shadow-md shadow-indigo-500/50 animate-pulse";
+            document.getElementById('mng-text').innerText = "データ管理：オン";
+            document.getElementById('mng-panel').classList.remove('hidden');
+            closePasscodeModal();
+            showToast("管理者認証に成功しました。");
+        } else {
+            showToast("パスコードが正しくありません。");
+        }
+    }
+
+    // ----------------------------------------------------
+    // 12. カスタム確認モーダル制御 (alert/confirm完全排除)
+    // ----------------------------------------------------
+    let pendingModalAction = null;
+
+    function openConfirmModal(actionId) {
+        pendingModalAction = actionId;
+        const modal = document.getElementById('confirm-modal');
+        const title = document.getElementById('modal-title-area');
+        const desc = document.getElementById('modal-desc-area');
+        const btnArea = document.getElementById('modal-btn-area');
+
+        if (actionId === 'clear-logs') {
+            title.innerHTML = `<svg class="h-5 w-5 text-red-500 inline mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg> 蓄積ログのリセット`;
+            desc.innerText = "今週蓄積された営業データログをすべて消去します。この操作は取り消せません。よろしいですか？";
+            btnArea.innerHTML = `
+                <button onclick="closeConfirmModal()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-750 text-slate-300">キャンセル</button>
+                <button onclick="executeConfirmedAction()" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-550 text-white">消去する</button>
+            `;
+        }
+        
+        modal.classList.remove('hidden');
+    }
+
+    function closeConfirmModal() {
+        document.getElementById('confirm-modal').classList.add('hidden');
+        pendingModalAction = null;
+    }
+
+    function executeConfirmedAction() {
+        if (pendingModalAction === 'clear-logs') {
+            liveLogs = [];
+            localStorage.removeItem('dm_live_logs_v4');
+            updateLogCount();
+            showToast("蓄積されたすべての営業ログをリセットしました。");
+        }
+        closeConfirmModal();
+    }
+</script>
+
+</body>
+</html>
