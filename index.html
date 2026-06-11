@@ -107,13 +107,23 @@
                         <div class="flex flex-col gap-2">
                             <div class="flex justify-between items-center">
                                 <label for="input-text" class="text-sm font-bold text-slate-800 flex items-center gap-2">
-                                    <i class="fa-brands fa-x-twitter text-slate-700"></i> Step1: Twitter情報
+                                    <i class="fa-brands fa-x-twitter text-slate-700"></i> Step1: Twitter情報 / フォロー欄
                                 </label>
                                 <button id="btn-clear-input" class="text-xs text-slate-400 hover:text-rose-500 transition">
                                     <i class="fa-solid fa-trash-can mr-1"></i>クリア
                                 </button>
                             </div>
-                            <textarea id="input-text" class="w-full h-36 border border-slate-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400 custom-scrollbar resize-none bg-slate-50/50" placeholder="プロフィール、最近のポスト、発信の要約などをここに貼り付けてください。"></textarea>
+                            <textarea id="input-text" class="w-full h-36 border border-slate-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 placeholder-slate-400 custom-scrollbar resize-none bg-slate-50/50" placeholder="プロフィール、またはXのフォロー一覧やコピペテキストをそのまま貼り付けてください。"></textarea>
+                            <button id="btn-extract-candidates" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 border border-slate-700">
+                                <i class="fa-solid fa-users-viewfinder"></i> 貼り付けデータからターゲット候補を抽出
+                            </button>
+                        </div>
+
+                        <div id="prelist-container" class="flex flex-col gap-2 border-t border-slate-100 pt-3 hidden">
+                            <label class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <i class="fa-solid fa-list-check text-indigo-500"></i> 抽出されたターゲット候補プレリスト
+                            </label>
+                            <div id="prelist-box" class="w-full border border-slate-200 rounded-xl bg-slate-50 p-2 max-h-40 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                             <button id="btn-copy-diagnostic-prompt" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-2 border border-slate-200">
                                 <i class="fa-solid fa-copy text-indigo-500"></i> 外部AI診断用プロンプトをコピー
                             </button>
@@ -1859,6 +1869,12 @@ ${rec.conversationLog.length?`<h2>会話ログ</h2>`+rec.conversationLog.map(e=>
                 return;
             }
 
+            const isDuplicate = parsedRecords.some(rec => rec.name === parsed.name);
+            if (isDuplicate) {
+                openModal('登録済み', `「${parsed.name}」は既に登録されています。`, null, false, true);
+                return;
+            }
+
             ensureRecordMeta(parsed);
             if (parsed.url) parsed.url = normalizeAccountUrl(parsed.url);
             appendAiOutput(parsed, 'contact_diagnosis', '接触可否診断（OS①）', rawText);
@@ -2554,6 +2570,66 @@ DM移行期待値: ${target.dm_migration_expect || '-'}%
             const idx = selectReplyTarget.value;
             if (idx === "") return;
             exportRecordAsPdf(parsedRecords[parseInt(idx, 10)]);
+        };
+
+       // フォロー欄などの雑多なテキストからアカウント名とユーザーIDのペアを解析抽出し、プレリストへ展開するロジックの追加
+        // ターゲット候補のプレリスト抽出ロジック
+        document.getElementById('btn-extract-candidates').onclick = () => {
+            const rawText = inputText.value;
+            if (!rawText.trim()) {
+                openModal('入力エラー', 'Twitter情報を入力または貼り付けてください。', null, false, true);
+                return;
+            }
+
+            const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+            const candidates = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].startsWith('@')) {
+                    const userId = lines[i];
+                    let userName = 'Unknown';
+                    if (i > 0 && !lines[i-1].startsWith('@') && lines[i-1].length < 50) {
+                        userName = lines[i-1];
+                    }
+                    candidates.push({ name: userName, userId: userId });
+                }
+            }
+
+            const prelistContainer = document.getElementById('prelist-container');
+            const prelistBox = document.getElementById('prelist-box');
+            
+            if (candidates.length === 0) {
+                prelistBox.innerHTML = '<p class="text-[11px] text-slate-400 p-2">アカウント（@ID形式）を検出できませんでした</p>';
+                prelistContainer.classList.remove('hidden');
+                return;
+            }
+
+            prelistBox.innerHTML = candidates.map(c => {
+                const isRegistered = parsedRecords.some(r => r.name === c.name || (r.url && r.url.includes(c.userId.replace('@', ''))));
+                const badge = isRegistered 
+                    ? '<span class="text-[10px] bg-rose-50 text-rose-600 border border-rose-100 px-1.5 py-0.5 rounded font-semibold ml-auto">登録済み</span>'
+                    : `<button onclick="copyCandidateToInput('${escapeHtml(c.name)}', '${escapeHtml(c.userId)}')" class="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded font-semibold ml-auto transition"><i class="fa-solid fa-arrow-right-to-bracket"></i> 分析にセット</button>`;
+                
+                return `
+                    <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 text-xs">
+                        <div class="flex flex-col">
+                            <span class="font-bold text-slate-900">${escapeHtml(c.name)}</span>
+                            <span class="text-[10px] text-slate-400">${escapeHtml(c.userId)}</span>
+                        </div>
+                        ${badge}
+                    </div>
+                `;
+            }).join('');
+
+            prelistContainer.classList.remove('hidden');
+            showToast(`テキストから ${candidates.length} 件の候補を抽出しました`);
+        };
+
+        window.copyCandidateToInput = function(name, userId) {
+            const cleanId = userId.replace('@', '');
+            const targetUrl = `https://x.com/${cleanId}`;
+            inputText.value = `【基本情報】\nアカウント名：${name}\nURL：${targetUrl}\n`;
+            showToast(`「${name}」の基本情報をStep1にセットしました`);
         };
 
         // --- 外部手動コピペ運用イベント ---
