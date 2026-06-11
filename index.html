@@ -2115,7 +2115,7 @@ ${rec.conversationLog.length?`<h2>会話ログ</h2>`+rec.conversationLog.map(e=>
             detailTitle.innerText = rec.name;
             
             const safeUrl = normalizeAccountUrl(rec.url);
-            detailUrl.innerHTML = safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" class="text-indigo-600 hover:underline inline-flex items-center gap-1 font-medium"><i class="fa-solid fa-arrow-up-right-from-square mr-1"></i>${escapeHtml(safeUrl)}</a>` : 'リンク情報なし';
+            detailUrl.innerHTML = safeUrl ? `<a href="${escapeHtml(safeUrl)}" target="_blank" class="text-indigo-600 hover:underline inline-flex items-center gap-1 font-medium"><i class="fa-brands fa-x-twitter mr-1"></i>${escapeHtml(safeUrl.replace(/^https?:\/\/(?:x\.com|twitter\.com)\//i, ''))}</a>` : 'リンク情報なし';
 
             // 数値指標
             document.getElementById('d-has-product').innerText = rec.has_product || '-';
