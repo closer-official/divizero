@@ -51,9 +51,52 @@ textarea.input-base{resize:none}
 .close-type-i{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
 .metric-card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:4px}
 .funnel-bar{height:28px;border-radius:6px;transition:width .4s ease;display:flex;align-items:center;padding-left:10px;font-size:11px;font-weight:700;color:#fff;min-width:40px}
+.tip{position:relative;cursor:help}
+.tip::after{content:attr(data-tip);position:absolute;bottom:calc(100%+6px);left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;font-size:10px;line-height:1.5;padding:5px 9px;border-radius:7px;white-space:normal;width:max-content;max-width:200px;text-align:center;z-index:200;pointer-events:none;opacity:0;transition:opacity .15s}
+.tip:hover::after{opacity:1}
+.reaction-badge{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px}
+.reaction-text{background:#ede9fe;color:#5b21b6}
+.reaction-like{background:#fce7f3;color:#be185d}
+.reaction-stamp{background:#fef3c7;color:#92400e}
+.reaction-none{background:#f1f5f9;color:#64748b}
+.reaction-repost{background:#d1fae5;color:#065f46}
+.history-line{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #f1f5f9}
+.history-line:last-child{border-bottom:none}
+.won-banner{background:linear-gradient(135deg,#d1fae5,#a7f3d0);border:1px solid #6ee7b7;border-radius:12px;padding:16px;text-align:center}
+/* 閲覧モード */
+body.viewer-mode .admin-only{display:none!important}
+/* ログインオーバーレイ */
+#login-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#4c1d95,#1e293b);display:flex;align-items:center;justify-content:center;padding:16px}
+#login-overlay.hidden{display:none!important}
+.login-card{background:#fff;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;box-shadow:0 25px 50px rgba(0,0,0,.4)}
+.role-badge-admin{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.role-badge-viewer{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+/* 対象投稿の警告 */
+.post-required-warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;font-size:11px;color:#c2410c;display:none}
 </style>
 </head>
 <body class="min-h-screen flex flex-col">
+
+<!-- LOGIN OVERLAY -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="text-center mb-7">
+      <div class="bg-violet-600 text-white rounded-2xl w-14 h-14 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-violet-300">
+        <i class="fa-solid fa-lock text-xl"></i>
+      </div>
+      <h2 class="font-bold text-xl text-slate-900 mb-1">営業OSワークスペース</h2>
+      <p class="text-sm text-slate-400">パスワードを入力してアクセスしてください</p>
+    </div>
+    <div class="flex flex-col gap-3">
+      <input id="login-password" type="password" class="input-base" placeholder="パスワード" autocomplete="current-password">
+      <p id="login-error" class="text-xs text-rose-600 hidden text-center"></p>
+      <button id="login-btn" class="btn-primary w-full justify-center py-3">
+        <i class="fa-solid fa-arrow-right-to-bracket"></i>ログイン
+      </button>
+    </div>
+    <p class="text-[10px] text-slate-300 text-center mt-5">アクセス権限については管理者にお問い合わせください</p>
+  </div>
+</div>
 
 <!-- HEADER -->
 <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
@@ -68,8 +111,10 @@ textarea.input-base{resize:none}
       </div>
     </div>
     <div class="flex items-center gap-2">
-      <button id="btn-sample" class="btn-sec text-xs"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i>サンプル</button>
+      <span id="role-badge" class="hidden"></span>
+      <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i>サンプル</button>
       <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i>エクスポート</button>
+      <button id="btn-logout" class="btn-sec text-xs hidden"><i class="fa-solid fa-arrow-right-from-bracket text-slate-400"></i>ログアウト</button>
     </div>
   </div>
 </header>
@@ -112,9 +157,17 @@ textarea.input-base{resize:none}
           <span class="w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
           <span class="font-bold text-sm text-slate-800">Twitter/X データを貼り付け</span>
         </div>
-        <textarea id="t1-input" class="input-base h-32 cs" placeholder="プロフィール・直近ポスト・フォロー欄などを貼り付け"></textarea>
+        <textarea id="t1-input" class="input-base h-24 cs" placeholder="プロフィール・直近ポスト・フォロー欄などを貼り付け"></textarea>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+            <span class="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.5 rounded font-bold">必須</span>
+            反応する対象の投稿本文を貼り付け
+          </label>
+          <textarea id="t1-post" class="input-base h-20 cs" placeholder="接触文で言及する具体的な投稿の本文をここに貼り付けてください。&#10;例：「昨日1件成約しました。でも正直、どこで決まったかよくわからない…」"></textarea>
+          <p class="post-required-warn" id="t1-post-warn"><i class="fa-solid fa-triangle-exclamation mr-1"></i>対象投稿が未入力です。AIに「どの投稿に反応するか」を伝えないと、アカウント全体への漠然したコメントになりAI感が出ます。</p>
+        </div>
         <button id="t1-copy-prompt" class="btn-sec w-full justify-center">
-          <i class="fa-solid fa-copy text-violet-500"></i>OS①プロンプトをコピー（外部AIで実行）
+          <i class="fa-solid fa-copy text-violet-500"></i>分析プロンプトをコピー（外部AIで実行）
         </button>
         <div class="flex items-center gap-2 pb-2 border-b border-slate-100 mt-1">
           <span class="w-6 h-6 rounded-full bg-violet-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
@@ -122,7 +175,7 @@ textarea.input-base{resize:none}
         </div>
         <textarea id="t1-result" class="input-base h-32 cs" placeholder="AIが出力した【アカウント情報】〜【初回接触案】のテキストをそのまま貼り付け"></textarea>
         <button id="t1-submit" class="btn-primary w-full justify-center text-sm">
-          <i class="fa-solid fa-circle-plus"></i>スクリーニング結果を記録
+          <i class="fa-solid fa-circle-plus"></i>分析結果を記録
         </button>
       </div>
     </section>
@@ -136,7 +189,7 @@ textarea.input-base{resize:none}
           </h3>
           <div class="flex gap-2">
             <button id="t1-copy-tsv" class="btn-sec text-xs py-1.5 px-3"><i class="fa-solid fa-copy"></i>TSV</button>
-            <button id="t1-clear" class="btn-danger text-xs py-1.5 px-3"><i class="fa-solid fa-trash"></i></button>
+            <button id="t1-clear" class="btn-danger text-xs py-1.5 px-3 admin-only"><i class="fa-solid fa-trash"></i></button>
           </div>
         </div>
         <div class="flex-1 overflow-y-auto cs" id="t1-list">
@@ -198,8 +251,8 @@ textarea.input-base{resize:none}
       </div>
     </div>
     <div class="flex gap-2 pt-1 border-t border-slate-100">
-      <button id="t1d-to-pipeline" class="btn-primary text-xs"><i class="fa-solid fa-arrow-right"></i>パイプラインへ移動（OS②）</button>
-      <button id="t1d-delete" class="btn-danger text-xs"><i class="fa-solid fa-trash"></i>削除</button>
+      <button id="t1d-to-pipeline" class="btn-primary text-xs"><i class="fa-solid fa-arrow-right"></i>案件管理へ移動</button>
+      <button id="t1d-delete" class="btn-danger text-xs admin-only"><i class="fa-solid fa-trash"></i>削除</button>
     </div>
   </div>
 </div>
@@ -217,8 +270,8 @@ textarea.input-base{resize:none}
           </h3>
           <select id="t2-filter" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
             <option value="all">すべて</option>
-            <option value="FT">FT</option>
-            <option value="NT">NT</option>
+            <option value="FT">FT（ファストトラック）</option>
+            <option value="NT">NT（通常トラック）</option>
             <option value="warn">⚠ 要対応</option>
           </select>
         </div>
@@ -303,6 +356,15 @@ textarea.input-base{resize:none}
           </div>
         </div>
 
+        <!-- 交流履歴タイムライン -->
+        <div id="t2d-history-section" class="card p-4 flex flex-col gap-2 hidden">
+          <div class="flex items-center justify-between">
+            <p class="font-bold text-sm text-slate-800 flex items-center gap-2"><i class="fa-solid fa-clock-rotate-left text-slate-400"></i>交流履歴</p>
+            <span id="t2d-history-count" class="text-xs text-slate-400"></span>
+          </div>
+          <div id="t2d-history" class="flex flex-col"></div>
+        </div>
+
         <!-- 行動判定フォーム -->
         <div class="card p-4 flex flex-col gap-3">
           <p class="font-bold text-sm text-slate-800 flex items-center gap-2"><i class="fa-solid fa-rotate text-indigo-500"></i>行動判定を実行（OS②）</p>
@@ -314,7 +376,7 @@ textarea.input-base{resize:none}
                 <option value="S2">S2 DM移行</option>
                 <option value="S3">S3 事業開示</option>
                 <option value="S4">S4 ヒアリング</option>
-                <option value="S5">S5 提案</option>
+                <option value="S5">S5 提案・クローズ</option>
               </select>
             </div>
             <div class="flex flex-col gap-1">
@@ -326,11 +388,24 @@ textarea.input-base{resize:none}
               <input id="t2f-dm" type="number" min="0" value="0" class="input-base text-xs py-2">
             </div>
           </div>
-          <div class="flex flex-col gap-1">
-            <label class="text-slate-500 font-medium text-xs">最終接触日</label>
-            <input id="t2f-lastdate" type="date" class="input-base text-xs py-2">
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="flex flex-col gap-1">
+              <label class="text-slate-500 font-medium">最終接触日</label>
+              <input id="t2f-lastdate" type="date" class="input-base text-xs py-2">
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-slate-500 font-medium flex items-center gap-1">相手の最新反応 <span class="tip text-slate-300" data-tip="テキスト返信がない場合でも「いいね」や「無反応」を選んでAIに伝えられます">?</span></label>
+              <select id="t2f-reaction" class="input-base text-xs py-2">
+                <option value="テキスト返信">💬 テキスト返信あり</option>
+                <option value="いいねのみ">👍 いいねのみ</option>
+                <option value="スタンプ・絵文字">😊 スタンプ・絵文字のみ</option>
+                <option value="リポスト">🔁 リポストのみ</option>
+                <option value="フォロー返し">➕ フォロー返しのみ</option>
+                <option value="無反応">🔕 無反応・既読スルー</option>
+              </select>
+            </div>
           </div>
-          <textarea id="t2f-conv" class="input-base h-28 cs text-xs" placeholder="会話ログ（リプ・DM全履歴）を貼り付け"></textarea>
+          <textarea id="t2f-conv" class="input-base h-28 cs text-xs" placeholder="会話ログ（リプ・DM全履歴）を貼り付け。いいねのみ・無反応の場合は空欄でも可。"></textarea>
           <button id="t2-copy-prompt" class="btn-sec w-full justify-center text-xs">
             <i class="fa-solid fa-copy text-indigo-500"></i>OS②プロンプトをコピー（外部AIで実行）
           </button>
@@ -378,9 +453,9 @@ textarea.input-base{resize:none}
         <div class="grid grid-cols-2 gap-2">
           <input id="t3-name" class="input-base text-xs py-2" placeholder="アカウント名">
           <select id="t3-track" class="input-base text-xs py-2">
-            <option value="FT">FT（ファストトラック）</option>
-            <option value="NT">NT（通常トラック）</option>
-            <option value="SKIP">SKIP</option>
+            <option value="FT">FT（ファストトラック・DM直行）</option>
+            <option value="NT">NT（通常トラック・リプ→DM）</option>
+            <option value="SKIP">SKIP（接触なし）</option>
           </select>
         </div>
         <input id="t3-hypo" class="input-base text-xs py-2" placeholder="事前仮説（OS①から転記）">
@@ -423,7 +498,7 @@ textarea.input-base{resize:none}
           </h3>
           <div class="flex gap-2">
             <button id="t3-copy-tsv" class="btn-sec text-xs py-1.5 px-3"><i class="fa-solid fa-copy"></i>TSV</button>
-            <button id="t3-clear" class="btn-danger text-xs py-1.5 px-3"><i class="fa-solid fa-trash"></i></button>
+            <button id="t3-clear" class="btn-danger text-xs py-1.5 px-3 admin-only"><i class="fa-solid fa-trash"></i></button>
           </div>
         </div>
         <div class="flex-1 overflow-y-auto cs" id="t3-list">
@@ -445,6 +520,12 @@ textarea.input-base{resize:none}
         <span id="t3d-result-badge" class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600"></span>
       </div>
       <button id="t3d-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+    </div>
+    <!-- 受注成約バナー（受注時のみ表示） -->
+    <div id="t3d-won-banner" class="won-banner hidden">
+      <p class="text-2xl mb-1">🎉</p>
+      <p class="font-bold text-emerald-800 text-base">成約おめでとうございます！</p>
+      <div id="t3d-won-type" class="mt-2 text-sm text-emerald-700"></div>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
       <div class="bg-slate-50 rounded-xl p-3.5 flex flex-col gap-2.5">
@@ -529,8 +610,8 @@ textarea.input-base{resize:none}
 // ──────────────────────────────────────────────
 // PROMPT TEMPLATES
 // ──────────────────────────────────────────────
-const OS1_PROMPT = `あなたは「OS① 接触スクリーニングOS Ver4.0」に基づく営業診断士です。
-以下の【診断対象の生データ】を分析してください。所要時間：60秒以内の判定を目標とします。
+const OS1_PROMPT = `あなたは接触スクリーニング診断士です。
+以下の【診断対象の生データ】と【対象投稿本文】を分析してください。
 
 余計な前置き・説明は一切含めず、【アカウント情報】から始まるテキストのみを出力してください。
 
@@ -539,29 +620,52 @@ const OS1_PROMPT = `あなたは「OS① 接触スクリーニングOS Ver4.0」
 URL：
 フォロワー数：
 業種：
-推定商品：
+推定商品・サービス：
 推定単価：
 
 【除外フィルター確認】
-同業者（Web/LP制作を自ら販売）：YES / NO
-営業拒否明記：YES / NO
-事業性なし（完全趣味）：YES / NO
-活動停止（3ヶ月以上）：YES / NO
-リスク案件（炎上・係争等）：YES / NO
+同業者（同種サービスを自ら販売している）：YES / NO
+営業拒否の明記：YES / NO
+事業性なし（完全趣味・個人利用）：YES / NO
+活動停止（3ヶ月以上更新なし）：YES / NO
+リスク案件（炎上・係争・詐欺疑い等）：YES / NO
 
-【SKIP判定】
-SKIP（または通過）
-SKIP理由：（通過の場合は「該当なし」）
+【接触判断】
+接触する（または SKIP）
+SKIP理由：（接触する場合は「該当なし」）
 
-【トラック判定】
-FT（または NT）
-判定理由：（課題シグナルを直近30投稿から引用、またはシグナルなしの旨）
+【優先度判定】
+優先（または 通常）
+─ 優先（FT）条件：「〜で悩んでいる」「〜に困っている」「〜がうまくいかない」など、相手が自分の課題を投稿で発信している場合のみ。自前で集客導線を完成させている・実績を発信している場合は「通常」。
+判定理由：（課題シグナルの投稿を直接引用。なければ「課題発信なし」）
 
 【事前仮説】
-（「この人は◯◯に困っている可能性。◯◯の話題なら反応するはず」の形式で1行必須）
+（「この人は◯◯という課題を持っている可能性。ただし◯◯（相手が既に持つもの）への提案は不要で、◯◯の角度から入るべき」の形式で1行）
+
+━━━━━━━━━━━━━━━━━━
+【接触文 生成ルール（必ず全項目を確認すること）】
+
+① 投稿アンカー（最重要）
+【対象投稿本文】の内容を必ず使う。投稿内の具体要素（数字・エピソード・主張・固有名詞）を1つ引用または言い換えて含めること。
+→ 【対象投稿本文】が空の場合：「【要求】対象投稿の本文が入力されていません。どの投稿に反応するかを入力してから再実行してください。」とだけ出力して生成を停止する。
+
+② 禁止語（含まれていたら即廃棄して再生成）
+・評価語：すごい／参考になりました／勉強になります／印象的でした／拝見しました／発信を見て
+・マーケ用語：導線／設計／訴求／教育型／ファネル／コンバージョン／〜が自然
+
+③ 視点ルール
+「観察者（ビジネス構造を分析している人）」ではなく「読者（内容に共感・反応した人）」として書く。
+反応するのはコンテンツの中身（ノウハウ・体験談・考え方）であり、売り方や集め方の構造ではない。
+
+④ 自分要素
+「自分はこうだった」「自分はこう思う」など、書き手自身の経験・状況・意見を必ず1つ入れる。
+
+⑤ 貼り替えテスト
+生成後に自問：「このコメントは別のアカウントにそのまま貼れるか？」→ 貼れたら廃棄して再生成。
+━━━━━━━━━━━━━━━━━━
 
 【初回接触案】
-（FTの場合はDM文2案80〜150文字・売り込み禁止。NTの場合はリプ文2案80文字以内・質問なし推奨）
+（優先の場合はDM文2案80〜150文字・売り込み禁止。通常の場合はリプ文2案80文字以内・質問なし推奨）
 案A（実行案）：
 案B（予備案）：
 
@@ -580,7 +684,8 @@ const OS2_PROMPT = `あなたは「OS② 行動判定OS Ver4.0」に基づく行
 【最終接触からの経過】◯日
 【赤信号】無 / 有（R番号と該当箇所の引用）
 （R1:返信短縮2連続 R2:質問消滅 R3:営業質問 R4:既読スルー48h R5:拒絶）
-【相手反応の質】質問あり / 受け答えのみ / 反応低下
+【相手の最新反応タイプ】テキスト返信 / いいねのみ / スタンプ・絵文字 / リポスト / フォロー返し / 無反応
+【相手反応の質】質問あり / 受け答えのみ / 反応低下 / テキストなし反応
 【事前仮説との照合】的中 / 部分的中 / 外れ / 不明
 【判定】前進 / 維持 / クローズ
 【次アクション】（1つだけ）
@@ -799,10 +904,22 @@ function urgencyClass(days) {
   return 'urgency-danger';
 }
 
+const TRACK_TIPS = {
+  FT: 'ファストトラック：課題シグナルあり→DM直行',
+  NT: '通常トラック：リプ交流を経てDMへ',
+  SKIP: '接触対象外（除外フィルター該当）'
+};
+
 function trackBadgeClass(track) {
   if (track === 'FT') return 'track-ft';
   if (track === 'NT') return 'track-nt';
   return 'track-skip';
+}
+
+function trackBadgeHtml(track) {
+  const cls = trackBadgeClass(track);
+  const tip = TRACK_TIPS[track] || track;
+  return `<span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${cls} tip" data-tip="${tip}">${track}</span>`;
 }
 
 function closeTypeBadgeClass(type) {
@@ -812,6 +929,14 @@ function closeTypeBadgeClass(type) {
   return 'close-type-l';
 }
 
+const STEP_LABELS = {
+  S1: 'S1 リプ交流（公開リプでファーストコンタクト）',
+  S2: 'S2 DM移行（DMへ切り替えて関係深化）',
+  S3: 'S3 事業開示（自分の仕事を自然に開示）',
+  S4: 'S4 ヒアリング（相手の課題・状況をヒアリング）',
+  S5: 'S5 提案・クローズ（具体的な提案を行う）'
+};
+
 function stepsBar(currentStep) {
   const steps = ['S1','S2','S3','S4','S5'];
   const ci = steps.indexOf(currentStep);
@@ -819,7 +944,7 @@ function stepsBar(currentStep) {
     let cls = 's-node todo';
     if (i < ci) cls = 's-node done';
     else if (i === ci) cls = 's-node current';
-    return `<div class="${cls}" title="${s}"></div>`;
+    return `<div class="${cls} tip" data-tip="${STEP_LABELS[s]}"></div>`;
   }).join('');
 }
 
@@ -862,10 +987,9 @@ function renderTargets() {
     return;
   }
   list.innerHTML = d.targets.slice().reverse().map(t => {
-    const tc = trackBadgeClass(t.track);
     const inPipeline = t.pipelineId ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-arrow-right mr-0.5"></i>パイプライン済</span>' : '';
     return `<div class="border-b border-slate-100 p-3 hover:bg-slate-50 cursor-pointer transition flex items-center gap-3 ${selectedTarget === t.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : ''}" data-id="${t.id}" id="t1r-${t.id}">
-      <span class="text-[11px] font-bold px-2 py-0.5 rounded-full ${tc}">${t.track}</span>
+      ${trackBadgeHtml(t.track)}
       <div class="flex-1 min-w-0">
         <p class="font-semibold text-sm text-slate-800 truncate">${t.accountName || '(名前なし)'}</p>
         <p class="text-[11px] text-slate-400 truncate">${t.hypothesis || ''}</p>
@@ -944,7 +1068,7 @@ function renderPipeline() {
     const warn7 = days >= 7 && totalDays < 30 ? '<span class="text-[10px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">7日超</span>' : '';
     const sel = selectedPipeline === p.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : '';
     return `<div class="pipeline-row ${sel}" data-id="${p.id}">
-      <span class="text-[11px] font-bold px-1.5 py-0.5 rounded ${trackBadgeClass(p.track)}">${p.track}</span>
+      ${trackBadgeHtml(p.track)}
       <div class="min-w-0">
         <p class="font-semibold text-sm text-slate-800 truncate">${p.accountName}</p>
         <div class="s-bar mt-1">${stepsBar(p.currentStep)}</div>
@@ -1024,6 +1148,42 @@ function showPipelineDetail(id) {
     jSec.classList.add('hidden');
   }
 
+  // History timeline
+  const histSec = document.getElementById('t2d-history-section');
+  const history = p.history || [];
+  if (history.length > 0) {
+    histSec.classList.remove('hidden');
+    document.getElementById('t2d-history-count').textContent = `${history.length}回記録`;
+    const reactionCls = r => {
+      if (!r) return 'reaction-badge reaction-text';
+      if (r.includes('いいね')) return 'reaction-badge reaction-like';
+      if (r.includes('スタンプ') || r.includes('絵文字')) return 'reaction-badge reaction-stamp';
+      if (r.includes('無反応') || r.includes('既読')) return 'reaction-badge reaction-none';
+      if (r.includes('リポスト')) return 'reaction-badge reaction-repost';
+      return 'reaction-badge reaction-text';
+    };
+    const judgmentColor = j => j === '前進' ? 'text-violet-700 font-bold' : j === 'クローズ' ? 'text-rose-600 font-bold' : 'text-amber-600 font-bold';
+    document.getElementById('t2d-history').innerHTML = history.slice().reverse().map((h, i) => `
+      <div class="history-line">
+        <div class="flex-shrink-0 flex flex-col items-center pt-0.5 gap-1">
+          <span class="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center bg-slate-100 text-slate-500">${history.length - i}</span>
+          ${i < history.length - 1 ? '<div class="w-0.5 flex-1 bg-slate-100 my-0.5"></div>' : ''}
+        </div>
+        <div class="flex-1 min-w-0 pb-1">
+          <div class="flex items-center gap-1.5 flex-wrap mb-1">
+            <span class="text-[11px] text-slate-400">${h.date}</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">${h.step}</span>
+            <span class="${reactionCls(h.reaction)}">${h.reaction || 'テキスト返信'}</span>
+            <span class="${judgmentColor(h.judgment)} text-xs">${h.judgment || '-'}</span>
+            ${h.redSignal && h.redSignal !== '無' ? '<span class="red-signal">赤信号</span>' : ''}
+          </div>
+          ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
+        </div>
+      </div>`).join('');
+  } else {
+    histSec.classList.add('hidden');
+  }
+
   // Pre-fill form
   document.getElementById('t2f-step').value = p.currentStep || 'S1';
   document.getElementById('t2f-rep').value = p.repCount || 0;
@@ -1072,6 +1232,22 @@ function showClosedDetail(id) {
   tb.className = 'text-xs font-bold px-2.5 py-1 rounded-full ' + closeTypeBadgeClass(c.closeType);
   document.getElementById('t3d-name').textContent = c.accountName;
   document.getElementById('t3d-result-badge').textContent = c.result || '';
+
+  // 受注成約バナー
+  const wonBanner = document.getElementById('t3d-won-banner');
+  const wonTypeEl = document.getElementById('t3d-won-type');
+  const WON_TYPE_DESC = {
+    'W-A': 'W-A：顕在課題直行型 — 相手がすでに課題を認識しており、直接提案が刺さった成約',
+    'W-B': 'W-B：関係構築相談化型 — 関係を深めた後、相手から相談が来て成約',
+    'W-C': 'W-C：相手起点型 — 相手からの声がけ・問い合わせで成約',
+    'W-D': 'W-D：その他パターンでの成約'
+  };
+  if (c.result === '受注') {
+    wonBanner.classList.remove('hidden');
+    wonTypeEl.textContent = WON_TYPE_DESC[c.closeType] || `成約パターン：${c.closeType || '未分類'}`;
+  } else {
+    wonBanner.classList.add('hidden');
+  }
   document.getElementById('t3d-track').textContent = c.track || '-';
   document.getElementById('t3d-hypo').textContent = c.hypothesis || '-';
   document.getElementById('t3d-hypo-result').textContent = c.hypothesisResult || '-';
@@ -1213,7 +1389,15 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
 // OS① copy prompt
 document.getElementById('t1-copy-prompt').addEventListener('click', () => {
   const input = document.getElementById('t1-input').value.trim();
-  copyText(OS1_PROMPT + (input || '（ここに診断対象のデータを貼り付けてください）'));
+  const post = document.getElementById('t1-post').value.trim();
+  const warnEl = document.getElementById('t1-post-warn');
+  if (!post) {
+    warnEl.style.display = 'block';
+  } else {
+    warnEl.style.display = 'none';
+  }
+  const postSection = `\n【対象投稿本文】：\n${post || '（未入力）'}\n`;
+  copyText(OS1_PROMPT + (input || '（ここにアカウントデータを貼り付けてください）') + postSection);
 });
 
 // OS① submit
@@ -1229,6 +1413,8 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   d.targets.push(rec);
   saveData(d);
   document.getElementById('t1-input').value = '';
+  document.getElementById('t1-post').value = '';
+  document.getElementById('t1-post-warn').style.display = 'none';
   document.getElementById('t1-result').value = '';
   renderTargets();
   updateBadges();
@@ -1276,7 +1462,7 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
     repCount: 0, dmCount: 0, lastContactDate: null,
     redSignal: null, responseQuality: null, hypothesisVerification: null,
     judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
-    analyses: [], isOpen: true, closedAt: null, closedCaseId: null
+    analyses: [], history: [], isOpen: true, closedAt: null, closedCaseId: null
   };
   d.pipeline.push(rec);
   t.pipelineId = rec.id;
@@ -1338,6 +1524,7 @@ document.getElementById('t2-copy-prompt').addEventListener('click', () => {
   const d = loadData();
   const p = d.pipeline.find(x => x.id === selectedPipeline);
   const conv = document.getElementById('t2f-conv').value.trim();
+  const reaction = document.getElementById('t2f-reaction').value;
   const info = `【OS①スクリーニング情報】
 アカウント名：${p.accountName}
 トラック：${p.track}
@@ -1348,9 +1535,10 @@ document.getElementById('t2-copy-prompt').addEventListener('click', () => {
 DM往復：${document.getElementById('t2f-dm').value}回
 最終接触日：${document.getElementById('t2f-lastdate').value || '未記録'}
 最終接触からの経過：${daysSince(document.getElementById('t2f-lastdate').value)}日
+相手の最新反応タイプ：${reaction}
 
 【会話ログ】
-${conv || '（ここに会話ログを貼り付けてください）'}`;
+${conv || (reaction !== 'テキスト返信' ? `（${reaction}のため会話ログなし。反応タイプから次アクションを判定してください）` : '（ここに会話ログを貼り付けてください）')}`;
   copyText(OS2_PROMPT + info);
 });
 
@@ -1377,6 +1565,17 @@ document.getElementById('t2-submit').addEventListener('click', () => {
   p.replyB = parsed.replyB;
   p.ngAction = parsed.ngAction;
   p.analyses.push({ date: new Date().toISOString(), aiInput: document.getElementById('t2f-conv').value, aiOutput: text, judgment: parsed.judgment });
+  if (!p.history) p.history = [];
+  p.history.push({
+    date: new Date().toISOString().slice(0,10),
+    reaction: document.getElementById('t2f-reaction').value,
+    step: document.getElementById('t2f-step').value,
+    repCount: parseInt(document.getElementById('t2f-rep').value) || 0,
+    dmCount: parseInt(document.getElementById('t2f-dm').value) || 0,
+    judgment: parsed.judgment,
+    nextAction: parsed.nextAction,
+    redSignal: parsed.redSignal
+  });
   saveData(d);
   renderAll();
   showPipelineDetail(selectedPipeline);
@@ -1411,7 +1610,10 @@ document.getElementById('t2-do-close').addEventListener('click', () => {
     document.getElementById('t2-empty-right').classList.remove('hidden');
     renderAll();
     document.querySelector('[data-tab="tab3"]').click();
-    showToast('クローズしました。OS③で検証を記録してください。', 3000);
+    const closeMsg = result === '受注'
+      ? '🎉 成約おめでとうございます！OS③で成約パターンを記録してください。'
+      : 'クローズしました。OS③で検証を記録してください。';
+    showToast(closeMsg, result === '受注' ? 4000 : 3000);
   });
 });
 
@@ -1552,10 +1754,95 @@ document.getElementById('modal').addEventListener('click', (e) => {
 });
 
 // ──────────────────────────────────────────────
+// AUTH
+// ──────────────────────────────────────────────
+const AUTH_KEY = 'os_auth_v1';
+
+function applyRole(role) {
+  const badge = document.getElementById('role-badge');
+  badge.classList.remove('hidden');
+  badge.className = role === 'admin' ? 'role-badge-admin' : 'role-badge-viewer';
+  badge.textContent = role === 'admin' ? '管理者' : '閲覧のみ';
+  document.getElementById('btn-logout').classList.remove('hidden');
+  if (role === 'viewer') {
+    document.body.classList.add('viewer-mode');
+  } else {
+    document.body.classList.remove('viewer-mode');
+  }
+}
+
+function initAuth() {
+  const stored = sessionStorage.getItem(AUTH_KEY);
+  if (stored) {
+    try {
+      const { role } = JSON.parse(stored);
+      if (role === 'admin' || role === 'viewer') {
+        document.getElementById('login-overlay').classList.add('hidden');
+        applyRole(role);
+        return;
+      }
+    } catch {}
+  }
+  // 環境変数不使用のローカル直開きはauth APIなしで通過
+  fetch('/api/auth', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password:'__check__'}) })
+    .catch(() => {
+      // APIが存在しない（ローカルのfile://など）→ 認証スキップ
+      document.getElementById('login-overlay').classList.add('hidden');
+      document.body.classList.remove('viewer-mode');
+    });
+}
+
+document.getElementById('login-btn').addEventListener('click', async () => {
+  const pw = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+  if (!pw) { errEl.textContent = 'パスワードを入力してください'; errEl.classList.remove('hidden'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 確認中…';
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw })
+    });
+    const data = await res.json();
+    if (data.success) {
+      sessionStorage.setItem(AUTH_KEY, JSON.stringify({ role: data.role }));
+      document.getElementById('login-overlay').classList.add('hidden');
+      applyRole(data.role);
+      errEl.classList.add('hidden');
+    } else {
+      errEl.textContent = data.error || 'パスワードが違います';
+      errEl.classList.remove('hidden');
+    }
+  } catch {
+    errEl.textContent = 'サーバーに接続できませんでした';
+    errEl.classList.remove('hidden');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="fa-solid fa-arrow-right-to-bracket"></i>ログイン';
+});
+
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('login-btn').click();
+});
+
+document.getElementById('btn-logout').addEventListener('click', () => {
+  sessionStorage.removeItem(AUTH_KEY);
+  document.body.classList.remove('viewer-mode');
+  document.getElementById('role-badge').classList.add('hidden');
+  document.getElementById('btn-logout').classList.add('hidden');
+  document.getElementById('login-password').value = '';
+  document.getElementById('login-error').classList.add('hidden');
+  document.getElementById('login-overlay').classList.remove('hidden');
+});
+
+// ──────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────
 renderAll();
 document.getElementById('t2f-lastdate').value = new Date().toISOString().slice(0,10);
+initAuth();
 </script>
 </body>
 </html>
