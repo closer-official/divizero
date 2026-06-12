@@ -1771,6 +1771,11 @@ function applyRole(role) {
   }
 }
 
+function skipAuth() {
+  document.getElementById('login-overlay').classList.add('hidden');
+  document.body.classList.remove('viewer-mode');
+}
+
 function initAuth() {
   const stored = sessionStorage.getItem(AUTH_KEY);
   if (stored) {
@@ -1783,13 +1788,19 @@ function initAuth() {
       }
     } catch {}
   }
-  // 環境変数不使用のローカル直開きはauth APIなしで通過
-  fetch('/api/auth', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password:'__check__'}) })
-    .catch(() => {
-      // APIが存在しない（ローカルのfile://など）→ 認証スキップ
-      document.getElementById('login-overlay').classList.add('hidden');
-      document.body.classList.remove('viewer-mode');
-    });
+  // APIが存在するか確認。404/ネットワークエラーはローカル環境→スキップ
+  fetch('/api/auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: '__probe__' })
+  })
+    .then(res => {
+      if (res.status === 404 || res.status === 405) {
+        skipAuth(); // APIが存在しない環境
+      }
+      // 200 or 401 はAPIが生きている → ログイン画面をそのまま表示
+    })
+    .catch(() => skipAuth()); // file:// やオフラインなど
 }
 
 document.getElementById('login-btn').addEventListener('click', async () => {
@@ -1805,7 +1816,12 @@ document.getElementById('login-btn').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: pw })
     });
-    const data = await res.json();
+    if (res.status === 404) {
+      // VercelにデプロイされていないかAPIが未設定 → スキップ
+      skipAuth(); return;
+    }
+    let data;
+    try { data = await res.json(); } catch { data = {}; }
     if (data.success) {
       sessionStorage.setItem(AUTH_KEY, JSON.stringify({ role: data.role }));
       document.getElementById('login-overlay').classList.add('hidden');
@@ -1816,7 +1832,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
       errEl.classList.remove('hidden');
     }
   } catch {
-    errEl.textContent = 'サーバーに接続できませんでした';
+    errEl.textContent = 'サーバーに接続できませんでした。Vercelへのデプロイ後に有効になります。';
     errEl.classList.remove('hidden');
   }
   btn.disabled = false;
