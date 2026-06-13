@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>営業OS ワークスペース Ver4</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 *{box-sizing:border-box}
@@ -165,6 +165,9 @@ body.viewer-mode .admin-only{display:none!important}
             <button id="mode-instagram" class="text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition">
               <i class="fa-brands fa-instagram mr-1"></i>Instagram
             </button>
+            <button id="mode-threads" class="text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition">
+              <i class="fa-brands fa-threads mr-1"></i>Threads
+            </button>
           </div>
         </div>
         <textarea id="t1-input" class="input-base h-24 cs" placeholder="プロフィール・直近ポスト・フォロー欄などを貼り付け"></textarea>
@@ -221,6 +224,7 @@ body.viewer-mode .admin-only{display:none!important}
           <h3 id="t1d-name" class="font-bold text-slate-900 text-base"></h3>
         </div>
         <a id="t1d-url" href="#" target="_blank" class="text-xs text-violet-600 hover:underline"></a>
+        <p id="t1d-caseid" class="text-[11px] text-indigo-400 font-mono mt-0.5 hidden"></p>
       </div>
       <button id="t1d-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
     </div>
@@ -625,7 +629,10 @@ const OS1_PROMPT = `あなたは接触スクリーニング診断士です。
 
 余計な前置き・説明は一切含めず、【アカウント情報】から始まるテキストのみを出力してください。
 
+案件IDは「Xハンドル（@を除く）の先頭5文字を英数小文字で＋ハイフン＋分析日YYYYMMDD」の形式で生成してください。（例：seita-20260613。同日同プレフィックスが重複する場合は-2を付ける）
+
 【アカウント情報】
+案件ID：
 アカウント名：
 URL：
 フォロワー数：
@@ -680,6 +687,166 @@ SKIP理由：（接触する場合は「該当なし」）
 案B（予備案）：
 
 【診断対象の生データ】：
+`;
+
+const OS1_THREADS_PROMPT = `あなたはThreads営業の接触スクリーニング診断士です。
+以下の【入力データ】を分析してください。
+
+余計な前置き・説明は一切含めず、【入力チェック】から始まるテキストのみを出力してください。
+
+━━━━━━━━━━━━━━━━━━
+【Threads特有の入力事情（運用者向け・必読）】
+
+Threadsは投稿本文をコピーすると**名前・bio・本文・投稿時刻は取れるが、フォロワー数・投稿数・フォロー比は欠落する**。
+これらの外形シグナルはX版・Instagram版で警戒度や運用タイプの推定に使っていたが、Threadsでは取得できない。
+
+→ **本OSは外形数値に依存しない判定設計とする。** フォロワー数等が欲しい場合のみスクショで補う（必須ではない）。
+→ 数値が無くても、bio＋投稿本文だけで除外判定・トラック判定・事前仮説まで完結できるよう設計してある。
+
+【入力フォーマット（標準）】
+
+①コピペ本文（名前・bio・接触対象の投稿本文。Threadsからコピーするとこの形で入る）
+②（任意）プロフィールスクショ（フォロワー数・フォロー比・外部リンクを見たい場合のみ）
+③（任意）接触対象投稿の補足（画像投稿の場合の画像内容メモ、スレッド連投の場合の後続投稿）
+
+※最低限①があれば動作する。②③は精度が上がるが必須ではない。
+━━━━━━━━━━━━━━━━━━
+
+【入力チェック】
+①コピペ本文（名前・bio・投稿本文）：有 / 無
+②プロフィールスクショ（外形数値）：有 / 無
+③接触対象投稿の中身：有 / 無
+
+→ ③が「無」かつ①の投稿本文も無い場合：「【要求】接触対象の投稿本文が入力されていません。スクリーニングのみ実行し、接触文生成は停止します。」と出力し、接触文以外のみ出力する。
+
+【案件ID発番】※OS②[LOG]行・OS③ログと突き合わせる主キー。最初に必ず発番する
+案件ID：TH-（業種略号）-（連番3桁）　例：TH-seitai-001
+─ チャネル略号「TH」固定。X版は「X」、Instagram版は「IG」とし、IDの頭で必ずチャネルが分かるようにする
+─ 業種略号は運用者の既存ルールに合わせる（整体=seitai 等）。表記ゆれ防止のため過去ログの略号を流用すること
+─ **このIDをOS②の[LOG]行・OS③の案件ログにそのまま転記する。IDが揺れると集計時にファネルが壊れる**
+
+【アカウント情報】
+アカウント名（表示名）：
+ユーザーネーム（@〜）：
+bio要約：
+フォロワー数：（スクショ有の場合のみ。無ければ「未取得」）
+業種：
+推定商品・サービス：
+推定単価：
+
+【外部導線の確認】※スクショ②がある場合のみ。無ければ「未取得」
+プロフィールリンク：無 / LINE系 / リンクツリー系 / 自社HP・LP / Instagram遷移 / その他
+→ HP/LPなしでLINEのみの場合、商品の穴として事前仮説に反映。
+→ **Instagramへのリンクがある場合、後述のDM導線判定で使う（重要）。**
+
+【除外フィルター確認】※Threadsはbio＋投稿本文だけで判定する
+同業者：HP制作・LP制作・Web制作・デザイン制作を「商品として」自ら販売している場合のみYES。
+※以下は同業者ではない（NO判定）：
+・マーケ／集客／SNS運用／セールスのノウハウを教えるコンサル・講師・教育者
+・自分のビジネスのために集客の仕組みを語っているだけの事業者
+これらはむしろ顧客候補または提携候補。
+判定：YES / NO
+営業拒否の明記：YES / NO
+事業性なし（完全趣味・個人利用）：YES / NO
+活動停止（最終投稿が3ヶ月以上前）：YES / NO　※Threadsは投稿時刻が本文と一緒にコピーされるので判定可能
+リスク案件（炎上・係争・詐欺疑い等）：YES / NO
+
+【接触判断】
+接触する（または SKIP）
+SKIP理由：（接触する場合は「該当なし」）
+※SKIPの場合も【案件ログ転記用】まで出力し、SKIPログとして残すこと（OS③の抜き打ち検証用）。
+
+【DM導線判定】※Threads最大の固有論点。これを必ず出力する
+ThreadsのDMは2025年7月から全員に独立受信箱が開放されている（Instagramの受信箱とは別物）。
+ただし相手がDM受信を制限している場合がある。その際の迂回路を判定する。
+
+判定：
+- DM開放（誰でも可）→ Threads内で直接DM可能
+- DM制限あり / 不明 → **プロフィールにInstagramリンクがあるか確認。あればInstagram側のDMが迂回路になる**
+- Threads DM制限 ＋ IGリンクなし → リプライ接触のみで進行（DM段階はリプの信頼構築後に再判定）
+
+導線メモ：（例「Threads DM不明だがIGリンク有→IG迂回路を予備に確保」）
+
+【優先度判定】
+優先（FT）/ 通常（NT）
+─ FT条件：「〜で悩んでいる」「集客がうまくいかない」「HP作りたい」「いい人いませんか」など、相手が課題を投稿本文で発信している場合のみ。
+─ 自前で集客を回せている・実績発信・教える側の発信のみは必ずNT。
+判定理由：（課題シグナルを直接引用。なければ「課題発信なし」）
+
+【提携候補フラグ】※Threadsは経営者・コンサル・プロデューサー層が紛れ込むため必ず判定
+有 / 無
+─ 「有」の条件：受講生・会員・相談者・クライアント企業という見込み客の束を持つ、コンサル・士業・社外役員・プロデューサー・コミュニティ運営者。
+─ 有の場合、売る相手ではなく「クライアント向け制作パートナー」「紹介元」の角度を事前仮説に含める。
+─ 注記：Threadsの「社外CxO」「戦略参謀」「キーマンのご縁を作る」系のbioはこのフラグの典型。
+
+【事前仮説】※本OSで最も重要な出力
+（「この人は◯◯という課題（穴）を持っている可能性。ただし◯◯（既に持つ強み）への提案は不要で、◯◯の角度から入るべき」の形式で1〜2行。投稿本文の具体的記述を根拠にすること。外形数値が無くても本文から逆算する）
+
+━━━━━━━━━━━━━━━━━━
+【Threads版 進行ラダー】※接触文はこの順序を前提に生成する
+
+S0：フォロー＋直近投稿に「いいね」1〜2件（接触当日〜前日）
+S1：投稿への**リプライ**（Threadsはリプライ文化が中心。X版に最も近い）
+S2：リプ往復の成立 → DM移行（DM開放時）またはIG迂回DM
+S3：DM会話の継続
+S4：事業開示
+S5：ヒアリング → 軽提案
+
+※Threadsはタイムラインがリプライ起点で伸びる設計のため、リプライでの関係構築がX以上に自然。
+※FT案件（課題発信あり）はS0実施後、その課題投稿へのリプライから即入りしてよい（24時間以内）。
+※DM段階で相手がThreads DMを閉じている場合、【DM導線判定】で確保したIG迂回路に切り替える。
+━━━━━━━━━━━━━━━━━━
+
+【接触文 生成ルール（全項目必須）】
+
+① 投稿アンカー（最重要）
+接触文は必ず【③接触対象投稿の補足】または①の投稿本文の具体要素（発言・エピソード・数字・固有名詞）を1つ引用または言い換えて含める。
+NG例：「投稿拝見しました」（中身を見ていなくても書ける）
+OK例：「◯◯と書かれていた部分」（読んだ人にしか書けない）
+
+② 禁止語（含まれていたら廃棄して再生成）
+・評価語：すごい／参考になりました／勉強になります／印象的でした／拝見しました／発信を見て
+・マーケ用語：導線／設計／訴求／教育型／ファネル／集客の仕組み／ブランディング／世界観（分析文脈での使用）
+・Threads特有のNG：「伸びてますね」「バズってますね」「アルゴリズム的に」
+
+③ 視点ルール
+「観察者（運用を分析している人）」ではなく「読者（中身に反応した一人）」として書く。
+
+④ 自分要素
+「自分はこうだった」「自分もこれで悩んだ」など、書き手自身の経験・状況・意見を必ず1つ入れる。
+
+⑤ 貼り替えテスト
+生成後に自問：「この文は同ジャンルの別アカウントにそのまま貼れるか？」→ 貼れたら廃棄して再生成。
+
+⑥ チャネル別の長さ・形式
+・リプライ：80文字以内。初回は質問なし推奨（質問は1個まで）。Threadsはリプが伸びやすいので自然な相槌＋自分要素で十分。
+・初回DM（FT直行時のみ）：100〜150文字。課題シグナル投稿への言及＋自分要素。売り込み・提案・課題指摘は禁止。
+━━━━━━━━━━━━━━━━━━
+
+【初回接触案】
+
+▼リプライ案（S1用）
+案A（実行案）：
+案B（予備案）：
+
+▼初回DM案（FT判定の場合のみ生成）
+案A：
+案B：
+
+【次にやること】
+（S0〜S1のどこから入るか、期限つきで1行。例：「今日中にフォロー＋いいね1件、明日S1のリプA実行」）
+
+【案件ログ転記用】※OS③へそのまま転記
+案件ID：（上で発番したもの）
+チャネル：Threads
+アカウント名／業種／フォロワー：（フォロワー未取得なら「未取得」）
+DM導線：（Threads開放 / IG迂回 / リプのみ）
+トラック判定：SKIP / FT / NT
+提携候補フラグ：有 / 無
+事前仮説：
+接触開始日：
+
+【①コピペ本文（名前・bio・投稿本文）】：
 `;
 
 const OS1_INSTAGRAM_PROMPT = `あなたはInstagram営業の接触スクリーニング診断士です。
@@ -811,6 +978,7 @@ OK例：「動画の中で◯◯と言っていた部分」（視聴者にしか
 
 【案件ログ転記用】
 チャネル：Instagram
+案件ID：（{ハンドル先頭5文字（英数小文字）}-{接触開始日YYYYMMDD}　例：seita-20260613）
 アカウント名／業種／フォロワー：
 トラック判定：
 提携候補フラグ：
@@ -844,7 +1012,10 @@ const OS2_PROMPT = `あなたは「OS② 行動判定OS Ver4.0」に基づく行
 　案B（安全案）：
 【今やってはいけないこと】（1つだけ）
 【ログ追記行】
-[LOG] 日付=YYYY-MM-DD | 案件=（案件名から転記） | ステップ=（現在ステップ） | 赤信号=（無/有+R番号） | リプ往復=◯回 | DM往復=◯回 | 判定=（前進/維持/クローズ）
+[LOG] 日付=YYYY-MM-DD | 案件ID=（OS①発番IDをそのまま転記） | ステップ=（現在ステップ） | 赤信号=（無/有+R番号） | リプ往復=◯回 | DM往復=◯回 | 判定=（前進/維持/クローズ）
+
+※判定=クローズのときのみ、上記[LOG]行に加えて以下の[CLOSE]行も出力する：
+[CLOSE] 日付=YYYY-MM-DD | 案件ID=（同上） | クローズ契機=（R5拒絶 / 7日ルール / 30日ルール / 提案後フェードアウト / その他） | タイプ確定=OS③で実施
 
 【入力情報】：
 `;
@@ -855,6 +1026,7 @@ const OS3_PROMPT = `あなたは「OS③ 案件検証OS Ver3.0」に基づく案
 余計な前置き・説明は一切含めず、【案件ログ】から始まるテキストのみを出力してください。
 
 【案件ログ】
+案件ID：（OS①発番ID。OS②の[LOG]/[CLOSE]行と突き合わせるキー）
 アカウント名 / 業種 / フォロワー：
 トラック判定：SKIP / FT / NT
 事前仮説：
@@ -1004,26 +1176,71 @@ function parseOS1Instagram(text) {
   };
 }
 
+function parseOS1Threads(text) {
+  const contactJudgeBlock = block(text, '接触判断');
+  const skipJudge = contactJudgeBlock.split('\n')[0].match(/SKIP/) ? 'SKIP' : '通過';
+  const trackBlock = block(text, '優先度判定');
+  const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
+  const contactBlock = block(text, '初回接触案');
+  const replyPart = contactBlock.includes('▼初回DM案') ? contactBlock.split('▼初回DM案')[0] : contactBlock;
+  const caM = replyPart.match(/案A[（(]実行案[）)]：([^\n]+)/);
+  const cbM = replyPart.match(/案B[（(]予備案[）)]：([^\n]+)/);
+  const dmPart = contactBlock.includes('▼初回DM案') ? contactBlock.split('▼初回DM案')[1] : '';
+  const daM = dmPart.match(/案A：([^\n]+)/);
+  const dbM = dmPart.match(/案B：([^\n]+)/);
+  const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム');
+  return {
+    caseId: field(text, '案件ID'),
+    accountName: field(text, 'アカウント名（表示名）') || field(text, 'アカウント名'),
+    url: username,
+    followers: field(text, 'フォロワー数'),
+    industry: field(text, '業種'),
+    estimatedProduct: field(text, '推定商品・サービス') || field(text, '推定商品'),
+    estimatedPrice: field(text, '推定単価'),
+    dmRoute: firstLineOf(text, 'DM導線判定'),
+    partnerFlag: firstLineOf(text, '提携候補フラグ'),
+    skipJudge,
+    skipReason: field(text, 'SKIP理由'),
+    track: skipJudge === 'SKIP' ? 'SKIP' : track,
+    trackReason: field(text, '判定理由'),
+    hypothesis: block(text, '事前仮説').split('\n')[0].trim(),
+    contactA: caM ? caM[1].trim() : '',
+    contactB: cbM ? cbM[1].trim() : '',
+    dmA: daM ? daM[1].trim() : '',
+    dmB: dbM ? dbM[1].trim() : '',
+    channel: 'threads'
+  };
+}
+
 // ──────────────────────────────────────────────
 // MODE MANAGEMENT
 // ──────────────────────────────────────────────
 let currentMode = localStorage.getItem('os_screening_mode') || 'twitter';
 
 function updateModeUI() {
-  const isIG = currentMode === 'instagram';
   const twBtn = document.getElementById('mode-twitter');
   const igBtn = document.getElementById('mode-instagram');
-  if (isIG) {
+  const thBtn = document.getElementById('mode-threads');
+  const inactiveClass = 'text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition';
+  twBtn.className = inactiveClass;
+  igBtn.className = inactiveClass;
+  thBtn.className = inactiveClass;
+  if (currentMode === 'instagram') {
     igBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-pink-600 shadow-sm transition';
-    twBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition';
     document.getElementById('t1-input-label').textContent = 'Instagramデータを貼り付け';
     document.getElementById('t1-post-label').textContent = '③接触対象投稿の中身（キャプション or リール視聴メモ）を貼り付け';
     document.getElementById('t1-input').placeholder = '①プロフィール全景（名前・bio・フォロワー・リンク・ハイライト）\n②投稿/リール一覧（サムネ・ビュー数）の内容を貼り付け';
     document.getElementById('t1-post').placeholder = '③キャプション全文 または リール視聴メモ（動画内で言っていたこと・映っていたことを2〜3行）';
     document.getElementById('t1-post-warn').innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i>③接触対象投稿の中身が未入力です。リールは実際に視聴してメモを入力してください。';
+  } else if (currentMode === 'threads') {
+    thBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-slate-800 shadow-sm transition';
+    document.getElementById('t1-input-label').textContent = 'Threadsデータを貼り付け';
+    document.getElementById('t1-post-label').textContent = '③接触対象投稿の補足（任意）';
+    document.getElementById('t1-input').placeholder = '①コピペ本文（名前・bio・接触対象の投稿本文）\nThreadsからコピーするとこの形で入ります';
+    document.getElementById('t1-post').placeholder = '③任意：投稿の補足（画像内容メモ、スレッド連投の後続投稿など）\n※最低限①があれば動作します';
+    document.getElementById('t1-post-warn').innerHTML = '';
   } else {
     twBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-violet-700 shadow-sm transition';
-    igBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition';
     document.getElementById('t1-input-label').textContent = 'Twitter/X データを貼り付け';
     document.getElementById('t1-post-label').textContent = '反応する対象の投稿本文を貼り付け';
     document.getElementById('t1-input').placeholder = 'プロフィール・直近ポスト・フォロー欄などを貼り付け';
@@ -1212,6 +1429,8 @@ function renderTargets() {
     const inPipeline = t.pipelineId ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-arrow-right mr-0.5"></i>パイプライン済</span>' : '';
     const channelBadge = t.channel === 'instagram'
       ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pink-100 text-pink-600"><i class="fa-brands fa-instagram mr-0.5"></i>IG</span>'
+      : t.channel === 'threads'
+      ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"><i class="fa-brands fa-threads mr-0.5"></i>TH</span>'
       : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"><i class="fa-brands fa-x-twitter mr-0.5"></i>X</span>';
     return `<div class="border-b border-slate-100 p-3 hover:bg-slate-50 cursor-pointer transition flex items-center gap-3 ${selectedTarget === t.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : ''}" data-id="${t.id}" id="t1r-${t.id}">
       ${trackBadgeHtml(t.track)}
@@ -1243,6 +1462,13 @@ function showTargetDetail(id) {
   const urlEl = document.getElementById('t1d-url');
   urlEl.textContent = t.url || '';
   urlEl.href = t.url || '#';
+  const caseIdEl = document.getElementById('t1d-caseid');
+  if (t.caseId) {
+    caseIdEl.textContent = '案件ID: ' + t.caseId;
+    caseIdEl.classList.remove('hidden');
+  } else {
+    caseIdEl.classList.add('hidden');
+  }
   document.getElementById('t1d-followers').textContent = t.followers || '-';
   document.getElementById('t1d-industry').textContent = t.industry || '-';
   document.getElementById('t1d-product').textContent = t.estimatedProduct || '-';
@@ -1625,6 +1851,9 @@ document.getElementById('t1-copy-prompt').addEventListener('click', () => {
   if (currentMode === 'instagram') {
     const postSection = `\n\n【③接触対象投稿の中身（キャプション or リール視聴メモ）】：\n${post || '（未入力）'}\n`;
     copyText(OS1_INSTAGRAM_PROMPT + (input || '（ここにプロフ＋投稿一覧データを貼り付けてください）') + postSection);
+  } else if (currentMode === 'threads') {
+    const postSection = post ? `\n\n【③接触対象投稿の補足】：\n${post}\n` : '';
+    copyText(OS1_THREADS_PROMPT + (input || '（ここに名前・bio・投稿本文をコピペしてください）') + postSection);
   } else {
     const postSection = `\n【対象投稿本文】：\n${post || '（未入力）'}\n`;
     copyText(OS1_PROMPT + (input || '（ここにアカウントデータを貼り付けてください）') + postSection);
@@ -1635,7 +1864,7 @@ document.getElementById('t1-copy-prompt').addEventListener('click', () => {
 document.getElementById('t1-submit').addEventListener('click', () => {
   const text = document.getElementById('t1-result').value.trim();
   if (!text) { showToast('AIの出力を貼り付けてください', 2000); return; }
-  const parsed = currentMode === 'instagram' ? parseOS1Instagram(text) : parseOS1(text);
+  const parsed = currentMode === 'instagram' ? parseOS1Instagram(text) : currentMode === 'threads' ? parseOS1Threads(text) : parseOS1(text);
   if (!parsed.accountName && !parsed.url) {
     showToast('解析できませんでした。AIの出力形式を確認してください', 3000); return;
   }
@@ -2094,6 +2323,11 @@ document.getElementById('mode-twitter').addEventListener('click', () => {
 document.getElementById('mode-instagram').addEventListener('click', () => {
   currentMode = 'instagram';
   localStorage.setItem('os_screening_mode', 'instagram');
+  updateModeUI();
+});
+document.getElementById('mode-threads').addEventListener('click', () => {
+  currentMode = 'threads';
+  localStorage.setItem('os_screening_mode', 'threads');
   updateModeUI();
 });
 
