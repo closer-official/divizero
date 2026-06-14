@@ -238,6 +238,24 @@ body.viewer-mode .admin-only{display:none!important}
       <p class="text-amber-700 font-bold mb-1"><i class="fa-solid fa-lightbulb mr-1"></i>事前仮説</p>
       <p id="t1d-hypothesis" class="text-amber-900 leading-relaxed"></p>
     </div>
+    <div id="t1d-threads-meta" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+      <div class="bg-slate-50 rounded-lg p-2.5">
+        <p class="text-slate-400 mb-0.5">DM導線</p>
+        <p class="font-bold text-slate-700" id="t1d-dm-route">-</p>
+      </div>
+      <div class="bg-slate-50 rounded-lg p-2.5">
+        <p class="text-slate-400 mb-0.5">提携候補</p>
+        <p class="font-bold text-slate-700" id="t1d-partner-flag">-</p>
+      </div>
+      <div class="bg-slate-50 rounded-lg p-2.5">
+        <p class="text-slate-400 mb-0.5">接触開始日</p>
+        <p class="font-bold text-slate-700" id="t1d-start-date">-</p>
+      </div>
+    </div>
+    <div id="t1d-next-action-row" class="hidden bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs">
+      <p class="text-indigo-700 font-bold mb-1"><i class="fa-solid fa-calendar-check mr-1"></i>次にやること</p>
+      <p id="t1d-next-action" class="text-indigo-900 leading-relaxed"></p>
+    </div>
     <div id="t1d-skip-reason" class="bg-slate-100 border border-slate-200 rounded-xl p-3 text-xs hidden">
       <p class="text-slate-500 font-bold mb-1"><i class="fa-solid fa-ban mr-1"></i>SKIP理由</p>
       <p id="t1d-skip-text" class="text-slate-700"></p>
@@ -1183,12 +1201,23 @@ function parseOS1Threads(text) {
   const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
   const replyPart = contactBlock.includes('▼初回DM案') ? contactBlock.split('▼初回DM案')[0] : contactBlock;
-  const caM = replyPart.match(/案A[（(]実行案[）)]：([^\n]+)/);
-  const cbM = replyPart.match(/案B[（(]予備案[）)]：([^\n]+)/);
+  // Allow text on same line OR next line after the label (AI sometimes breaks to next line)
+  const caM = replyPart.match(/案A[（(]実行案[）)]：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const cbM = replyPart.match(/案B[（(]予備案[）)]：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const dmPart = contactBlock.includes('▼初回DM案') ? contactBlock.split('▼初回DM案')[1] : '';
-  const daM = dmPart.match(/案A：([^\n]+)/);
-  const dbM = dmPart.match(/案B：([^\n]+)/);
+  const daM = dmPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const dbM = dmPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム');
+  // DM導線: look in 【案件ログ転記用】 first, then fall back to 【DM導線判定】 block judgment line
+  const dmRouteLog = field(text, 'DM導線');
+  const dmRouteFull = block(text, 'DM導線判定');
+  const dmRouteJudge = dmRouteFull.match(/判定[：:]\s*([^\n]+)/);
+  const dmRouteMemo = dmRouteFull.match(/導線メモ[：:]\s*([^\n]+)/);
+  const dmRoute = dmRouteLog || (dmRouteJudge ? dmRouteJudge[1].trim() : '') || (dmRouteMemo ? dmRouteMemo[1].trim() : '');
+  // 提携候補フラグ: first line of block (should be 有/無), fall back to field search
+  const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
+  // 次にやること
+  const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   return {
     caseId: field(text, '案件ID'),
     accountName: field(text, 'アカウント名（表示名）') || field(text, 'アカウント名'),
@@ -1197,8 +1226,9 @@ function parseOS1Threads(text) {
     industry: field(text, '業種'),
     estimatedProduct: field(text, '推定商品・サービス') || field(text, '推定商品'),
     estimatedPrice: field(text, '推定単価'),
-    dmRoute: firstLineOf(text, 'DM導線判定'),
-    partnerFlag: firstLineOf(text, '提携候補フラグ'),
+    dmRoute,
+    partnerFlag,
+    nextAction,
     skipJudge,
     skipReason: field(text, 'SKIP理由'),
     track: skipJudge === 'SKIP' ? 'SKIP' : track,
@@ -1474,6 +1504,27 @@ function showTargetDetail(id) {
   document.getElementById('t1d-product').textContent = t.estimatedProduct || '-';
   document.getElementById('t1d-price').textContent = t.estimatedPrice || '-';
   document.getElementById('t1d-hypothesis').textContent = t.hypothesis || '-';
+  // Threads-specific meta row
+  const threadsMeta = document.getElementById('t1d-threads-meta');
+  const nextActionRow = document.getElementById('t1d-next-action-row');
+  if (t.channel === 'threads') {
+    threadsMeta.classList.remove('hidden');
+    document.getElementById('t1d-dm-route').textContent = t.dmRoute || '-';
+    const pf = t.partnerFlag || '-';
+    const pfEl = document.getElementById('t1d-partner-flag');
+    pfEl.textContent = pf;
+    pfEl.className = 'font-bold ' + (pf === '有' ? 'text-rose-600' : 'text-slate-700');
+    document.getElementById('t1d-start-date').textContent = t.startDate || new Date(t.createdAt).toISOString().slice(0,10);
+    if (t.nextAction) {
+      nextActionRow.classList.remove('hidden');
+      document.getElementById('t1d-next-action').textContent = t.nextAction;
+    } else {
+      nextActionRow.classList.add('hidden');
+    }
+  } else {
+    threadsMeta.classList.add('hidden');
+    nextActionRow.classList.add('hidden');
+  }
   const skipSec = document.getElementById('t1d-skip-reason');
   const contactSec = document.getElementById('t1d-contact-section');
   if (t.track === 'SKIP') {
