@@ -284,7 +284,7 @@ body.viewer-mode .admin-only{display:none!important}
     </div>
     <div class="flex gap-2 pt-1 border-t border-slate-100">
       <button id="t1d-to-pipeline" class="btn-primary text-xs"><i class="fa-solid fa-arrow-right"></i>案件管理へ移動</button>
-      <button id="t1d-delete" class="btn-danger text-xs admin-only"><i class="fa-solid fa-trash"></i>削除</button>
+      <button id="t1d-delete" class="btn-danger text-xs"><i class="fa-solid fa-trash"></i>削除</button>
     </div>
   </div>
 </div>
@@ -327,11 +327,36 @@ body.viewer-mode .admin-only{display:none!important}
         <!-- Case header -->
         <div class="card p-4 flex flex-col gap-3">
           <div class="flex items-start justify-between">
-            <div class="flex items-center gap-2">
-              <span id="t2d-track" class="text-xs font-bold px-2.5 py-1 rounded-full track-ft"></span>
-              <h3 id="t2d-name" class="font-bold text-slate-900"></h3>
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <span id="t2d-track" class="text-xs font-bold px-2.5 py-1 rounded-full track-ft shrink-0"></span>
+              <h3 id="t2d-name" class="font-bold text-slate-900 truncate"></h3>
             </div>
-            <button id="t2d-close-panel" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark"></i></button>
+            <div class="flex items-center gap-1 shrink-0 ml-2">
+              <button id="t2d-edit-btn" class="text-xs px-2 py-1 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition"><i class="fa-solid fa-pen-to-square"></i></button>
+              <button id="t2d-delete" class="text-xs px-2 py-1 bg-rose-50 text-rose-500 rounded border border-rose-200 hover:bg-rose-100 transition"><i class="fa-solid fa-trash"></i></button>
+              <button id="t2d-close-panel" class="text-slate-400 hover:text-slate-600 p-1 ml-1"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+          </div>
+          <!-- Inline edit form (hidden by default) -->
+          <div id="t2d-edit-form" class="hidden flex flex-col gap-2 bg-slate-50 rounded-xl p-3 text-xs border border-slate-200">
+            <p class="font-bold text-slate-600 text-[11px]"><i class="fa-solid fa-pen-to-square mr-1"></i>案件情報を編集</p>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="flex flex-col gap-1"><label class="text-slate-400">アカウント名</label><input id="t2d-edit-name" class="input-base text-xs py-1.5"></div>
+              <div class="flex flex-col gap-1"><label class="text-slate-400">URL / @ユーザー名</label><input id="t2d-edit-url" class="input-base text-xs py-1.5"></div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <div class="flex flex-col gap-1"><label class="text-slate-400">トラック</label>
+                <select id="t2d-edit-track" class="input-base text-xs py-1.5">
+                  <option value="FT">FT（ファストトラック）</option>
+                  <option value="NT">NT（通常トラック）</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1"><label class="text-slate-400">接触開始日</label><input id="t2d-edit-start" type="date" class="input-base text-xs py-1.5"></div>
+            </div>
+            <div class="flex gap-2 justify-end">
+              <button id="t2d-edit-cancel" class="btn-sec text-xs py-1.5 px-3">キャンセル</button>
+              <button id="t2d-edit-save" class="btn-primary text-xs py-1.5 px-3"><i class="fa-solid fa-check"></i>保存</button>
+            </div>
           </div>
           <!-- Step progress -->
           <div class="flex items-center gap-1.5">
@@ -546,12 +571,15 @@ body.viewer-mode .admin-only{display:none!important}
   <!-- 案件詳細 -->
   <div id="t3-detail" class="card p-5 hidden flex flex-col gap-4">
     <div class="flex items-start justify-between border-b border-slate-100 pb-3">
-      <div class="flex items-center gap-2">
-        <span id="t3d-type-badge" class="text-xs font-bold px-2.5 py-1 rounded-full close-type-l"></span>
-        <h3 id="t3d-name" class="font-bold text-slate-900 text-base"></h3>
-        <span id="t3d-result-badge" class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600"></span>
+      <div class="flex items-center gap-2 flex-1 min-w-0">
+        <span id="t3d-type-badge" class="text-xs font-bold px-2.5 py-1 rounded-full close-type-l shrink-0"></span>
+        <h3 id="t3d-name" class="font-bold text-slate-900 text-base truncate"></h3>
+        <span id="t3d-result-badge" class="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0"></span>
       </div>
-      <button id="t3d-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+      <div class="flex items-center gap-1 shrink-0 ml-2">
+        <button id="t3d-delete" class="text-xs px-2 py-1 bg-rose-50 text-rose-500 rounded border border-rose-200 hover:bg-rose-100 transition"><i class="fa-solid fa-trash"></i> 削除</button>
+        <button id="t3d-close" class="text-slate-400 hover:text-slate-600 p-1 ml-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
     </div>
     <!-- 受注成約バナー（受注時のみ表示） -->
     <div id="t3d-won-banner" class="won-banner hidden">
@@ -1621,8 +1649,12 @@ function showPipelineDetail(id) {
   const det = document.getElementById('t2-detail');
   det.classList.remove('hidden');
 
+  // Reset edit form state
+  document.getElementById('t2d-edit-form').classList.add('hidden');
+  document.getElementById('t2d-edit-btn').classList.remove('hidden');
+
   document.getElementById('t2d-track').textContent = p.track;
-  document.getElementById('t2d-track').className = 'text-xs font-bold px-2.5 py-1 rounded-full ' + trackBadgeClass(p.track);
+  document.getElementById('t2d-track').className = 'text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ' + trackBadgeClass(p.track);
   document.getElementById('t2d-name').textContent = p.accountName;
   document.getElementById('t2d-steps').innerHTML = stepsBar(p.currentStep);
   const days = daysSince(p.startDate);
@@ -2030,6 +2062,64 @@ document.getElementById('t2d-close-panel').addEventListener('click', () => {
   selectedPipeline = null; renderPipeline();
 });
 
+// OS② delete pipeline record
+document.getElementById('t2d-delete').addEventListener('click', () => {
+  if (!selectedPipeline) return;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  confirm('削除確認', `「${p?.accountName || 'この案件'}」をパイプラインから削除しますか？\n（OS①のリストには影響しません）`, () => {
+    const d2 = loadData();
+    // Unlink from target if exists
+    if (p?.targetId) {
+      const t = d2.targets.find(x => x.id === p.targetId);
+      if (t) t.pipelineId = null;
+    }
+    d2.pipeline = d2.pipeline.filter(x => x.id !== selectedPipeline);
+    saveData(d2);
+    selectedPipeline = null;
+    document.getElementById('t2-detail').classList.add('hidden');
+    document.getElementById('t2-empty-right').classList.remove('hidden');
+    renderAll();
+    showToast('削除しました');
+  });
+});
+
+// OS② inline edit toggle
+document.getElementById('t2d-edit-btn').addEventListener('click', () => {
+  if (!selectedPipeline) return;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  document.getElementById('t2d-edit-name').value = p.accountName || '';
+  document.getElementById('t2d-edit-url').value = p.url || '';
+  document.getElementById('t2d-edit-track').value = p.track || 'NT';
+  document.getElementById('t2d-edit-start').value = p.startDate || '';
+  document.getElementById('t2d-edit-form').classList.remove('hidden');
+  document.getElementById('t2d-edit-btn').classList.add('hidden');
+});
+
+document.getElementById('t2d-edit-cancel').addEventListener('click', () => {
+  document.getElementById('t2d-edit-form').classList.add('hidden');
+  document.getElementById('t2d-edit-btn').classList.remove('hidden');
+});
+
+document.getElementById('t2d-edit-save').addEventListener('click', () => {
+  if (!selectedPipeline) return;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  p.accountName = document.getElementById('t2d-edit-name').value.trim() || p.accountName;
+  p.url = document.getElementById('t2d-edit-url').value.trim();
+  p.track = document.getElementById('t2d-edit-track').value;
+  p.startDate = document.getElementById('t2d-edit-start').value || p.startDate;
+  saveData(d);
+  document.getElementById('t2d-edit-form').classList.add('hidden');
+  document.getElementById('t2d-edit-btn').classList.remove('hidden');
+  renderPipeline();
+  showPipelineDetail(selectedPipeline);
+  showToast('更新しました');
+});
+
 // OS② copy prompt
 document.getElementById('t2-copy-prompt').addEventListener('click', () => {
   if (!selectedPipeline) { showToast('案件を選択してください'); return; }
@@ -2207,6 +2297,22 @@ document.getElementById('t3-submit').addEventListener('click', () => {
 document.getElementById('t3d-close').addEventListener('click', () => {
   document.getElementById('t3-detail').classList.add('hidden');
   selectedClosed = null; renderClosed();
+});
+
+// OS③ delete closed record
+document.getElementById('t3d-delete').addEventListener('click', () => {
+  if (!selectedClosed) return;
+  const d = loadData();
+  const c = d.closed.find(x => x.id === selectedClosed);
+  confirm('削除確認', `「${c?.accountName || 'この案件'}」をクローズ済みリストから削除しますか？`, () => {
+    const d2 = loadData();
+    d2.closed = d2.closed.filter(x => x.id !== selectedClosed);
+    saveData(d2);
+    selectedClosed = null;
+    document.getElementById('t3-detail').classList.add('hidden');
+    renderAll();
+    showToast('削除しました');
+  });
 });
 
 // OS③ TSV
