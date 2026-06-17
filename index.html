@@ -6,6 +6,8 @@
 <title>営業OS ワークスペース Ver4</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 *{box-sizing:border-box}
@@ -68,6 +70,8 @@ body.viewer-mode .admin-only{display:none!important}
 /* ログインオーバーレイ */
 #login-overlay{position:fixed;inset:0;z-index:9999;background:linear-gradient(135deg,#4c1d95,#1e293b);display:flex;align-items:center;justify-content:center;padding:16px}
 #login-overlay.hidden{display:none!important}
+#fb-loading{position:fixed;inset:0;z-index:9998;background:linear-gradient(135deg,#4c1d95,#1e293b);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:white;transition:opacity .3s}
+#fb-loading.hidden{display:none!important}
 .login-card{background:#fff;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;box-shadow:0 25px 50px rgba(0,0,0,.4)}
 .role-badge-admin{background:#ede9fe;color:#5b21b6;border:1px solid #ddd6fe;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
 .role-badge-viewer{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
@@ -76,6 +80,18 @@ body.viewer-mode .admin-only{display:none!important}
 </style>
 </head>
 <body class="min-h-screen flex flex-col">
+
+<!-- FIREBASE LOADING OVERLAY -->
+<div id="fb-loading">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:14px">
+    <div class="bg-violet-600 text-white rounded-2xl w-14 h-14 flex items-center justify-center shadow-lg shadow-violet-900">
+      <i class="fa-solid fa-cloud text-xl"></i>
+    </div>
+    <p class="text-base font-semibold text-white">データを同期中...</p>
+    <p class="text-xs text-violet-300">Firestore に接続しています</p>
+    <i class="fa-solid fa-spinner fa-spin text-violet-300 text-lg mt-1"></i>
+  </div>
+</div>
 
 <!-- LOGIN OVERLAY -->
 <div id="login-overlay">
@@ -1166,18 +1182,83 @@ const OS3_PROMPT = `あなたは「OS③ 案件検証OS Ver3.0」に基づく案
 `;
 
 // ──────────────────────────────────────────────
-// DATA LAYER
+// DATA LAYER  (Firestore リアルタイム同期)
+// Firebaseコンフィグは /api/config から取得 → Vercel環境変数で管理
 // ──────────────────────────────────────────────
-const STORAGE_KEY = 'os_workspace_v4';
+const EMPTY_DATA = () => ({ targets: [], pipeline: [], closed: [] });
+let _cache = null;
+let _fbReady = false;
+let _docRef = null;
 
 function loadData() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { targets: [], pipeline: [], closed: [] };
-  } catch { return { targets: [], pipeline: [], closed: [] }; }
+  return _cache ? JSON.parse(JSON.stringify(_cache)) : EMPTY_DATA();
 }
 
 function saveData(d) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+  _cache = d;
+  if (_docRef) {
+    _docRef.set({ payload: JSON.stringify(d) }).catch(e => {
+      console.error('Firestore write error', e);
+      showToast('同期エラー: データの保存に失敗しました');
+    });
+  }
+}
+
+function _attachSnapshot() {
+  _docRef.onSnapshot(snap => {
+    if (snap.exists) {
+      try { _cache = JSON.parse(snap.data().payload); } catch { _cache = EMPTY_DATA(); }
+    } else {
+      _cache = EMPTY_DATA();
+      _docRef.set({ payload: JSON.stringify(_cache) });
+    }
+    _fbReady = true;
+    document.getElementById('fb-loading').classList.add('hidden');
+    renderAll();
+  }, err => {
+    console.error('Firestore error', err);
+    _cache = EMPTY_DATA();
+    _fbReady = true;
+    document.getElementById('fb-loading').classList.add('hidden');
+    renderAll();
+    showToast('Firestore接続エラー: ' + err.message, 4000);
+  });
+}
+
+async function startFirestoreListener() {
+  // /api/config から Firebase コンフィグを取得
+  let config;
+  try {
+    const res = await fetch('/api/config');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    config = await res.json();
+    if (config.error) throw new Error(config.error);
+  } catch (e) {
+    // file:// 環境や API 未設定時はデータなしで起動
+    console.warn('Firebase config unavailable:', e.message);
+    _cache = EMPTY_DATA();
+    _fbReady = true;
+    document.getElementById('fb-loading').classList.add('hidden');
+    renderAll();
+    showToast('Firebase未設定: Vercel環境変数を確認してください', 4000);
+    return;
+  }
+
+  // Firebase 初期化
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(config);
+    _docRef = firebase.firestore().collection('workspace').doc('main');
+  } catch (e) {
+    console.error('Firebase init error', e);
+    _cache = EMPTY_DATA();
+    _fbReady = true;
+    document.getElementById('fb-loading').classList.add('hidden');
+    renderAll();
+    showToast('Firebase初期化エラー: ' + e.message, 4000);
+    return;
+  }
+
+  _attachSnapshot();
 }
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -2605,9 +2686,9 @@ document.getElementById('mode-threads').addEventListener('click', () => {
 // INIT
 // ──────────────────────────────────────────────
 updateModeUI();
-renderAll();
 document.getElementById('t2f-lastdate').value = new Date().toISOString().slice(0,10);
 initAuth();
+startFirestoreListener();
 </script>
 </body>
 </html>
