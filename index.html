@@ -170,15 +170,22 @@ body.viewer-mode .admin-only{display:none!important}
             </button>
           </div>
         </div>
-        <textarea id="t1-input" class="input-base h-24 cs" placeholder="プロフィール・直近ポスト・フォロー欄などを貼り付け"></textarea>
-        <div class="flex flex-col gap-1.5">
-          <label class="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-            <span class="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.5 rounded font-bold">必須</span>
-            <span id="t1-post-label">反応する対象の投稿本文を貼り付け</span>
-          </label>
-          <textarea id="t1-post" class="input-base h-20 cs" placeholder="接触文で言及する具体的な投稿の本文をここに貼り付けてください。&#10;例：「昨日1件成約しました。でも正直、どこで決まったかよくわからない…」"></textarea>
-          <p class="post-required-warn" id="t1-post-warn"><i class="fa-solid fa-triangle-exclamation mr-1"></i>対象投稿が未入力です。AIに「どの投稿に反応するか」を伝えないと、アカウント全体への漠然したコメントになりAI感が出ます。</p>
+        <!-- IG/Threads用 案内バナー（Twitter以外で表示） -->
+        <div id="ig-th-info" class="hidden rounded-xl p-3 text-xs" id="ig-th-info"></div>
+
+        <!-- Twitter用 データ入力エリア（Twitterモードのみ表示） -->
+        <div id="t1-data-section" class="flex flex-col gap-3">
+          <textarea id="t1-input" class="input-base h-24 cs" placeholder="プロフィール・直近ポスト・フォロー欄などを貼り付け"></textarea>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+              <span class="bg-rose-100 text-rose-700 text-[10px] px-1.5 py-0.5 rounded font-bold">必須</span>
+              <span id="t1-post-label">反応する対象の投稿本文を貼り付け</span>
+            </label>
+            <textarea id="t1-post" class="input-base h-20 cs" placeholder="接触文で言及する具体的な投稿の本文をここに貼り付けてください。&#10;例：「昨日1件成約しました。でも正直、どこで決まったかよくわからない…」"></textarea>
+            <p class="post-required-warn" id="t1-post-warn"><i class="fa-solid fa-triangle-exclamation mr-1"></i>対象投稿が未入力です。AIに「どの投稿に反応するか」を伝えないと、アカウント全体への漠然したコメントになりAI感が出ます。</p>
+          </div>
         </div>
+
         <button id="t1-copy-prompt" class="btn-sec w-full justify-center">
           <i class="fa-solid fa-copy text-violet-500"></i>分析プロンプトをコピー（外部AIで実行）
         </button>
@@ -327,9 +334,12 @@ body.viewer-mode .admin-only{display:none!important}
         <!-- Case header -->
         <div class="card p-4 flex flex-col gap-3">
           <div class="flex items-start justify-between">
-            <div class="flex items-center gap-2 flex-1 min-w-0">
-              <span id="t2d-track" class="text-xs font-bold px-2.5 py-1 rounded-full track-ft shrink-0"></span>
-              <h3 id="t2d-name" class="font-bold text-slate-900 truncate"></h3>
+            <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span id="t2d-track" class="text-xs font-bold px-2.5 py-1 rounded-full track-ft shrink-0"></span>
+                <h3 id="t2d-name" class="font-bold text-slate-900 truncate"></h3>
+              </div>
+              <a id="t2d-url" href="#" target="_blank" class="text-xs text-violet-600 hover:underline ml-1 hidden"></a>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
               <button id="t2d-edit-btn" class="text-xs px-2 py-1 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -670,6 +680,44 @@ body.viewer-mode .admin-only{display:none!important}
 // ──────────────────────────────────────────────
 // PROMPT TEMPLATES
 // ──────────────────────────────────────────────
+
+const IG_READ_PROMPT = `以下に添付するInstagramのスクリーンショット画像を読み取り、確認できる情報をすべて抽出してください。
+
+◾ 添付するスクショ（持っているものを添付）
+　① プロフィール画面（アカウント名・bio・フォロワー数・フォロー数・投稿数・リンク・ハイライトが見えるもの）
+　② 投稿/リール一覧（サムネイル・ビュー数・いいね数が見えるもの）
+　③ 接触対象とする投稿のキャプション詳細画面（またはリールであれば実際に視聴した内容メモを③欄に追記）
+
+◾ 出力形式（以下のフォーマットそのままで日本語出力。確認できない項目は「不明」と記載）
+
+■ プロフィール情報
+アカウント名（表示名）：
+ユーザーネーム（@〜）：
+フォロワー数：
+投稿数：
+フォロー数：
+bio（全文・改行ごとに正確に）：
+プロフィールリンク：（無 / LINE / リンクツリー / HP・LP / その他　＋ URLがあれば記載）
+ハイライトのタイトル（表示されているもの全て、カンマ区切りで）：
+
+■ 投稿一覧（確認できる投稿を上から順に）
+（各投稿について「種別（投稿/リール）｜サムネ・内容メモ｜ビュー数またはいいね数」の形式で記載）
+1.
+2.
+3.
+4.
+5.
+6.
+
+■ 接触対象投稿の詳細（③がある場合のみ）
+種別（投稿 / リール）：
+キャプション全文：
+ビュー数 / いいね数：
+コメント数：
+
+※ OCRで読み取れる文字はすべて正確に転写してください。推測・補完は行わず、読み取れない部分は「（読取不可）」と記載。
+`;
+
 const OS1_PROMPT = `あなたは接触スクリーニング診断士です。
 以下の【診断対象の生データ】と【対象投稿本文】を分析してください。
 
@@ -1135,6 +1183,19 @@ function saveData(d) {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
+// @username or partial → proper profile URL based on channel
+function buildProfileUrl(raw, channel) {
+  if (!raw) return '';
+  const s = raw.trim();
+  if (s.startsWith('http://') || s.startsWith('https://')) return s;
+  const handle = s.startsWith('@') ? s.slice(1) : s;
+  if (!handle) return '';
+  if (channel === 'instagram') return `https://www.instagram.com/${handle}/`;
+  if (channel === 'threads')   return `https://www.threads.net/@${handle}`;
+  // twitter / default
+  return `https://x.com/${handle}`;
+}
+
 // ──────────────────────────────────────────────
 // PARSE HELPERS
 // ──────────────────────────────────────────────
@@ -1283,22 +1344,38 @@ function updateModeUI() {
   twBtn.className = inactiveClass;
   igBtn.className = inactiveClass;
   thBtn.className = inactiveClass;
+
+  const dataSection = document.getElementById('t1-data-section');
+  const infoBox = document.getElementById('ig-th-info');
+  const copyBtn = document.getElementById('t1-copy-prompt');
+
   if (currentMode === 'instagram') {
     igBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-pink-600 shadow-sm transition';
-    document.getElementById('t1-input-label').textContent = 'Instagramデータを貼り付け';
-    document.getElementById('t1-post-label').textContent = '③接触対象投稿の中身（キャプション or リール視聴メモ）を貼り付け';
-    document.getElementById('t1-input').placeholder = '①プロフィール全景（名前・bio・フォロワー・リンク・ハイライト）\n②投稿/リール一覧（サムネ・ビュー数）の内容を貼り付け';
-    document.getElementById('t1-post').placeholder = '③キャプション全文 または リール視聴メモ（動画内で言っていたこと・映っていたことを2〜3行）';
-    document.getElementById('t1-post-warn').innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1"></i>③接触対象投稿の中身が未入力です。リールは実際に視聴してメモを入力してください。';
+    dataSection.classList.add('hidden');
+    infoBox.classList.remove('hidden');
+    infoBox.className = 'rounded-xl p-3 text-xs bg-pink-50 border border-pink-200 text-pink-900';
+    infoBox.innerHTML = `<p class="font-bold mb-1"><i class="fa-brands fa-instagram mr-1"></i>プロンプトをコピーして、スクショと一緒にAI（Gemini等）に貼り付けてください</p>
+      <p class="text-pink-700">①スクショ読み取り＋スクリーニングを一発で実行します。AIにプロンプトとスクショ画像を同時に渡すだけで分析・接触案まで出力されます。</p>`;
+    copyBtn.className = 'w-full flex items-center justify-center gap-2 font-bold text-sm py-3 rounded-xl border transition cursor-pointer';
+    copyBtn.style.cssText = 'background:#fff0f6;border-color:#f9a8d4;color:#be185d';
+    copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>分析プロンプトをコピー（外部AIにスクショと一緒に貼り付け）';
   } else if (currentMode === 'threads') {
     thBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-slate-800 shadow-sm transition';
-    document.getElementById('t1-input-label').textContent = 'Threadsデータを貼り付け';
-    document.getElementById('t1-post-label').textContent = '③接触対象投稿の補足（任意）';
-    document.getElementById('t1-input').placeholder = '①コピペ本文（名前・bio・接触対象の投稿本文）\nThreadsからコピーするとこの形で入ります';
-    document.getElementById('t1-post').placeholder = '③任意：投稿の補足（画像内容メモ、スレッド連投の後続投稿など）\n※最低限①があれば動作します';
-    document.getElementById('t1-post-warn').innerHTML = '';
+    dataSection.classList.add('hidden');
+    infoBox.classList.remove('hidden');
+    infoBox.className = 'rounded-xl p-3 text-xs bg-slate-50 border border-slate-200 text-slate-700';
+    infoBox.innerHTML = `<p class="font-bold mb-1"><i class="fa-brands fa-threads mr-1"></i>プロンプトをコピーして、スクショと一緒にAI（Gemini等）に貼り付けてください</p>
+      <p class="text-slate-500">スクショからプロフィール・投稿・bio情報を読み取り、スクリーニング・接触案まで一発で出力されます。</p>`;
+    copyBtn.className = 'w-full flex items-center justify-center gap-2 font-bold text-sm py-3 rounded-xl border transition cursor-pointer';
+    copyBtn.style.cssText = 'background:#f8fafc;border-color:#cbd5e1;color:#334155';
+    copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>分析プロンプトをコピー（外部AIにスクショと一緒に貼り付け）';
   } else {
     twBtn.className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-violet-700 shadow-sm transition';
+    dataSection.classList.remove('hidden');
+    infoBox.classList.add('hidden');
+    copyBtn.className = 'btn-sec w-full justify-center';
+    copyBtn.style.cssText = '';
+    copyBtn.innerHTML = '<i class="fa-solid fa-copy text-violet-500"></i>分析プロンプトをコピー（外部AIで実行）';
     document.getElementById('t1-input-label').textContent = 'Twitter/X データを貼り付け';
     document.getElementById('t1-post-label').textContent = '反応する対象の投稿本文を貼り付け';
     document.getElementById('t1-input').placeholder = 'プロフィール・直近ポスト・フォロー欄などを貼り付け';
@@ -1519,7 +1596,7 @@ function showTargetDetail(id) {
   document.getElementById('t1d-name').textContent = t.accountName || '(名前なし)';
   const urlEl = document.getElementById('t1d-url');
   urlEl.textContent = t.url || '';
-  urlEl.href = t.url || '#';
+  urlEl.href = buildProfileUrl(t.url, t.channel) || '#';
   const caseIdEl = document.getElementById('t1d-caseid');
   if (t.caseId) {
     caseIdEl.textContent = '案件ID: ' + t.caseId;
@@ -1656,6 +1733,15 @@ function showPipelineDetail(id) {
   document.getElementById('t2d-track').textContent = p.track;
   document.getElementById('t2d-track').className = 'text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ' + trackBadgeClass(p.track);
   document.getElementById('t2d-name').textContent = p.accountName;
+  const t2dUrl = document.getElementById('t2d-url');
+  const builtUrl = buildProfileUrl(p.url, p.channel);
+  if (builtUrl) {
+    t2dUrl.href = builtUrl;
+    t2dUrl.textContent = p.url || builtUrl;
+    t2dUrl.classList.remove('hidden');
+  } else {
+    t2dUrl.classList.add('hidden');
+  }
   document.getElementById('t2d-steps').innerHTML = stepsBar(p.currentStep);
   const days = daysSince(p.startDate);
   document.getElementById('t2d-days').textContent = days;
@@ -1923,21 +2009,21 @@ document.querySelectorAll('.nav-tab').forEach(btn => {
 
 // OS① copy prompt
 document.getElementById('t1-copy-prompt').addEventListener('click', () => {
-  const input = document.getElementById('t1-input').value.trim();
-  const post = document.getElementById('t1-post').value.trim();
-  const warnEl = document.getElementById('t1-post-warn');
-  if (!post) {
-    warnEl.style.display = 'block';
-  } else {
-    warnEl.style.display = 'none';
-  }
   if (currentMode === 'instagram') {
-    const postSection = `\n\n【③接触対象投稿の中身（キャプション or リール視聴メモ）】：\n${post || '（未入力）'}\n`;
-    copyText(OS1_INSTAGRAM_PROMPT + (input || '（ここにプロフ＋投稿一覧データを貼り付けてください）') + postSection);
+    // スクショをAIに直接渡すのでプロンプトのみコピー（ユーザーデータ付加なし）
+    copyText(OS1_INSTAGRAM_PROMPT);
+    showToast('プロンプトをコピーしました。AIにこのプロンプトとスクショを一緒に貼り付けてください');
   } else if (currentMode === 'threads') {
-    const postSection = post ? `\n\n【③接触対象投稿の補足】：\n${post}\n` : '';
-    copyText(OS1_THREADS_PROMPT + (input || '（ここに名前・bio・投稿本文をコピペしてください）') + postSection);
+    // 同上
+    copyText(OS1_THREADS_PROMPT);
+    showToast('プロンプトをコピーしました。AIにこのプロンプトとスクショを一緒に貼り付けてください');
   } else {
+    // Twitter: ユーザーが貼り付けたテキストデータをプロンプトに付加
+    const input = document.getElementById('t1-input').value.trim();
+    const post = document.getElementById('t1-post').value.trim();
+    const warnEl = document.getElementById('t1-post-warn');
+    if (!post) warnEl.style.display = 'block';
+    else warnEl.style.display = 'none';
     const postSection = `\n【対象投稿本文】：\n${post || '（未入力）'}\n`;
     copyText(OS1_PROMPT + (input || '（ここにアカウントデータを貼り付けてください）') + postSection);
   }
@@ -1998,7 +2084,7 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
   const t = d.targets.find(x => x.id === selectedTarget);
   if (!t || t.pipelineId) return;
   const rec = {
-    id: uid(), targetId: t.id, accountName: t.accountName, url: t.url,
+    id: uid(), targetId: t.id, accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
     track: t.track, hypothesis: t.hypothesis,
     startDate: new Date().toISOString().slice(0,10),
     currentStep: t.track === 'FT' ? 'S2' : 'S1',
