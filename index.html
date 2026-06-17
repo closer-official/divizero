@@ -107,14 +107,14 @@ body.viewer-mode .admin-only{display:none!important}
       </div>
       <div>
         <h1 class="font-bold text-slate-900 text-base leading-tight">営業OS ワークスペース</h1>
-        <p class="text-[11px] text-slate-400">Ver4 — スクリーニング → パイプライン → 案件検証</p>
+        <p class="text-[11px] text-slate-400 hidden sm:block">Ver4 — スクリーニング → パイプライン → 案件検証</p>
       </div>
     </div>
     <div class="flex items-center gap-2">
       <span id="role-badge" class="hidden"></span>
-      <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i>サンプル</button>
-      <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i>エクスポート</button>
-      <button id="btn-logout" class="btn-sec text-xs hidden"><i class="fa-solid fa-arrow-right-from-bracket text-slate-400"></i>ログアウト</button>
+      <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i><span class="hidden sm:inline">サンプル</span></button>
+      <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">エクスポート</span></button>
+      <button id="btn-logout" class="btn-sec text-xs hidden"><i class="fa-solid fa-arrow-right-from-bracket text-slate-400"></i><span class="hidden sm:inline">ログアウト</span></button>
     </div>
   </div>
 </header>
@@ -209,7 +209,6 @@ body.viewer-mode .admin-only{display:none!important}
           </h3>
           <div class="flex gap-2">
             <button id="t1-copy-tsv" class="btn-sec text-xs py-1.5 px-3"><i class="fa-solid fa-copy"></i>TSV</button>
-            <button id="t1-clear" class="btn-danger text-xs py-1.5 px-3 admin-only"><i class="fa-solid fa-trash"></i></button>
           </div>
         </div>
         <div class="flex-1 overflow-y-auto cs" id="t1-list">
@@ -246,7 +245,7 @@ body.viewer-mode .admin-only{display:none!important}
       <p id="t1d-hypothesis" class="text-amber-900 leading-relaxed"></p>
     </div>
     <div id="t1d-threads-meta" class="hidden grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-      <div class="bg-slate-50 rounded-lg p-2.5">
+      <div class="bg-slate-50 rounded-lg p-2.5" id="t1d-dm-route-cell">
         <p class="text-slate-400 mb-0.5">DM導線</p>
         <p class="font-bold text-slate-700" id="t1d-dm-route">-</p>
       </div>
@@ -1248,20 +1247,26 @@ function parseOS1Instagram(text) {
   const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
   const commentPart = contactBlock.split(/▼ストーリー返信案/)[0];
-  const caM = commentPart.match(/案A[（(]実行案[）)]：([^\n]+)/);
-  const cbM = commentPart.match(/案B[（(]予備案[）)]：([^\n]+)/);
+  // Support text on same line OR next line after label
+  const caM = commentPart.match(/案A[（(]実行案[）)]：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const cbM = commentPart.match(/案B[（(]予備案[）)]：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const storyPart = contactBlock.includes('▼ストーリー返信案')
     ? contactBlock.split('▼ストーリー返信案')[1].split(/▼初回DM案/)[0]
     : '';
-  const saM = storyPart.match(/案A：([^\n]+)/);
-  const sbM = storyPart.match(/案B：([^\n]+)/);
+  const saM = storyPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const sbM = storyPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const dmPart = contactBlock.includes('▼初回DM案')
     ? contactBlock.split('▼初回DM案')[1]
     : '';
-  const daM = dmPart.match(/案A：([^\n]+)/);
-  const dbM = dmPart.match(/案B：([^\n]+)/);
-  const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム');
+  const daM = dmPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const dbM = dmPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム') || field(text, 'ユーザーネーム：');
+  const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
+  const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
+  const startDate = field(text, '接触開始日');
+  const caseId = field(text, '案件ID');
   return {
+    caseId,
     accountName: field(text, 'アカウント名'),
     url: username,
     followers: field(text, 'フォロワー数'),
@@ -1272,7 +1277,10 @@ function parseOS1Instagram(text) {
     skipReason: field(text, 'SKIP理由'),
     track: skipJudge === 'SKIP' ? 'SKIP' : track,
     trackReason: field(text, '判定理由'),
-    hypothesis: block(text, '事前仮説').split('\n')[0].trim(),
+    partnerFlag,
+    nextAction,
+    startDate,
+    hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
     contactA: caM ? caM[1].trim() : '',
     contactB: cbM ? cbM[1].trim() : '',
     storyA: saM ? saM[1].trim() : '',
@@ -1567,7 +1575,7 @@ function renderTargets() {
       : t.channel === 'threads'
       ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"><i class="fa-brands fa-threads mr-0.5"></i>TH</span>'
       : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"><i class="fa-brands fa-x-twitter mr-0.5"></i>X</span>';
-    return `<div class="border-b border-slate-100 p-3 hover:bg-slate-50 cursor-pointer transition flex items-center gap-3 ${selectedTarget === t.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : ''}" data-id="${t.id}" id="t1r-${t.id}">
+    return `<div class="border-b border-slate-100 py-3 pl-3 pr-1 hover:bg-slate-50 cursor-pointer transition flex items-center gap-2 ${selectedTarget === t.id ? 'bg-violet-50 border-l-2 border-l-violet-500' : ''}" data-id="${t.id}" id="t1r-${t.id}">
       ${trackBadgeHtml(t.track)}
       ${channelBadge}
       <div class="flex-1 min-w-0">
@@ -1575,11 +1583,32 @@ function renderTargets() {
         <p class="text-[11px] text-slate-400 truncate">${t.hypothesis || ''}</p>
       </div>
       ${inPipeline}
-      <span class="text-[10px] text-slate-300">${new Date(t.createdAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</span>
+      <span class="text-[10px] text-slate-300 shrink-0">${new Date(t.createdAt).toLocaleDateString('ja-JP',{month:'numeric',day:'numeric'})}</span>
+      <button class="t1-del-btn shrink-0 w-11 h-11 flex items-center justify-center rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50 active:bg-rose-100 transition" data-del-id="${t.id}" aria-label="削除"><i class="fa-solid fa-trash text-xs pointer-events-none"></i></button>
     </div>`;
   }).join('');
   list.querySelectorAll('[data-id]').forEach(el => {
     el.addEventListener('click', () => showTargetDetail(el.dataset.id));
+  });
+  list.querySelectorAll('.t1-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.delId;
+      const d2 = loadData();
+      const t2 = d2.targets.find(x => x.id === id);
+      confirm('削除確認', `「${t2?.accountName || 'この記録'}」を削除しますか？`, () => {
+        const d3 = loadData();
+        d3.targets = d3.targets.filter(x => x.id !== id);
+        saveData(d3);
+        if (selectedTarget === id) {
+          selectedTarget = null;
+          document.getElementById('t1-detail').classList.add('hidden');
+        }
+        renderTargets();
+        updateBadges();
+        showToast('削除しました');
+      });
+    });
   });
 }
 
@@ -1609,12 +1638,19 @@ function showTargetDetail(id) {
   document.getElementById('t1d-product').textContent = t.estimatedProduct || '-';
   document.getElementById('t1d-price').textContent = t.estimatedPrice || '-';
   document.getElementById('t1d-hypothesis').textContent = t.hypothesis || '-';
-  // Threads-specific meta row
+  // Threads / Instagram meta row
   const threadsMeta = document.getElementById('t1d-threads-meta');
   const nextActionRow = document.getElementById('t1d-next-action-row');
-  if (t.channel === 'threads') {
+  if (t.channel === 'threads' || t.channel === 'instagram') {
     threadsMeta.classList.remove('hidden');
-    document.getElementById('t1d-dm-route').textContent = t.dmRoute || '-';
+    // DM導線はThreadsのみ表示
+    const dmRouteCell = document.getElementById('t1d-dm-route-cell');
+    if (t.channel === 'threads') {
+      dmRouteCell.classList.remove('hidden');
+      document.getElementById('t1d-dm-route').textContent = t.dmRoute || '-';
+    } else {
+      dmRouteCell.classList.add('hidden');
+    }
     const pf = t.partnerFlag || '-';
     const pfEl = document.getElementById('t1d-partner-flag');
     pfEl.textContent = pf;
@@ -2127,15 +2163,6 @@ document.getElementById('t1-copy-tsv').addEventListener('click', () => {
   d.targets.forEach(t => rows.push([new Date(t.createdAt).toLocaleDateString('ja-JP'), t.accountName, t.url, t.followers, t.industry, t.track, t.hypothesis].join('\t')));
   copyText(rows.join('\n'));
   showToast('TSVをコピーしました');
-});
-
-// OS① clear
-document.getElementById('t1-clear').addEventListener('click', () => {
-  confirm('全削除', 'スクリーニングリストをすべて削除しますか？', () => {
-    const d = loadData(); d.targets = []; saveData(d);
-    selectedTarget = null; document.getElementById('t1-detail').classList.add('hidden');
-    renderAll(); showToast('削除しました');
-  });
 });
 
 // OS② filter
