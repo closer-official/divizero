@@ -2125,7 +2125,7 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
     startDate: new Date().toISOString().slice(0,10),
     currentStep: t.track === 'FT' ? 'S2' : 'S1',
     stepHistory: [{ step: t.track === 'FT' ? 'S2' : 'S1', date: new Date().toISOString().slice(0,10) }],
-    repCount: 0, dmCount: 0, lastContactDate: null,
+    repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
     redSignal: null, responseQuality: null, hypothesisVerification: null,
     judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
     analyses: [], history: [], isOpen: true, closedAt: null, closedCaseId: null
