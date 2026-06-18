@@ -29,11 +29,7 @@ The entire application lives in a single file: `index.html`. It contains:
 
 ### Prompt templates
 
-Three large string constants defined at the top of the `<script>` block:
-
-- `DIAGNOSTIC_PROMPT_TEMPLATE` — contact feasibility analysis (OS①)
-- `PROMOTION_PROMPT_TEMPLATE` — escalation/reply analysis
-- `FAILURE_PROMPT_TEMPLATE` — lost-sale deep analysis (失注分析OS)
+All prompt text lives in `/prompts/*.md` files. `index.html` fetches them at startup via `loadPrompts()` and assigns them to module-level `let` variables (`OS1_PROMPT`, `OS2_PROMPT`, etc.). **Never embed prompt text directly in `index.html`** — edit the corresponding `.md` file instead.
 
 The app appends user-pasted raw data to these templates, then the user copies the combined prompt to run in an external AI. The AI must return output in a specific plain-text structured format (e.g. `【基本情報】`, `【営業分析】`, etc.) which the app then parses with regex.
 
@@ -50,15 +46,20 @@ The app appends user-pasted raw data to these templates, then the user copies th
 
 All data (target list, send logs, per-target Gemini URLs, AI output history) is stored in browser `localStorage`. There is no backend.
 
-## OS definition files
+## Prompt files (`/prompts/`)
 
-The `.md` files in the repo root are the "OS" (operating system / ruleset) documents that define how the AI should behave when given the diagnostic prompts:
+Each file contains the exact text sent to the external AI. To update a prompt, edit only the corresponding file — `index.html` loads them at runtime via `fetch()`.
 
-- `OS① 接触可否・初回接触戦略分析OS Ver3.md` — contact feasibility OS (latest)
-- `OS② 接触戦略・リアルタイム営業分析OS Ver3.md` — realtime sales analysis OS
-- `失注分析OS v2.md` — lost-sale analysis OS
+| File | Variable | Role |
+|---|---|---|
+| `OS1_X_接触スクリーニング_latest.md` | `OS1_PROMPT` | X（Twitter）接触スクリーニングOS① |
+| `OS1_Threads_接触スクリーニング_latest.md` | `OS1_THREADS_PROMPT` | Threads 接触スクリーニングOS① |
+| `OS1_Instagram_接触スクリーニング_latest.md` | `OS1_INSTAGRAM_PROMPT` | Instagram 接触スクリーニングOS① |
+| `OS2_行動判定_latest.md` | `OS2_PROMPT` | 行動判定OS②（接触昇格判定タブ） |
+| `OS3_案件検証_latest.md` | `OS3_PROMPT` | 案件検証OS③（失注分析タブ） |
+| `IG読み取りOCR_latest.md` | `IG_READ_PROMPT` | Instagram スクショOCR読み取り補助 |
 
-When updating prompt templates in `index.html`, sync the logic with the corresponding OS `.md` file.
+**Naming convention**: `{OS番号}_{対象SNS}_{役割}_latest.md` — `latest` は常に現行版であることを示す。バージョンを上げるときはファイル名を変えず内容を上書きする。
 
 ## Key files
 
