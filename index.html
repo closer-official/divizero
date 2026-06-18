@@ -129,7 +129,10 @@ body.viewer-mode .admin-only{display:none!important}
     <div class="flex items-center gap-2">
       <span id="role-badge" class="hidden"></span>
       <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i><span class="hidden sm:inline">サンプル</span></button>
-      <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">エクスポート</span></button>
+      <div class="flex items-center gap-1">
+        <select id="export-batch" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400 hidden" style="max-width:110px"></select>
+        <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">DL</span></button>
+      </div>
       <button id="btn-logout" class="btn-sec text-xs hidden"><i class="fa-solid fa-arrow-right-from-bracket text-slate-400"></i><span class="hidden sm:inline">ログアウト</span></button>
     </div>
   </div>
@@ -232,6 +235,11 @@ body.viewer-mode .admin-only{display:none!important}
             <i class="fa-solid fa-filter text-4xl"></i>
             <p class="text-sm font-medium">記録がありません</p>
           </div>
+        </div>
+        <div id="t1-pagination" class="hidden items-center justify-between px-4 py-2.5 border-t border-slate-100 text-xs">
+          <button id="t1-page-prev" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition"><i class="fa-solid fa-chevron-left text-[10px]"></i> 前</button>
+          <span id="t1-page-info" class="text-slate-500 font-medium"></span>
+          <button id="t1-page-next" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">次 <i class="fa-solid fa-chevron-right text-[10px]"></i></button>
         </div>
       </div>
     </section>
@@ -410,6 +418,7 @@ body.viewer-mode .admin-only{display:none!important}
                 <h3 id="t2d-name" class="font-bold text-slate-900 truncate"></h3>
               </div>
               <a id="t2d-url" href="#" target="_blank" class="text-xs text-violet-600 hover:underline ml-1 hidden"></a>
+              <span id="t2d-caseid" class="hidden text-[10px] text-slate-400 ml-1 font-mono"></span>
             </div>
             <div class="flex items-center gap-1 shrink-0 ml-2">
               <button id="t2d-edit-btn" class="text-xs px-2 py-1 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition"><i class="fa-solid fa-pen-to-square"></i></button>
@@ -541,6 +550,10 @@ body.viewer-mode .admin-only{display:none!important}
                 <option value="無反応">🔕 無反応・既読スルー</option>
               </select>
             </div>
+          </div>
+          <div class="flex flex-col gap-1 text-xs">
+            <label class="text-slate-500 font-medium flex items-center gap-1">対象投稿URL / メモ <span class="tip text-slate-300" data-tip="どの投稿・ストーリーに対してリアクション・コメントしたかを記録します">?</span></label>
+            <input id="t2f-target-post" class="input-base text-xs py-2" placeholder="https://x.com/... または「3/20の課題ツイートへのリプ」など">
           </div>
           <textarea id="t2f-conv" class="input-base h-28 cs text-xs" placeholder="会話ログ（リプ・DM全履歴）を貼り付け。いいねのみ・無反応の場合は空欄でも可。"></textarea>
           <button id="t2-copy-prompt" class="btn-sec w-full justify-center text-xs">
@@ -847,8 +860,17 @@ DM開放：開放（誰でもDM可）/ 限定（相互フォローのみ等）/ 
 接触する（または SKIP）
 SKIP理由：（接触する場合は「該当なし」）
 
+【UTAGEユーザー確認】※UTトラック（UT）の判定に使用
+① UTAGEユーザーか：YES / NO
+　（根拠：utage-system.comドメイン / 「UTAGE使ってます」系の発信で判定）
+② こちらへの認知シグナルあり（いいね・コメント・フォロー等）：YES / NO
+　（内容：具体的に記載）
+→ ①②ともYES かつ 除外フィルター非該当 → UTトラック確定。FT・NTより優先。リプ往復不要、24時間以内にDM直行。
+→ それ以外 → 次の【優先度判定】でFT/NTを判定する。
+
 【優先度判定】
-優先（FT）/ 通常（NT）
+優先（FT）/ 通常（NT）/ UTAGEユーザー（UT）
+─ UT確定の場合：「UT」と出力。FT/NTの基準は適用しない。
 ─ FT条件：「〜で悩んでいる」「集客しんどい」「HP作りたいけど手が回らない」「いい制作の人いないかな」など、相手が自分の課題を"今"ツイートしている場合のみ。
 ─ Xは課題・本音の発信が最も濃いプラットフォーム。困りごとツイートはFTの宝庫。ただし鮮度が命で、その課題ツイートが古いと熱が冷めている。
 ─ 自前で集客を回せている・実績発信のみ・教える側の発信のみの場合は必ずNT。
@@ -927,6 +949,21 @@ OK例：そのツイートで言っていた具体的な一点に乗る（その
 案A：
 案B：
 
+▼UTトラック DM案（UT判定の場合のみ生成）
+【DM①：説明・訴求】（80〜150文字）
+条件：UTAGEを使っていることに具体的に触れる／「月額が買い切りに変わる」コスト訴求を含める／LINE連携・Stripe決済・メール連携が追加費用なしで含まれることに触れる
+案A：
+案B：
+
+【DM②：アポ誘導】（50文字以内・DM①への反応が感情プラスになった後に送る）
+条件：「実際に作ったものを見てもらえますか」のみ。説明追加禁止。
+案：
+
+感情プラスの判断基準（DM①の返信を受けてからDM②を送るタイミングの目安）
+・興味反応：「それ気になります」「詳しく聞きたい」
+・コスト反応：「確かに毎月払うの…」「買い切りいいですね」
+・質問が来た：内容問わず質問＝前進サイン
+
 【次にやること】
 （S0〜S1のどこから入るか、期限つきで1行。鮮度・DM開放状態を踏まえること。例：「今日中にフォロー＋いいね2件、本日中にS1のリプ案Aを実行（対象ツイートは半日前で鮮度OK）」）
 
@@ -935,7 +972,14 @@ OK例：そのツイートで言っていた具体的な一点に乗る（その
 案件ID：（{ハンドル先頭5文字（英数小文字）}-{接触開始日YYYYMMDD}　例：seita-20260613）
 アカウント名／業種／フォロワー：
 DM開放：開放 / 限定 / 不明
-トラック判定：
+トラック判定：SKIP / FT / NT / UT
+UTAGEユーザーフラグ：UT該当 / 非該当
+活用度判定：使いこなし / 迷い中 / 不明（UTトラックのみ）
+利用プラン推定：ライト / スタンダード / 不明（UTトラックのみ）
+認知シグナル内容：（UTトラックのみ・具体的に記載）
+感情プラス確認：有 / 無（UTトラックのみ）
+アポ取得日：（UTトラックのみ）
+デモ提示日：（UTトラックのみ）
 提携候補フラグ：
 事前仮説：
 接触開始日：
@@ -1794,6 +1838,7 @@ function stepsBar(currentStep) {
 let selectedTarget = null;
 let selectedPipeline = null;
 let selectedClosed = null;
+let t1Page = 0; // 0-indexed, fixed page assignment (registration order)
 
 function renderAll() {
   renderTargets();
@@ -1801,6 +1846,7 @@ function renderAll() {
   renderClosed();
   renderDashboard();
   updateBadges();
+  buildExportBatchOptions();
 }
 
 function updateBadges() {
@@ -1822,11 +1868,21 @@ function updateBadges() {
 function renderTargets() {
   const d = loadData();
   const list = document.getElementById('t1-list');
+  const pagination = document.getElementById('t1-pagination');
   if (d.targets.length === 0) {
     list.innerHTML = '<div class="flex flex-col items-center justify-center h-64 text-slate-300 gap-2"><i class="fa-solid fa-filter text-4xl"></i><p class="text-sm font-medium">記録がありません</p></div>';
+    pagination.classList.add('hidden');
     return;
   }
-  list.innerHTML = d.targets.slice().reverse().map(t => {
+  const total = d.targets.length;
+  const totalPages = Math.ceil(total / 10);
+  if (t1Page >= totalPages) t1Page = totalPages - 1;
+  if (t1Page < 0) t1Page = 0;
+  const startIdx = t1Page * 10;
+  const endIdx = Math.min(startIdx + 10, total);
+  // Within page: show newest first (reverse the fixed-assigned slice)
+  const pageTargets = d.targets.slice(startIdx, endIdx).slice().reverse();
+  list.innerHTML = pageTargets.map(t => {
     const inPipeline = t.pipelineId ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-arrow-right mr-0.5"></i>パイプライン済</span>' : '';
     const channelBadge = t.channel === 'instagram'
       ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pink-100 text-pink-600"><i class="fa-brands fa-instagram mr-0.5"></i>IG</span>'
@@ -1868,6 +1924,16 @@ function renderTargets() {
       });
     });
   });
+  // Pagination controls
+  if (totalPages > 1) {
+    pagination.classList.remove('hidden');
+    pagination.style.display = 'flex';
+    document.getElementById('t1-page-info').textContent = `${startIdx + 1}〜${endIdx}人目 / 全${total}人`;
+    document.getElementById('t1-page-prev').disabled = t1Page === 0;
+    document.getElementById('t1-page-next').disabled = t1Page === totalPages - 1;
+  } else {
+    pagination.classList.add('hidden');
+  }
 }
 
 function showTargetDetail(id) {
@@ -2081,6 +2147,8 @@ function showPipelineDetail(id) {
   document.getElementById('t2d-track').textContent = p.track;
   document.getElementById('t2d-track').className = 'text-xs font-bold px-2.5 py-1 rounded-full shrink-0 ' + trackBadgeClass(p.track);
   document.getElementById('t2d-name').textContent = p.accountName;
+  const caseIdEl2 = document.getElementById('t2d-caseid');
+  if (p.caseId) { caseIdEl2.textContent = '案件ID: ' + p.caseId; caseIdEl2.classList.remove('hidden'); } else { caseIdEl2.classList.add('hidden'); }
   const t2dUrl = document.getElementById('t2d-url');
   const builtUrl = buildProfileUrl(p.url, p.channel);
   if (builtUrl) {
@@ -2146,7 +2214,10 @@ function showPipelineDetail(id) {
             <span class="${judgmentColor(h.judgment)} text-xs">${h.judgment || '-'}</span>
             ${h.redSignal && h.redSignal !== '無' ? '<span class="red-signal">赤信号</span>' : ''}
           </div>
+          ${h.targetPost ? `<p class="text-[10px] text-slate-400 truncate mb-0.5"><i class="fa-solid fa-link mr-0.5"></i>${h.targetPost}</p>` : ''}
           ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
+          ${h.replyA ? `<p class="text-[10px] text-violet-600 mt-0.5 leading-snug line-clamp-2"><span class="font-bold">案A：</span>${h.replyA}</p>` : ''}
+          ${h.replyB ? `<p class="text-[10px] text-indigo-500 mt-0.5 leading-snug line-clamp-2"><span class="font-bold">案B：</span>${h.replyB}</p>` : ''}
         </div>
       </div>`).join('');
   } else {
@@ -2160,6 +2231,7 @@ function showPipelineDetail(id) {
   document.getElementById('t2f-lastdate').value = p.lastContactDate || '';
   document.getElementById('t2f-conv').value = '';
   document.getElementById('t2f-result').value = '';
+  document.getElementById('t2f-target-post').value = '';
 }
 
 function renderClosed() {
@@ -2377,6 +2449,12 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   }
   if (!parsed.channel) parsed.channel = 'twitter';
   const d = loadData();
+  // Duplicate handle check
+  const normalizeHandle = (u) => (u || '').trim().replace(/^@/, '').toLowerCase().replace(/^.*\//, '');
+  const parsedHandle = normalizeHandle(parsed.url);
+  if (parsedHandle && d.targets.some(t => normalizeHandle(t.url) === parsedHandle)) {
+    showToast('このアカウントは登録済みです（@' + parsedHandle + '）', 3000); return;
+  }
   const rec = { id: uid(), createdAt: new Date().toISOString(), rawInput: document.getElementById('t1-input').value, aiOutput: text, pipelineId: null, ...parsed };
   d.targets.push(rec);
   saveData(d);
@@ -2384,6 +2462,8 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   document.getElementById('t1-post').value = '';
   document.getElementById('t1-post-warn').style.display = 'none';
   document.getElementById('t1-result').value = '';
+  // Navigate to the page containing the new record (last page)
+  t1Page = Math.floor((d.targets.length - 1) / 10);
   renderTargets();
   updateBadges();
   showToast(`${rec.accountName || 'アカウント'} を記録しました`);
@@ -2406,12 +2486,44 @@ document.querySelectorAll('.t1d-copy-btn').forEach(btn => {
   });
 });
 
-// OS① send buttons
+// OS① send buttons → auto-add to pipeline; story reply sets S3
 document.querySelectorAll('.t1d-send-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const text = document.getElementById(btn.dataset.target)?.textContent || '';
-    showToast(`${btn.dataset.label} を送信完了として記録`);
+    const label = btn.dataset.label || '';
+    const isStoryReply = label.includes('ストーリー返信');
+    if (!selectedTarget) { showToast(`${label} を送信完了として記録`); return; }
+    const d = loadData();
+    const t = d.targets.find(x => x.id === selectedTarget);
+    if (!t) return;
+    let pRec = t.pipelineId ? d.pipeline.find(x => x.id === t.pipelineId) : null;
+    if (!pRec) {
+      const initStep = t.track === 'FT' ? 'S2' : 'S1';
+      pRec = {
+        id: uid(), targetId: t.id, caseId: t.caseId || null, os1Output: t.aiOutput || null,
+        accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
+        track: t.track, hypothesis: t.hypothesis,
+        startDate: t.startDate || new Date().toISOString().slice(0,10),
+        currentStep: initStep,
+        stepHistory: [{ step: initStep, date: new Date().toISOString().slice(0,10) }],
+        repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
+        redSignal: null, responseQuality: null, hypothesisVerification: null,
+        judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
+        analyses: [], history: [], isOpen: true, closedAt: null, closedCaseId: null
+      };
+      d.pipeline.push(pRec);
+      t.pipelineId = pRec.id;
+    }
+    if (isStoryReply) {
+      pRec.currentStep = 'S3';
+      if (!pRec.stepHistory) pRec.stepHistory = [];
+      pRec.stepHistory.push({ step: 'S3', date: new Date().toISOString().slice(0,10) });
+    }
+    saveData(d);
+    renderAll();
+    const pipeBtn = document.getElementById('t1d-to-pipeline');
+    if (pipeBtn) { pipeBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>パイプライン登録済み'; pipeBtn.disabled = true; pipeBtn.classList.add('opacity-50'); }
+    showToast(isStoryReply ? `${label} を送信完了・DM移行フェーズへ自動更新` : `${label} を送信完了・パイプラインへ自動登録`);
   });
 });
 
@@ -2421,12 +2533,14 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
   const d = loadData();
   const t = d.targets.find(x => x.id === selectedTarget);
   if (!t || t.pipelineId) return;
+  const initStep = t.track === 'FT' ? 'S2' : 'S1';
   const rec = {
-    id: uid(), targetId: t.id, accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
+    id: uid(), targetId: t.id, caseId: t.caseId || null, os1Output: t.aiOutput || null,
+    accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
     track: t.track, hypothesis: t.hypothesis,
-    startDate: new Date().toISOString().slice(0,10),
-    currentStep: t.track === 'FT' ? 'S2' : 'S1',
-    stepHistory: [{ step: t.track === 'FT' ? 'S2' : 'S1', date: new Date().toISOString().slice(0,10) }],
+    startDate: t.startDate || new Date().toISOString().slice(0,10),
+    currentStep: initStep,
+    stepHistory: [{ step: initStep, date: new Date().toISOString().slice(0,10) }],
     repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
     redSignal: null, responseQuality: null, hypothesisVerification: null,
     judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
@@ -2465,6 +2579,16 @@ document.getElementById('t1-copy-tsv').addEventListener('click', () => {
   d.targets.forEach(t => rows.push([new Date(t.createdAt).toLocaleDateString('ja-JP'), t.accountName, t.url, t.followers, t.industry, t.track, t.hypothesis].join('\t')));
   copyText(rows.join('\n'));
   showToast('TSVをコピーしました');
+});
+
+// OS① pagination
+document.getElementById('t1-page-prev').addEventListener('click', () => {
+  if (t1Page > 0) { t1Page--; renderTargets(); }
+});
+document.getElementById('t1-page-next').addEventListener('click', () => {
+  const d = loadData();
+  const totalPages = Math.ceil(d.targets.length / 10);
+  if (t1Page < totalPages - 1) { t1Page++; renderTargets(); }
 });
 
 // OS② filter
@@ -2542,11 +2666,13 @@ document.getElementById('t2-copy-prompt').addEventListener('click', () => {
   const p = d.pipeline.find(x => x.id === selectedPipeline);
   const conv = document.getElementById('t2f-conv').value.trim();
   const reaction = document.getElementById('t2f-reaction').value;
-  const info = `【OS①スクリーニング情報】
-アカウント名：${p.accountName}
-トラック：${p.track}
-事前仮説：${p.hypothesis}
-接触開始日：${p.startDate}
+  const os1Section = p.os1Output
+    ? `【OS①スクリーニング出力（完全転記）】\n${p.os1Output}`
+    : `【OS①スクリーニング情報】\n案件ID：${p.caseId || '-'}\nアカウント名：${p.accountName}\nトラック：${p.track}\n事前仮説：${p.hypothesis}\n接触開始日：${p.startDate}`;
+  const info = `${os1Section}
+
+【OS②入力情報】
+案件ID：${p.caseId || '-'}
 現在ステップ：${document.getElementById('t2f-step').value}
 リプ往復：${document.getElementById('t2f-rep').value}回
 DM往復：${document.getElementById('t2f-dm').value}回
@@ -2589,13 +2715,17 @@ document.getElementById('t2-submit').addEventListener('click', () => {
     step: document.getElementById('t2f-step').value,
     repCount: parseInt(document.getElementById('t2f-rep').value) || 0,
     dmCount: parseInt(document.getElementById('t2f-dm').value) || 0,
+    targetPost: document.getElementById('t2f-target-post').value.trim(),
     judgment: parsed.judgment,
     nextAction: parsed.nextAction,
-    redSignal: parsed.redSignal
+    redSignal: parsed.redSignal,
+    replyA: parsed.replyA,
+    replyB: parsed.replyB
   });
   saveData(d);
   renderAll();
   showPipelineDetail(selectedPipeline);
+  document.getElementById('t2f-target-post').value = '';
   showToast('判定結果を記録しました');
 });
 
@@ -2747,14 +2877,67 @@ document.getElementById('t3-clear').addEventListener('click', () => {
   });
 });
 
-// Export
+// Export — MD format with batch selector
+function buildExportBatchOptions() {
+  const d = loadData();
+  const sel = document.getElementById('export-batch');
+  sel.innerHTML = '';
+  if (d.targets.length === 0) { sel.classList.add('hidden'); return; }
+  const totalPages = Math.ceil(d.targets.length / 10);
+  for (let i = 0; i < totalPages; i++) {
+    const s = i * 10 + 1;
+    const e = Math.min(s + 9, d.targets.length);
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${s}〜${e}人目`;
+    sel.appendChild(opt);
+  }
+  // Default to latest page
+  sel.value = totalPages - 1;
+  sel.classList.remove('hidden');
+}
+
+function targetsToMarkdown(targets) {
+  return targets.map((t, idx) => {
+    const ch = t.channel === 'instagram' ? 'Instagram' : t.channel === 'threads' ? 'Threads' : 'Twitter/X';
+    const lines = [
+      `## ${idx + 1}. ${t.accountName || '(名前なし)'}`,
+      `- チャンネル: ${ch}`,
+      `- URL: ${t.url || '-'}`,
+      `- フォロワー: ${t.followers || '-'}`,
+      `- 業種: ${t.industry || '-'}`,
+      `- 推定商品: ${t.estimatedProduct || '-'}`,
+      `- 推定単価: ${t.estimatedPrice || '-'}`,
+      `- トラック: ${t.track || '-'}`,
+      `- 判定理由: ${t.trackReason || '-'}`,
+      `- 事前仮説: ${t.hypothesis || '-'}`,
+    ];
+    if (t.contactA) lines.push(`\n### 投稿コメント案`, `**案A:** ${t.contactA}`, t.contactB ? `**案B:** ${t.contactB}` : '');
+    if (t.storyA) lines.push(`\n### ストーリー返信案`, `**案A:** ${t.storyA}`, t.storyB ? `**案B:** ${t.storyB}` : '');
+    if (t.dmA) lines.push(`\n### 初回DM案`, `**案A:** ${t.dmA}`, t.dmB ? `**案B:** ${t.dmB}` : '');
+    if (t.dmNote) lines.push(`\n### 初回DM`, t.dmNote);
+    lines.push(`\n登録日: ${new Date(t.createdAt).toLocaleDateString('ja-JP')}`);
+    return lines.filter(l => l !== '').join('\n');
+  }).join('\n\n---\n\n');
+}
+
 document.getElementById('btn-export').addEventListener('click', () => {
   const d = loadData();
-  const blob = new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' });
+  if (d.targets.length === 0) { showToast('エクスポートするデータがありません'); return; }
+  buildExportBatchOptions();
+  const sel = document.getElementById('export-batch');
+  const pageIdx = parseInt(sel.value) || 0;
+  const startIdx = pageIdx * 10;
+  const endIdx = Math.min(startIdx + 10, d.targets.length);
+  const batch = d.targets.slice(startIdx, endIdx);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const md = `# 営業OSスクリーニングリスト (${startIdx + 1}〜${endIdx}人目)\n\n生成日: ${dateStr}\n\n---\n\n` + targetsToMarkdown(batch);
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `os_workspace_${new Date().toISOString().slice(0,10)}.json`;
-  a.click(); showToast('エクスポートしました');
+  a.download = `screening_${startIdx + 1}-${endIdx}_${dateStr}.md`;
+  a.click();
+  showToast(`${startIdx + 1}〜${endIdx}人目をMDでDLしました`);
 });
 
 // Sample data
