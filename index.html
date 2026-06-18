@@ -282,6 +282,7 @@ body.viewer-mode .admin-only{display:none!important}
       <p class="text-slate-500 font-bold mb-1"><i class="fa-solid fa-ban mr-1"></i>SKIP理由</p>
       <p id="t1d-skip-text" class="text-slate-700"></p>
     </div>
+    <p id="t1d-contact-label" class="hidden text-[11px] font-bold text-slate-400 tracking-wide"></p>
     <div id="t1d-contact-section" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div class="bg-white border border-violet-100 rounded-xl p-3.5">
         <div class="flex items-center justify-between mb-2">
@@ -303,6 +304,60 @@ body.viewer-mode .admin-only{display:none!important}
         </div>
         <p id="t1d-cb" class="text-xs text-slate-600 leading-relaxed select-all"></p>
       </div>
+    </div>
+    <!-- ストーリー返信案（Instagram専用） -->
+    <div id="t1d-story-section" class="hidden">
+      <p class="text-[11px] font-bold text-slate-400 tracking-wide mt-1">▼ストーリー返信案（S2用）</p>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+        <div class="bg-white border border-pink-100 rounded-xl p-3.5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-pink-800">案A（実行案）</span>
+            <div class="flex gap-1.5">
+              <button class="t1d-copy-btn text-xs px-2 py-1 bg-pink-50 text-pink-600 rounded border border-pink-200 hover:bg-pink-100 transition" data-target="t1d-sa"><i class="fa-regular fa-copy"></i></button>
+              <button class="t1d-send-btn text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-target="t1d-sa" data-label="ストーリー返信案A"><i class="fa-regular fa-square-check"></i> 送信完了</button>
+            </div>
+          </div>
+          <p id="t1d-sa" class="text-xs text-slate-600 leading-relaxed select-all"></p>
+        </div>
+        <div class="bg-white border border-pink-100 rounded-xl p-3.5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-pink-800">案B（予備案）</span>
+            <div class="flex gap-1.5">
+              <button class="t1d-copy-btn text-xs px-2 py-1 bg-pink-50 text-pink-600 rounded border border-pink-200 hover:bg-pink-100 transition" data-target="t1d-sb"><i class="fa-regular fa-copy"></i></button>
+              <button class="t1d-send-btn text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-target="t1d-sb" data-label="ストーリー返信案B"><i class="fa-regular fa-square-check"></i> 送信完了</button>
+            </div>
+          </div>
+          <p id="t1d-sb" class="text-xs text-slate-600 leading-relaxed select-all"></p>
+        </div>
+      </div>
+      <p id="t1d-story-note" class="hidden text-xs text-slate-400 italic mt-1"></p>
+    </div>
+    <!-- 初回DM案 -->
+    <div id="t1d-dm-section" class="hidden">
+      <p class="text-[11px] font-bold text-slate-400 tracking-wide mt-1">▼初回DM案</p>
+      <div id="t1d-dm-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
+        <div class="bg-white border border-teal-100 rounded-xl p-3.5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-teal-800">案A（実行案）</span>
+            <div class="flex gap-1.5">
+              <button class="t1d-copy-btn text-xs px-2 py-1 bg-teal-50 text-teal-600 rounded border border-teal-200 hover:bg-teal-100 transition" data-target="t1d-da"><i class="fa-regular fa-copy"></i></button>
+              <button class="t1d-send-btn text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-target="t1d-da" data-label="初回DM案A"><i class="fa-regular fa-square-check"></i> 送信完了</button>
+            </div>
+          </div>
+          <p id="t1d-da" class="text-xs text-slate-600 leading-relaxed select-all"></p>
+        </div>
+        <div class="bg-white border border-teal-100 rounded-xl p-3.5">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-teal-800">案B（予備案）</span>
+            <div class="flex gap-1.5">
+              <button class="t1d-copy-btn text-xs px-2 py-1 bg-teal-50 text-teal-600 rounded border border-teal-200 hover:bg-teal-100 transition" data-target="t1d-db"><i class="fa-regular fa-copy"></i></button>
+              <button class="t1d-send-btn text-xs px-2 py-1 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-target="t1d-db" data-label="初回DM案B"><i class="fa-regular fa-square-check"></i> 送信完了</button>
+            </div>
+          </div>
+          <p id="t1d-db" class="text-xs text-slate-600 leading-relaxed select-all"></p>
+        </div>
+      </div>
+      <p id="t1d-dm-note" class="hidden text-xs text-slate-400 italic mt-1"></p>
     </div>
     <div class="flex gap-2 pt-1 border-t border-slate-100">
       <button id="t1d-to-pipeline" class="btn-primary text-xs"><i class="fa-solid fa-arrow-right"></i>案件管理へ移動</button>
@@ -1412,6 +1467,7 @@ function parseOS1(text) {
   const dmPart = dmSplit ? contactBlock.split('▼初回DM案')[1] : '';
   const daM = dmPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const dbM = dmPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const dmNote = (!daM && !dbM && dmPart.trim()) ? dmPart.trim().split('\n')[0] : '';
   const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム');
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
@@ -1438,6 +1494,7 @@ function parseOS1(text) {
     contactB: cbM ? cbM[1].trim() : '',
     dmA: daM ? daM[1].trim() : '',
     dmB: dbM ? dbM[1].trim() : '',
+    dmNote,
     channel: 'twitter'
   };
 }
@@ -1457,11 +1514,13 @@ function parseOS1Instagram(text) {
     : '';
   const saM = storyPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const sbM = storyPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const storyNote = (!saM && !sbM && storyPart.trim()) ? storyPart.trim().split('\n')[0] : '';
   const dmPart = contactBlock.includes('▼初回DM案')
     ? contactBlock.split('▼初回DM案')[1]
     : '';
   const daM = dmPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const dbM = dmPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const dmNote = (!daM && !dbM && dmPart.trim()) ? dmPart.trim().split('\n')[0] : '';
   const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム') || field(text, 'ユーザーネーム：');
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
@@ -1487,8 +1546,10 @@ function parseOS1Instagram(text) {
     contactB: cbM ? cbM[1].trim() : '',
     storyA: saM ? saM[1].trim() : '',
     storyB: sbM ? sbM[1].trim() : '',
+    storyNote,
     dmA: daM ? daM[1].trim() : '',
     dmB: dbM ? dbM[1].trim() : '',
+    dmNote,
     channel: 'instagram'
   };
 }
@@ -1506,6 +1567,7 @@ function parseOS1Threads(text) {
   const dmPart = dmSplit ? contactBlock.split('▼初回DM案')[1] : '';
   const daM = dmPart.match(/案A：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
   const dbM = dmPart.match(/案B：[ \t]*(?:\n[ \t]*)?([^\n]+)/);
+  const dmNote = (!daM && !dbM && dmPart.trim()) ? dmPart.trim().split('\n')[0] : '';
   const username = field(text, 'ユーザーネーム（@〜）') || field(text, 'ユーザーネーム');
   // 連動IG（新形式）または DM導線（旧形式）にフォールバック
   const dmRoute = field(text, '連動IG') || field(text, 'DM導線');
@@ -1532,6 +1594,7 @@ function parseOS1Threads(text) {
     contactB: cbM ? cbM[1].trim() : '',
     dmA: daM ? daM[1].trim() : '',
     dmB: dbM ? dbM[1].trim() : '',
+    dmNote,
     channel: 'threads'
   };
 }
@@ -1875,6 +1938,58 @@ function showTargetDetail(id) {
     contactSec.classList.remove('hidden');
     document.getElementById('t1d-ca').textContent = t.contactA || '-';
     document.getElementById('t1d-cb').textContent = t.contactB || '-';
+
+    // Contact section label (show type when multiple sub-sections exist)
+    const contactLabelEl = document.getElementById('t1d-contact-label');
+    const hasDm = !!(t.dmA || t.dmB || t.dmNote);
+    const hasStory = !!(t.storyA || t.storyB || t.storyNote);
+    if (t.channel === 'instagram' && (hasStory || hasDm)) {
+      contactLabelEl.textContent = '▼投稿コメント案（S1用）';
+      contactLabelEl.classList.remove('hidden');
+    } else if ((t.channel === 'twitter' || t.channel === 'threads') && hasDm) {
+      contactLabelEl.textContent = '▼リプ案（S1用）';
+      contactLabelEl.classList.remove('hidden');
+    } else {
+      contactLabelEl.classList.add('hidden');
+    }
+
+    // Story section (Instagram only)
+    const storySec = document.getElementById('t1d-story-section');
+    if (hasStory) {
+      storySec.classList.remove('hidden');
+      const storyNoteEl = document.getElementById('t1d-story-note');
+      if (t.storyA || t.storyB) {
+        document.getElementById('t1d-sa').textContent = t.storyA || '-';
+        document.getElementById('t1d-sb').textContent = t.storyB || '-';
+        storyNoteEl.classList.add('hidden');
+      } else {
+        storyNoteEl.textContent = t.storyNote || '';
+        storyNoteEl.classList.remove('hidden');
+      }
+    } else {
+      storySec.classList.add('hidden');
+    }
+
+    // DM section
+    const dmSec = document.getElementById('t1d-dm-section');
+    if (hasDm) {
+      dmSec.classList.remove('hidden');
+      const dmNoteEl = document.getElementById('t1d-dm-note');
+      const dmGridEl = document.getElementById('t1d-dm-grid');
+      if (t.dmA || t.dmB) {
+        dmGridEl.classList.remove('hidden');
+        dmNoteEl.classList.add('hidden');
+        document.getElementById('t1d-da').textContent = t.dmA || '-';
+        document.getElementById('t1d-db').textContent = t.dmB || '-';
+      } else {
+        dmGridEl.classList.add('hidden');
+        dmNoteEl.textContent = t.dmNote || '';
+        dmNoteEl.classList.remove('hidden');
+      }
+    } else {
+      dmSec.classList.add('hidden');
+    }
+
     const pipeBtn = document.getElementById('t1d-to-pipeline');
     if (t.pipelineId) {
       pipeBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>パイプライン登録済み';
