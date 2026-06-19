@@ -126,13 +126,7 @@ body.viewer-mode .admin-only{display:none!important}
       <div class="bg-violet-600 text-white p-2 rounded-xl shadow shadow-violet-200">
         <i class="fa-solid fa-bolt text-lg"></i>
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <h1 class="font-bold text-slate-900 text-base leading-tight" style="white-space:nowrap">営業OS ワークスペース</h1>
-          <span id="deploy-msg-chip" class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"></span>
-        </div>
-        <p class="text-[11px] text-slate-400 hidden sm:block">Ver4 — スクリーニング → パイプライン → 案件検証</p>
-      </div>
+      <span id="deploy-msg-chip" class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"></span>
     </div>
     <div class="flex items-center gap-2" style="flex-wrap:nowrap;overflow-x:auto">
       <span id="role-badge" class="hidden"></span>
@@ -946,7 +940,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'スマホ最適化';
+const DEPLOY_MSG = 'トップバーのタイトルテキスト削除';
 
 (async function loadPrompts() {
   const files = [
