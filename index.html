@@ -934,7 +934,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'OS⓪';
+const DEPLOY_MSG = '削除後5秒間「元に戻す」ボタン表示で誤削除復元対応';
 
 (async function loadPrompts() {
   const files = [
@@ -1459,13 +1459,45 @@ function parseOS3(text) {
 // ──────────────────────────────────────────────
 function showToast(msg, duration = 2200) {
   const t = document.getElementById('toast');
+  _restoreToastStructure();
   document.getElementById('toast-msg').textContent = msg;
+  t.classList.add('pointer-events-none');
   t.classList.remove('translate-y-16','opacity-0');
   t.classList.add('translate-y-0','opacity-100');
-  setTimeout(() => {
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(() => {
     t.classList.add('translate-y-16','opacity-0');
     t.classList.remove('translate-y-0','opacity-100');
   }, duration);
+}
+
+let _undoTimer = null;
+
+function _restoreToastStructure() {
+  const t = document.getElementById('toast');
+  if (!document.getElementById('toast-msg')) {
+    t.innerHTML = '<i class="fa-solid fa-circle-check text-emerald-400"></i><span id="toast-msg">完了</span>';
+  }
+}
+
+function showUndoToast(msg, onUndo) {
+  clearTimeout(_undoTimer);
+  const t = document.getElementById('toast');
+  t.innerHTML = `<i class="fa-solid fa-trash text-slate-400"></i><span class="flex-1">${msg}</span><button id="undo-btn" class="shrink-0 ml-1 text-violet-300 font-bold border border-violet-500 rounded px-2 py-0.5 text-[11px] hover:bg-violet-900 transition">元に戻す</button>`;
+  t.classList.remove('pointer-events-none','translate-y-16','opacity-0');
+  t.classList.add('translate-y-0','opacity-100');
+  document.getElementById('undo-btn').addEventListener('click', () => {
+    clearTimeout(_undoTimer);
+    onUndo();
+    t.classList.add('translate-y-16','opacity-0');
+    t.classList.remove('translate-y-0','opacity-100');
+    setTimeout(() => { _restoreToastStructure(); showToast('元に戻しました'); }, 310);
+  });
+  _undoTimer = setTimeout(() => {
+    t.classList.add('translate-y-16','opacity-0','pointer-events-none');
+    t.classList.remove('translate-y-0','opacity-100');
+    setTimeout(_restoreToastStructure, 310);
+  }, 5000);
 }
 
 function copyText(text) {
@@ -1616,16 +1648,18 @@ function renderScreenings() {
       const id = btn.dataset.delId;
       const d2 = loadData();
       const item = d2.screenings.find(x => x.id === id);
-      confirm('削除確認', `「${item?.displayName || 'このアカウント'}」を削除しますか？（除外リストに追加されます）`, () => {
+      const d2 = loadData();
+      const target = d2.screenings.find(x => x.id === id);
+      if (!target) return;
+      addToExcluded(d2, target.handle, target.displayName, target.channel, '手動削除');
+      d2.screenings = d2.screenings.filter(x => x.id !== id);
+      saveData(d2);
+      renderScreenings(); renderExcluded(); updateBadges();
+      showUndoToast(`「${target.displayName || target.handle}」を削除`, () => {
         const d3 = loadData();
-        const target = d3.screenings.find(x => x.id === id);
-        if (target) addToExcluded(d3, target.handle, target.displayName, target.channel, '手動削除');
-        d3.screenings = d3.screenings.filter(x => x.id !== id);
-        saveData(d3);
-        renderScreenings();
-        renderExcluded();
-        updateBadges();
-        showToast('削除し、除外リストに追加しました');
+        d3.screenings.push(target);
+        d3.excluded = (d3.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(target.handle));
+        saveData(d3); renderScreenings(); renderExcluded(); updateBadges();
       });
     });
   });
@@ -1731,20 +1765,19 @@ function renderTargets() {
       const id = btn.dataset.delId;
       const d2 = loadData();
       const t2 = d2.targets.find(x => x.id === id);
-      confirm('削除確認', `「${t2?.accountName || 'この記録'}」を削除しますか？（除外リストに追加されます）`, () => {
-        const d3 = loadData();
-        const tgt = d3.targets.find(x => x.id === id);
-        if (tgt) addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
-        d3.targets = d3.targets.filter(x => x.id !== id);
-        saveData(d3);
-        if (selectedTarget === id) {
-          selectedTarget = null;
-          document.getElementById('t1-detail').classList.add('hidden');
-        }
-        renderTargets();
-        renderExcluded();
-        updateBadges();
-        showToast('削除し、除外リストに追加しました');
+      const d3 = loadData();
+      const tgt = d3.targets.find(x => x.id === id);
+      if (!tgt) return;
+      addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
+      d3.targets = d3.targets.filter(x => x.id !== id);
+      saveData(d3);
+      if (selectedTarget === id) { selectedTarget = null; document.getElementById('t1-detail').classList.add('hidden'); }
+      renderTargets(); renderExcluded(); updateBadges();
+      showUndoToast(`「${tgt.accountName || 'アカウント'}」を削除`, () => {
+        const d4 = loadData();
+        d4.targets.push(tgt);
+        d4.excluded = (d4.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(tgt.url || tgt.accountName));
+        saveData(d4); renderTargets(); renderExcluded(); updateBadges();
       });
     });
   });
@@ -2599,18 +2632,23 @@ document.getElementById('t1d-delete').addEventListener('click', () => {
   if (!selectedTarget) return;
   const d = loadData();
   const t = d.targets.find(x => x.id === selectedTarget);
-  confirm('削除確認', `「${t?.accountName || 'この記録'}」を削除しますか？（除外リストに追加されます）`, () => {
-    const d2 = loadData();
-    const tgt = d2.targets.find(x => x.id === selectedTarget);
-    if (tgt) addToExcluded(d2, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
-    d2.targets = d2.targets.filter(x => x.id !== selectedTarget);
-    saveData(d2);
+  const d2 = loadData();
+  const tgt = d2.targets.find(x => x.id === selectedTarget);
+  if (!tgt) return;
+  confirm('削除確認', `「${tgt.accountName || 'この記録'}」を削除しますか？`, () => {
+    const d3 = loadData();
+    addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
+    d3.targets = d3.targets.filter(x => x.id !== tgt.id);
+    saveData(d3);
     selectedTarget = null;
     document.getElementById('t1-detail').classList.add('hidden');
-    renderTargets();
-    renderExcluded();
-    updateBadges();
-    showToast('削除し、除外リストに追加しました');
+    renderTargets(); renderExcluded(); updateBadges();
+    showUndoToast(`「${tgt.accountName}」を削除`, () => {
+      const d4 = loadData();
+      d4.targets.push(tgt);
+      d4.excluded = (d4.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(tgt.url || tgt.accountName));
+      saveData(d4); renderTargets(); renderExcluded(); updateBadges();
+    });
   });
 });
 
@@ -2662,7 +2700,7 @@ document.getElementById('t2d-delete').addEventListener('click', () => {
   if (!selectedPipeline) return;
   const d = loadData();
   const p = d.pipeline.find(x => x.id === selectedPipeline);
-  confirm('削除確認', `「${p?.accountName || 'この案件'}」をパイプラインから削除しますか？\n（除外リストに追加されます）`, () => {
+  confirm('削除確認', `「${p?.accountName || 'この案件'}」をパイプラインから削除しますか？`, () => {
     const d2 = loadData();
     if (p?.targetId) {
       const t = d2.targets.find(x => x.id === p.targetId);
@@ -2675,7 +2713,13 @@ document.getElementById('t2d-delete').addEventListener('click', () => {
     document.getElementById('t2-detail').classList.add('hidden');
     document.getElementById('t2-empty-right').classList.remove('hidden');
     renderAll();
-    showToast('削除し、除外リストに追加しました');
+    showUndoToast(`「${p.accountName}」をパイプラインから削除`, () => {
+      const d3 = loadData();
+      d3.pipeline.push(p);
+      if (p.targetId) { const t = d3.targets.find(x => x.id === p.targetId); if (t) t.pipelineId = p.id; }
+      d3.excluded = (d3.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(p.url || p.accountName));
+      saveData(d3); renderAll();
+    });
   });
 });
 
