@@ -134,6 +134,7 @@ body.viewer-mode .admin-only{display:none!important}
     <div class="flex items-center gap-2">
       <span id="role-badge" class="hidden"></span>
       <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i><span class="hidden sm:inline">サンプル</span></button>
+      <button id="btn-migrate" class="btn-sec text-xs admin-only" title="データアップデート"><i class="fa-solid fa-rotate text-amber-500"></i><span class="hidden sm:inline">アップデート</span></button>
       <div class="flex items-center gap-1">
         <select id="export-batch" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400 hidden" style="max-width:110px"></select>
         <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">DL</span></button>
@@ -791,6 +792,23 @@ body.viewer-mode .admin-only{display:none!important}
     <div class="flex gap-2 justify-end mt-1">
       <button id="send-edit-cancel" class="btn-sec text-xs py-2 px-4">キャンセル</button>
       <button id="send-edit-confirm" class="btn-primary text-xs py-2 px-4"><i class="fa-solid fa-check"></i>送信完了として記録</button>
+    </div>
+  </div>
+</div>
+
+<!-- Migration Modal -->
+<div id="migrate-modal" class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm hidden items-center justify-center p-4">
+  <div class="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl flex flex-col" style="max-height:85vh">
+    <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+      <h3 class="font-bold text-slate-900 text-sm flex items-center gap-2"><i class="fa-solid fa-rotate text-amber-500"></i>データアップデート診断</h3>
+      <button id="migrate-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="flex-1 overflow-y-auto cs p-5 flex flex-col gap-4" id="migrate-content">
+      <p class="text-xs text-slate-400">診断中...</p>
+    </div>
+    <div class="p-4 border-t border-slate-100 flex gap-2 justify-end shrink-0">
+      <button id="migrate-cancel" class="btn-sec text-xs py-2 px-4">閉じる</button>
+      <button id="migrate-run" class="btn-primary text-xs py-2 px-4 hidden"><i class="fa-solid fa-rotate"></i>自動修正を実行</button>
     </div>
   </div>
 </div>
@@ -1679,9 +1697,20 @@ function showPipelineDetail(id) {
   document.getElementById('t2f-rep').value = p.repCount || 0;
   document.getElementById('t2f-dm').value = p.dmCount || 0;
   document.getElementById('t2f-lastdate').value = p.lastContactDate || '';
-  document.getElementById('t2f-conv').value = '';
   document.getElementById('t2f-result').value = '';
   document.getElementById('t2f-target-post').value = '';
+  // 送信済み文章を会話ログに自動挿入
+  const sentMsgs = p.sentMessages || [];
+  if (sentMsgs.length > 0) {
+    const convText = sentMsgs.map((sm, i) => {
+      const msgText = sm.actual || sm.original || '';
+      const editNote = sm.edited ? `（編集済み）` : '';
+      return `【自分の送信${i + 1}（${sm.date}） ${sm.label}${editNote}】\n${msgText}`;
+    }).join('\n\n');
+    document.getElementById('t2f-conv').value = convText + '\n\n▼ 相手の返信・会話の続きをここに追記してください';
+  } else {
+    document.getElementById('t2f-conv').value = '';
+  }
   // Reset reaction checkboxes
   document.querySelectorAll('.t2f-reaction-cb').forEach(cb => {
     cb.checked = false;
@@ -2480,6 +2509,214 @@ document.getElementById('t2f-sent-msg-select').addEventListener('change', functi
   if (selected && selected.dataset.text) {
     document.getElementById('t2f-target-post').value = selected.dataset.text.slice(0, 100);
   }
+});
+
+// ──────────────────────────────────────────────
+// MIGRATION / DATA UPGRADE
+// ──────────────────────────────────────────────
+const OLD_REACTION_MAP = {
+  'テキスト返信あり': 'テキスト返信',
+  'いいねのみ': 'いいね',
+  'スタンプ・絵文字のみ': 'スタンプ・絵文字',
+  'リポストのみ': 'リポスト',
+  'フォロー返しのみ': 'フォロー返し',
+  '無反応・既読スルー': '無反応'
+};
+
+function normalizeReaction(r) {
+  if (!r) return r;
+  let out = r;
+  Object.entries(OLD_REACTION_MAP).forEach(([old, neo]) => { out = out.replace(old, neo); });
+  return out;
+}
+
+function diagnoseMigration() {
+  const d = loadData();
+  const autoItems = [];
+  const aiItems = [];
+
+  // 1. sentMessages missing
+  const missingSM = d.pipeline.filter(p => !Array.isArray(p.sentMessages)).length;
+  if (missingSM > 0) autoItems.push({ key: 'sentMessages', label: `sentMessagesフィールドを追加（${missingSM}件のパイプライン記録）` });
+
+  // 2. caseId that can be copied from target
+  let copyable = 0;
+  d.pipeline.forEach(p => {
+    if (!p.caseId && p.targetId) {
+      const t = d.targets.find(x => x.id === p.targetId);
+      if (t && t.caseId) copyable++;
+    }
+  });
+  if (copyable > 0) autoItems.push({ key: 'copyId', label: `案件IDをターゲット記録からパイプラインへ引き継ぎ（${copyable}件）` });
+
+  // 3. caseId re-parseable from stored aiOutput
+  let reparsable = 0;
+  d.targets.forEach(t => {
+    if (!t.caseId && t.aiOutput) {
+      const rp = t.channel === 'instagram' ? parseOS1Instagram(t.aiOutput)
+               : t.channel === 'threads'   ? parseOS1Threads(t.aiOutput)
+               : parseOS1(t.aiOutput);
+      if (rp.caseId) reparsable++;
+    }
+  });
+  if (reparsable > 0) autoItems.push({ key: 'reparseId', label: `保存済みAI出力から案件IDを再取得（${reparsable}件のターゲット記録）` });
+
+  // 4. old reaction format
+  let oldRxCount = 0;
+  d.pipeline.forEach(p => {
+    (p.history || []).forEach(h => {
+      if (h.reaction && Object.keys(OLD_REACTION_MAP).some(k => h.reaction.includes(k))) oldRxCount++;
+    });
+  });
+  if (oldRxCount > 0) autoItems.push({ key: 'reactions', label: `反応フォーマットを新形式に正規化（${oldRxCount}件の履歴エントリ）` });
+
+  // 5. missing history array
+  const missingHist = d.pipeline.filter(p => !Array.isArray(p.history)).length;
+  if (missingHist > 0) autoItems.push({ key: 'history', label: `historyフィールドを追加（${missingHist}件）` });
+
+  // What still needs AI re-run
+  d.pipeline.filter(p => p.isOpen).forEach(p => {
+    const t = p.targetId ? d.targets.find(x => x.id === p.targetId) : null;
+    // Check if caseId can be derived
+    let derivedId = p.caseId;
+    if (!derivedId && t && t.caseId) derivedId = t.caseId;
+    if (!derivedId && t && t.aiOutput) {
+      const rp = t.channel === 'instagram' ? parseOS1Instagram(t.aiOutput)
+               : t.channel === 'threads'   ? parseOS1Threads(t.aiOutput)
+               : parseOS1(t.aiOutput);
+      derivedId = rp.caseId;
+    }
+    if (!derivedId) {
+      aiItems.push({ id: p.id, accountName: p.accountName, channel: p.channel || 'twitter',
+        msg: '案件IDが取得できません。OS①を再実行してAI出力を貼り直してください。' });
+    }
+  });
+
+  return { autoItems, aiItems, d };
+}
+
+function runAutoMigration() {
+  const d = loadData();
+  let fixCount = 0;
+
+  d.pipeline.forEach(p => {
+    // sentMessages
+    if (!Array.isArray(p.sentMessages)) { p.sentMessages = []; fixCount++; }
+    // history
+    if (!Array.isArray(p.history)) { p.history = []; fixCount++; }
+    // caseId from target
+    if (!p.caseId && p.targetId) {
+      const t = d.targets.find(x => x.id === p.targetId);
+      if (t && t.caseId) { p.caseId = t.caseId; fixCount++; }
+    }
+    // normalize reactions in history
+    p.history.forEach(h => {
+      const normalized = normalizeReaction(h.reaction);
+      if (normalized !== h.reaction) { h.reaction = normalized; fixCount++; }
+    });
+  });
+
+  // re-parse caseId from stored aiOutput in targets
+  d.targets.forEach(t => {
+    if (!t.caseId && t.aiOutput) {
+      const rp = t.channel === 'instagram' ? parseOS1Instagram(t.aiOutput)
+               : t.channel === 'threads'   ? parseOS1Threads(t.aiOutput)
+               : parseOS1(t.aiOutput);
+      if (rp.caseId) {
+        t.caseId = rp.caseId;
+        fixCount++;
+        // propagate to linked pipeline
+        const linked = d.pipeline.find(p => p.targetId === t.id);
+        if (linked && !linked.caseId) { linked.caseId = rp.caseId; fixCount++; }
+      }
+    }
+  });
+
+  saveData(d);
+  return fixCount;
+}
+
+function openMigrateModal() {
+  const modal = document.getElementById('migrate-modal');
+  modal.style.display = 'flex';
+  const { autoItems, aiItems } = diagnoseMigration();
+  const content = document.getElementById('migrate-content');
+  const runBtn = document.getElementById('migrate-run');
+
+  let html = '';
+
+  if (autoItems.length === 0 && aiItems.length === 0) {
+    html = `<div class="text-center py-8 text-slate-400 flex flex-col gap-2">
+      <i class="fa-solid fa-circle-check text-emerald-400 text-3xl"></i>
+      <p class="font-semibold text-emerald-600">すべての記録は最新仕様に対応済みです</p>
+    </div>`;
+    runBtn.classList.add('hidden');
+  } else {
+    if (autoItems.length > 0) {
+      html += `<div class="flex flex-col gap-2">
+        <p class="text-xs font-bold text-slate-700 flex items-center gap-1.5"><i class="fa-solid fa-bolt text-amber-500"></i>自動修正可能（AI不要）</p>
+        <div class="flex flex-col gap-1.5">
+          ${autoItems.map(item => `
+            <div class="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-xs">
+              <i class="fa-solid fa-circle-check text-amber-400 mt-0.5 shrink-0"></i>
+              <span class="text-amber-900">${item.label}</span>
+            </div>`).join('')}
+        </div>
+      </div>`;
+      runBtn.classList.remove('hidden');
+    } else {
+      runBtn.classList.add('hidden');
+    }
+
+    if (aiItems.length > 0) {
+      html += `<div class="flex flex-col gap-2">
+        <p class="text-xs font-bold text-slate-700 flex items-center gap-1.5"><i class="fa-solid fa-robot text-indigo-500"></i>AI再実行が必要（${aiItems.length}件）</p>
+        <p class="text-[11px] text-slate-500">以下の記録は、新しい仕様の項目（案件IDなど）をAI出力から取得できません。OS①を再実行して最新フォーマットのAI出力を貼り付けてください。</p>
+        <div class="flex flex-col gap-1.5">
+          ${aiItems.map(item => {
+            const chIcon = item.channel === 'instagram' ? 'fa-brands fa-instagram text-pink-500'
+                         : item.channel === 'threads' ? 'fa-brands fa-threads'
+                         : 'fa-brands fa-x-twitter';
+            return `<div class="border border-slate-200 rounded-lg p-3 text-xs flex flex-col gap-1">
+              <div class="flex items-center gap-1.5 font-semibold text-slate-700">
+                <i class="${chIcon}"></i>${item.accountName}
+              </div>
+              <p class="text-slate-500">${item.msg}</p>
+              <div class="mt-1 bg-indigo-50 border border-indigo-100 rounded p-2 text-[10px] text-indigo-800">
+                <i class="fa-solid fa-circle-info mr-1"></i>手順：OS①タブでこのアカウントの記録を開き、プロンプトを再コピー → 外部AIで再実行 → 出力を貼り付けて「分析結果を記録」を実行してください
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }
+  }
+
+  content.innerHTML = html;
+}
+
+document.getElementById('btn-migrate').addEventListener('click', openMigrateModal);
+document.getElementById('migrate-close').addEventListener('click', () => { document.getElementById('migrate-modal').style.display = 'none'; });
+document.getElementById('migrate-cancel').addEventListener('click', () => { document.getElementById('migrate-modal').style.display = 'none'; });
+document.getElementById('migrate-run').addEventListener('click', () => {
+  const fixCount = runAutoMigration();
+  renderAll();
+  // re-diagnose
+  const { autoItems, aiItems } = diagnoseMigration();
+  const content = document.getElementById('migrate-content');
+  const runBtn = document.getElementById('migrate-run');
+  content.innerHTML = `<div class="flex flex-col gap-3">
+    <div class="text-center py-4 flex flex-col gap-2">
+      <i class="fa-solid fa-circle-check text-emerald-400 text-3xl"></i>
+      <p class="font-bold text-emerald-600">自動修正完了（${fixCount}件の項目を更新）</p>
+    </div>
+    ${aiItems.length > 0 ? `<div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
+      <p class="font-bold mb-1"><i class="fa-solid fa-triangle-exclamation mr-1"></i>AI再実行が必要な記録が残っています（${aiItems.length}件）</p>
+      ${aiItems.map(it => `<p class="mt-1">• ${it.accountName}：${it.msg}</p>`).join('')}
+    </div>` : ''}
+  </div>`;
+  runBtn.classList.add('hidden');
+  showToast(`データを更新しました（${fixCount}件）`);
 });
 
 // Modal
