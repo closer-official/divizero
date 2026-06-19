@@ -1902,13 +1902,16 @@ function showPipelineDetail(id) {
           ${h.sentMsgLabel ? `<p class="text-[10px] text-violet-600 truncate mb-0.5"><i class="fa-solid fa-paper-plane mr-0.5"></i>${h.sentMsgLabel}</p>` : ''}
           ${h.targetPost ? `<p class="text-[10px] text-slate-400 truncate mb-0.5"><i class="fa-solid fa-link mr-0.5"></i>${h.targetPost}</p>` : ''}
           ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
-          ${h.replyA ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-violet-600 leading-snug line-clamp-2 flex-1"><span class="font-bold">案A：</span>${h.replyA}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-500 rounded border border-violet-200 hover:bg-violet-100 transition" data-idx="${aIdx}"><i class="fa-regular fa-copy"></i></button></div>` : ''}
-          ${h.replyB ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-indigo-500 leading-snug line-clamp-2 flex-1"><span class="font-bold">案B：</span>${h.replyB}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition" data-idx="${bIdx}"><i class="fa-regular fa-copy"></i></button></div>` : ''}
+          ${h.replyA ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-violet-600 leading-snug line-clamp-2 flex-1"><span class="font-bold">案A：</span>${h.replyA}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-500 rounded border border-violet-200 hover:bg-violet-100 transition" data-idx="${aIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${aIdx}" data-label="案A（前進案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
+          ${h.replyB ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-indigo-500 leading-snug line-clamp-2 flex-1"><span class="font-bold">案B：</span>${h.replyB}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition" data-idx="${bIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${bIdx}" data-label="案B（安全案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
         </div>
       </div>`;
     }).join('');
     document.getElementById('t2d-history').querySelectorAll('.t2d-hist-copy').forEach(btn => {
       btn.addEventListener('click', () => copyText(_histCopyTexts[parseInt(btn.dataset.idx)]));
+    });
+    document.getElementById('t2d-history').querySelectorAll('.t2d-hist-send').forEach(btn => {
+      btn.addEventListener('click', () => t2RecordSent(btn.dataset.label, _histCopyTexts[parseInt(btn.dataset.idx)]));
     });
   } else {
     histSec.classList.add('hidden');
