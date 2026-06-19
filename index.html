@@ -77,6 +77,11 @@ body.viewer-mode .admin-only{display:none!important}
 .role-badge-viewer{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
 /* 対象投稿の警告 */
 .post-required-warn{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;font-size:11px;color:#c2410c;display:none}
+/* 反応チェックボックス */
+.reaction-check-label{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:3px 8px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;cursor:pointer;transition:all .12s;user-select:none}
+.reaction-check-label:hover{background:#f5f3ff;border-color:#c4b5fd}
+.reaction-check-label input[type=checkbox]{width:12px;height:12px;cursor:pointer;accent-color:#7c3aed}
+.reaction-check-label.checked{background:#ede9fe;border-color:#a78bfa;color:#5b21b6}
 </style>
 </head>
 <body class="min-h-screen flex flex-col">
@@ -433,7 +438,7 @@ body.viewer-mode .admin-only{display:none!important}
               <div class="flex flex-col gap-1"><label class="text-slate-400">アカウント名</label><input id="t2d-edit-name" class="input-base text-xs py-1.5"></div>
               <div class="flex flex-col gap-1"><label class="text-slate-400">URL / @ユーザー名</label><input id="t2d-edit-url" class="input-base text-xs py-1.5"></div>
             </div>
-            <div class="grid grid-cols-2 gap-2">
+            <div class="grid grid-cols-3 gap-2">
               <div class="flex flex-col gap-1"><label class="text-slate-400">トラック</label>
                 <select id="t2d-edit-track" class="input-base text-xs py-1.5">
                   <option value="FT">FT（ファストトラック）</option>
@@ -441,6 +446,7 @@ body.viewer-mode .admin-only{display:none!important}
                 </select>
               </div>
               <div class="flex flex-col gap-1"><label class="text-slate-400">接触開始日</label><input id="t2d-edit-start" type="date" class="input-base text-xs py-1.5"></div>
+              <div class="flex flex-col gap-1"><label class="text-slate-400">最終接触日</label><input id="t2d-edit-lastcontact" type="date" class="input-base text-xs py-1.5"></div>
             </div>
             <div class="flex gap-2 justify-end">
               <button id="t2d-edit-cancel" class="btn-sec text-xs py-1.5 px-3">キャンセル</button>
@@ -534,26 +540,30 @@ body.viewer-mode .admin-only{display:none!important}
               <input id="t2f-dm" type="number" min="0" value="0" class="input-base text-xs py-2">
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="flex flex-col gap-2 text-xs">
             <div class="flex flex-col gap-1">
               <label class="text-slate-500 font-medium">最終接触日</label>
               <input id="t2f-lastdate" type="date" class="input-base text-xs py-2">
             </div>
             <div class="flex flex-col gap-1">
-              <label class="text-slate-500 font-medium flex items-center gap-1">相手の最新反応 <span class="tip text-slate-300" data-tip="テキスト返信がない場合でも「いいね」や「無反応」を選んでAIに伝えられます">?</span></label>
-              <select id="t2f-reaction" class="input-base text-xs py-2">
-                <option value="テキスト返信">💬 テキスト返信あり</option>
-                <option value="いいねのみ">👍 いいねのみ</option>
-                <option value="スタンプ・絵文字">😊 スタンプ・絵文字のみ</option>
-                <option value="リポスト">🔁 リポストのみ</option>
-                <option value="フォロー返し">➕ フォロー返しのみ</option>
-                <option value="無反応">🔕 無反応・既読スルー</option>
-              </select>
+              <label class="text-slate-500 font-medium flex items-center gap-1">相手の最新反応 <span class="text-[10px] text-violet-500 font-semibold ml-1">複数選択可</span><span class="tip text-slate-300 ml-1" data-tip="いいね＋フォロー返しなど複数同時に選べます">?</span></label>
+              <div id="t2f-reactions-wrap" class="flex flex-wrap gap-1.5 py-1">
+                <label class="reaction-check-label"><input type="checkbox" value="テキスト返信" class="t2f-reaction-cb"> 💬 テキスト返信</label>
+                <label class="reaction-check-label"><input type="checkbox" value="コメント返信" class="t2f-reaction-cb"> 🗨 コメント返信</label>
+                <label class="reaction-check-label"><input type="checkbox" value="いいね" class="t2f-reaction-cb"> 👍 いいね</label>
+                <label class="reaction-check-label"><input type="checkbox" value="フォロー返し" class="t2f-reaction-cb"> ➕ フォロー返し</label>
+                <label class="reaction-check-label"><input type="checkbox" value="スタンプ・絵文字" class="t2f-reaction-cb"> 😊 スタンプ・絵文字</label>
+                <label class="reaction-check-label"><input type="checkbox" value="リポスト" class="t2f-reaction-cb"> 🔁 リポスト</label>
+                <label class="reaction-check-label"><input type="checkbox" value="無反応" class="t2f-reaction-cb"> 🔕 無反応</label>
+              </div>
             </div>
           </div>
-          <div class="flex flex-col gap-1 text-xs">
-            <label class="text-slate-500 font-medium flex items-center gap-1">対象投稿URL / メモ <span class="tip text-slate-300" data-tip="どの投稿・ストーリーに対してリアクション・コメントしたかを記録します">?</span></label>
-            <input id="t2f-target-post" class="input-base text-xs py-2" placeholder="https://x.com/... または「3/20の課題ツイートへのリプ」など">
+          <div class="flex flex-col gap-1.5 text-xs">
+            <label class="text-slate-500 font-medium flex items-center gap-1">送信した文章 / 対象投稿 <span class="tip text-slate-300" data-tip="送信済み文章から選ぶか、直接URLやメモを入力">?</span></label>
+            <select id="t2f-sent-msg-select" class="input-base text-xs py-2">
+              <option value="">送信済み文章から選ぶ...</option>
+            </select>
+            <input id="t2f-target-post" class="input-base text-xs py-2" placeholder="または直接入力（URL・メモなど）">
           </div>
           <textarea id="t2f-conv" class="input-base h-28 cs text-xs" placeholder="会話ログ（リプ・DM全履歴）を貼り付け。いいねのみ・無反応の場合は空欄でも可。"></textarea>
           <button id="t2-copy-prompt" class="btn-sec w-full justify-center text-xs">
@@ -759,6 +769,32 @@ body.viewer-mode .admin-only{display:none!important}
   </div>
 </div>
 
+<!-- Send Edit Modal -->
+<div id="send-edit-modal" class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm hidden items-center justify-center p-4">
+  <div class="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl p-5 flex flex-col gap-3">
+    <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+      <h3 class="font-bold text-slate-900 text-sm flex items-center gap-2"><i class="fa-solid fa-paper-plane text-violet-500"></i>送信完了を記録</h3>
+      <button id="send-edit-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">元の文章（AIが生成）</label>
+      <p id="send-edit-original" class="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 leading-relaxed border border-slate-200 whitespace-pre-wrap max-h-32 overflow-y-auto cs"></p>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-xs text-slate-700 font-semibold">実際に送った文章 <span class="text-slate-400 font-normal">（変更した場合は修正・空白のままなら元の文章で記録）</span></label>
+      <textarea id="send-edit-actual" class="input-base h-24 cs text-xs" placeholder="元の文章のまま送った場合は空白でOK"></textarea>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-xs text-slate-500">編集理由 <span class="text-slate-400">（任意）</span></label>
+      <textarea id="send-edit-reason" class="input-base h-14 cs text-xs" placeholder="例：語調を柔らかくした、具体例を追加した など"></textarea>
+    </div>
+    <div class="flex gap-2 justify-end mt-1">
+      <button id="send-edit-cancel" class="btn-sec text-xs py-2 px-4">キャンセル</button>
+      <button id="send-edit-confirm" class="btn-primary text-xs py-2 px-4"><i class="fa-solid fa-check"></i>送信完了として記録</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ──────────────────────────────────────────────
 // PROMPT TEMPLATES  (loaded from /prompts/*.md)
@@ -865,6 +901,15 @@ async function startFirestoreListener() {
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
+// 「」『』を先頭・末尾から除去
+function cleanMsg(s) { return s ? s.replace(/^[「『]|[」』]$/g, '').trim() : ''; }
+
+// 複数選択された反応を取得（＋区切り）
+function getSelectedReactions() {
+  const checks = Array.from(document.querySelectorAll('.t2f-reaction-cb:checked')).map(cb => cb.value);
+  return checks.length > 0 ? checks.join('＋') : '';
+}
+
 // @username or partial → proper profile URL based on channel
 function buildProfileUrl(raw, channel) {
   if (!raw) return '';
@@ -934,10 +979,10 @@ function parseOS1(text) {
     dmRoute,
     startDate: field(text, '接触開始日'),
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
-    contactA: caM ? caM[1].trim() : '',
-    contactB: cbM ? cbM[1].trim() : '',
-    dmA: daM ? daM[1].trim() : '',
-    dmB: dbM ? dbM[1].trim() : '',
+    contactA: caM ? cleanMsg(caM[1]) : '',
+    contactB: cbM ? cleanMsg(cbM[1]) : '',
+    dmA: daM ? cleanMsg(daM[1]) : '',
+    dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote,
     channel: 'twitter'
   };
@@ -986,13 +1031,13 @@ function parseOS1Instagram(text) {
     nextAction,
     startDate,
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
-    contactA: caM ? caM[1].trim() : '',
-    contactB: cbM ? cbM[1].trim() : '',
-    storyA: saM ? saM[1].trim() : '',
-    storyB: sbM ? sbM[1].trim() : '',
+    contactA: caM ? cleanMsg(caM[1]) : '',
+    contactB: cbM ? cleanMsg(cbM[1]) : '',
+    storyA: saM ? cleanMsg(saM[1]) : '',
+    storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote,
-    dmA: daM ? daM[1].trim() : '',
-    dmB: dbM ? dbM[1].trim() : '',
+    dmA: daM ? cleanMsg(daM[1]) : '',
+    dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote,
     channel: 'instagram'
   };
@@ -1034,10 +1079,10 @@ function parseOS1Threads(text) {
     track: skipJudge === 'SKIP' ? 'SKIP' : track,
     trackReason: field(text, '判定理由'),
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
-    contactA: caM ? caM[1].trim() : '',
-    contactB: cbM ? cbM[1].trim() : '',
-    dmA: daM ? daM[1].trim() : '',
-    dmB: dbM ? dbM[1].trim() : '',
+    contactA: caM ? cleanMsg(caM[1]) : '',
+    contactB: cbM ? cleanMsg(cbM[1]) : '',
+    dmA: daM ? cleanMsg(daM[1]) : '',
+    dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote,
     channel: 'threads'
   };
@@ -1106,8 +1151,8 @@ function parseOS2(text) {
     judgment: firstLineOf(text, '判定'),
     nextAction: firstLineOf(text, '次アクション'),
     deadline: firstLineOf(text, '実行期限'),
-    replyA: raM ? raM[1].trim() : block(text, '次の返信案').split('\n')[0].trim(),
-    replyB: rbM ? rbM[1].trim() : '',
+    replyA: raM ? cleanMsg(raM[1]) : cleanMsg(block(text, '次の返信案').split('\n')[0]),
+    replyB: rbM ? cleanMsg(rbM[1]) : '',
     ngAction: firstLineOf(text, '今やってはいけないこと')
   };
 }
@@ -1591,13 +1636,17 @@ function showPipelineDetail(id) {
   if (history.length > 0) {
     histSec.classList.remove('hidden');
     document.getElementById('t2d-history-count').textContent = `${history.length}回記録`;
-    const reactionCls = r => {
-      if (!r) return 'reaction-badge reaction-text';
-      if (r.includes('いいね')) return 'reaction-badge reaction-like';
-      if (r.includes('スタンプ') || r.includes('絵文字')) return 'reaction-badge reaction-stamp';
-      if (r.includes('無反応') || r.includes('既読')) return 'reaction-badge reaction-none';
-      if (r.includes('リポスト')) return 'reaction-badge reaction-repost';
-      return 'reaction-badge reaction-text';
+    const reactionBadges = r => {
+      if (!r) return '<span class="reaction-badge reaction-text">テキスト返信</span>';
+      return r.split('＋').map(reaction => {
+        reaction = reaction.trim();
+        let cls = 'reaction-text';
+        if (reaction.includes('いいね')) cls = 'reaction-like';
+        else if (reaction.includes('スタンプ') || reaction.includes('絵文字')) cls = 'reaction-stamp';
+        else if (reaction.includes('無反応') || reaction.includes('既読')) cls = 'reaction-none';
+        else if (reaction.includes('リポスト')) cls = 'reaction-repost';
+        return `<span class="reaction-badge ${cls}">${reaction}</span>`;
+      }).join('');
     };
     const judgmentColor = j => j === '前進' ? 'text-violet-700 font-bold' : j === 'クローズ' ? 'text-rose-600 font-bold' : 'text-amber-600 font-bold';
     document.getElementById('t2d-history').innerHTML = history.slice().reverse().map((h, i) => `
@@ -1610,10 +1659,11 @@ function showPipelineDetail(id) {
           <div class="flex items-center gap-1.5 flex-wrap mb-1">
             <span class="text-[11px] text-slate-400">${h.date}</span>
             <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">${h.step}</span>
-            <span class="${reactionCls(h.reaction)}">${h.reaction || 'テキスト返信'}</span>
+            ${reactionBadges(h.reaction)}
             <span class="${judgmentColor(h.judgment)} text-xs">${h.judgment || '-'}</span>
             ${h.redSignal && h.redSignal !== '無' ? '<span class="red-signal">赤信号</span>' : ''}
           </div>
+          ${h.sentMsgLabel ? `<p class="text-[10px] text-violet-600 truncate mb-0.5"><i class="fa-solid fa-paper-plane mr-0.5"></i>${h.sentMsgLabel}</p>` : ''}
           ${h.targetPost ? `<p class="text-[10px] text-slate-400 truncate mb-0.5"><i class="fa-solid fa-link mr-0.5"></i>${h.targetPost}</p>` : ''}
           ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
           ${h.replyA ? `<p class="text-[10px] text-violet-600 mt-0.5 leading-snug line-clamp-2"><span class="font-bold">案A：</span>${h.replyA}</p>` : ''}
@@ -1632,6 +1682,25 @@ function showPipelineDetail(id) {
   document.getElementById('t2f-conv').value = '';
   document.getElementById('t2f-result').value = '';
   document.getElementById('t2f-target-post').value = '';
+  // Reset reaction checkboxes
+  document.querySelectorAll('.t2f-reaction-cb').forEach(cb => {
+    cb.checked = false;
+    const label = cb.closest('.reaction-check-label');
+    if (label) label.classList.remove('checked');
+  });
+  // Populate sent messages dropdown
+  const sentSel = document.getElementById('t2f-sent-msg-select');
+  sentSel.innerHTML = '<option value="">送信済み文章から選ぶ...</option>';
+  if (p.sentMessages && p.sentMessages.length > 0) {
+    p.sentMessages.forEach(sm => {
+      const opt = document.createElement('option');
+      const preview = (sm.actual || sm.original || '').slice(0, 25);
+      opt.value = sm.id || '';
+      opt.dataset.text = sm.actual || sm.original || '';
+      opt.textContent = `[${sm.date}] ${sm.label}：${preview}${preview.length >= 25 ? '…' : ''}`;
+      sentSel.appendChild(opt);
+    });
+  }
 }
 
 function renderClosed() {
@@ -1884,46 +1953,80 @@ document.querySelectorAll('.t1d-copy-btn').forEach(btn => {
   });
 });
 
-// OS① send buttons → auto-add to pipeline; story reply sets S3
+// OS① send buttons → open send-edit modal
+let _pendingSend = null;
+
 document.querySelectorAll('.t1d-send-btn').forEach(btn => {
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     const label = btn.dataset.label || '';
-    const isStoryReply = label.includes('ストーリー返信');
-    if (!selectedTarget) { showToast(`${label} を送信完了として記録`); return; }
-    const d = loadData();
-    const t = d.targets.find(x => x.id === selectedTarget);
-    if (!t) return;
-    let pRec = t.pipelineId ? d.pipeline.find(x => x.id === t.pipelineId) : null;
-    if (!pRec) {
-      const initStep = t.track === 'FT' ? 'S2' : 'S1';
-      pRec = {
-        id: uid(), targetId: t.id, caseId: t.caseId || null, os1Output: t.aiOutput || null,
-        accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
-        track: t.track, hypothesis: t.hypothesis,
-        startDate: t.startDate || new Date().toISOString().slice(0,10),
-        currentStep: initStep,
-        stepHistory: [{ step: initStep, date: new Date().toISOString().slice(0,10) }],
-        repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
-        redSignal: null, responseQuality: null, hypothesisVerification: null,
-        judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
-        analyses: [], history: [], isOpen: true, closedAt: null, closedCaseId: null
-      };
-      d.pipeline.push(pRec);
-      t.pipelineId = pRec.id;
-    }
-    if (isStoryReply) {
-      pRec.currentStep = 'S3';
-      if (!pRec.stepHistory) pRec.stepHistory = [];
-      pRec.stepHistory.push({ step: 'S3', date: new Date().toISOString().slice(0,10) });
-    }
-    saveData(d);
-    renderAll();
-    const pipeBtn = document.getElementById('t1d-to-pipeline');
-    if (pipeBtn) { pipeBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>パイプライン登録済み'; pipeBtn.disabled = true; pipeBtn.classList.add('opacity-50'); }
-    showToast(isStoryReply ? `${label} を送信完了・DM移行フェーズへ自動更新` : `${label} を送信完了・パイプラインへ自動登録`);
+    const originalText = document.getElementById(btn.dataset.target)?.textContent || '';
+    _pendingSend = { label, originalText, isStoryReply: label.includes('ストーリー返信'), targetId: selectedTarget };
+    document.getElementById('send-edit-original').textContent = originalText;
+    document.getElementById('send-edit-actual').value = '';
+    document.getElementById('send-edit-reason').value = '';
+    document.getElementById('send-edit-modal').style.display = 'flex';
   });
 });
+
+// Send-edit modal handlers
+function closeSendEditModal() {
+  document.getElementById('send-edit-modal').style.display = 'none';
+  _pendingSend = null;
+}
+
+function executeSendComplete(label, originalText, isStoryReply, targetId, actualText, reason) {
+  if (!targetId) { showToast(`${label} を送信完了として記録`); return; }
+  const d = loadData();
+  const t = d.targets.find(x => x.id === targetId);
+  if (!t) return;
+  let pRec = t.pipelineId ? d.pipeline.find(x => x.id === t.pipelineId) : null;
+  if (!pRec) {
+    const initStep = t.track === 'FT' ? 'S2' : 'S1';
+    pRec = {
+      id: uid(), targetId: t.id, caseId: t.caseId || null, os1Output: t.aiOutput || null,
+      accountName: t.accountName, url: t.url, channel: t.channel || 'twitter',
+      track: t.track, hypothesis: t.hypothesis,
+      startDate: t.startDate || new Date().toISOString().slice(0,10),
+      currentStep: initStep,
+      stepHistory: [{ step: initStep, date: new Date().toISOString().slice(0,10) }],
+      repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
+      redSignal: null, responseQuality: null, hypothesisVerification: null,
+      judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
+      analyses: [], history: [], sentMessages: [], isOpen: true, closedAt: null, closedCaseId: null
+    };
+    d.pipeline.push(pRec);
+    t.pipelineId = pRec.id;
+  }
+  if (isStoryReply) {
+    pRec.currentStep = 'S3';
+    if (!pRec.stepHistory) pRec.stepHistory = [];
+    pRec.stepHistory.push({ step: 'S3', date: new Date().toISOString().slice(0,10) });
+  }
+  if (!pRec.sentMessages) pRec.sentMessages = [];
+  const finalText = actualText && actualText !== originalText ? actualText : originalText;
+  pRec.sentMessages.push({
+    id: uid(), label, original: originalText, actual: finalText,
+    edited: !!(actualText && actualText !== originalText),
+    reason: reason || '', date: new Date().toISOString().slice(0,10)
+  });
+  saveData(d);
+  renderAll();
+  const pipeBtn = document.getElementById('t1d-to-pipeline');
+  if (pipeBtn) { pipeBtn.innerHTML = '<i class="fa-solid fa-check text-emerald-400"></i>パイプライン登録済み'; pipeBtn.disabled = true; pipeBtn.classList.add('opacity-50'); }
+  showToast(isStoryReply ? `${label} を送信完了・DM移行フェーズへ自動更新` : `${label} を送信完了・パイプラインへ自動登録`);
+}
+
+document.getElementById('send-edit-confirm').addEventListener('click', () => {
+  if (!_pendingSend) return;
+  const { label, originalText, isStoryReply, targetId } = _pendingSend;
+  const actualText = document.getElementById('send-edit-actual').value.trim();
+  const reason = document.getElementById('send-edit-reason').value.trim();
+  executeSendComplete(label, originalText, isStoryReply, targetId, actualText, reason);
+  closeSendEditModal();
+});
+document.getElementById('send-edit-cancel').addEventListener('click', closeSendEditModal);
+document.getElementById('send-edit-close').addEventListener('click', closeSendEditModal);
 
 // OS① to pipeline
 document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
@@ -1942,7 +2045,7 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
     repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
     redSignal: null, responseQuality: null, hypothesisVerification: null,
     judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
-    analyses: [], history: [], isOpen: true, closedAt: null, closedCaseId: null
+    analyses: [], history: [], sentMessages: [], isOpen: true, closedAt: null, closedCaseId: null
   };
   d.pipeline.push(rec);
   t.pipelineId = rec.id;
@@ -2031,6 +2134,7 @@ document.getElementById('t2d-edit-btn').addEventListener('click', () => {
   document.getElementById('t2d-edit-url').value = p.url || '';
   document.getElementById('t2d-edit-track').value = p.track || 'NT';
   document.getElementById('t2d-edit-start').value = p.startDate || '';
+  document.getElementById('t2d-edit-lastcontact').value = p.lastContactDate || '';
   document.getElementById('t2d-edit-form').classList.remove('hidden');
   document.getElementById('t2d-edit-btn').classList.add('hidden');
 });
@@ -2049,6 +2153,7 @@ document.getElementById('t2d-edit-save').addEventListener('click', () => {
   p.url = document.getElementById('t2d-edit-url').value.trim();
   p.track = document.getElementById('t2d-edit-track').value;
   p.startDate = document.getElementById('t2d-edit-start').value || p.startDate;
+  p.lastContactDate = document.getElementById('t2d-edit-lastcontact').value || p.lastContactDate;
   saveData(d);
   document.getElementById('t2d-edit-form').classList.add('hidden');
   document.getElementById('t2d-edit-btn').classList.remove('hidden');
@@ -2063,7 +2168,7 @@ document.getElementById('t2-copy-prompt').addEventListener('click', () => {
   const d = loadData();
   const p = d.pipeline.find(x => x.id === selectedPipeline);
   const conv = document.getElementById('t2f-conv').value.trim();
-  const reaction = document.getElementById('t2f-reaction').value;
+  const reaction = getSelectedReactions() || '未選択';
   const os1Section = p.os1Output
     ? `【OS①スクリーニング出力（完全転記）】\n${p.os1Output}`
     : `【OS①スクリーニング情報】\n案件ID：${p.caseId || '-'}\nアカウント名：${p.accountName}\nトラック：${p.track}\n事前仮説：${p.hypothesis}\n接触開始日：${p.startDate}`;
@@ -2110,11 +2215,12 @@ document.getElementById('t2-submit').addEventListener('click', () => {
   if (!p.history) p.history = [];
   p.history.push({
     date: new Date().toISOString().slice(0,10),
-    reaction: document.getElementById('t2f-reaction').value,
+    reaction: getSelectedReactions() || '未記録',
     step: document.getElementById('t2f-step').value,
     repCount: parseInt(document.getElementById('t2f-rep').value) || 0,
     dmCount: parseInt(document.getElementById('t2f-dm').value) || 0,
     targetPost: document.getElementById('t2f-target-post').value.trim(),
+    sentMsgLabel: document.getElementById('t2f-sent-msg-select').selectedOptions[0]?.textContent || '',
     judgment: parsed.judgment,
     nextAction: parsed.nextAction,
     redSignal: parsed.redSignal,
@@ -2125,6 +2231,7 @@ document.getElementById('t2-submit').addEventListener('click', () => {
   renderAll();
   showPipelineDetail(selectedPipeline);
   document.getElementById('t2f-target-post').value = '';
+  document.getElementById('t2f-sent-msg-select').value = '';
   showToast('判定結果を記録しました');
 });
 
@@ -2324,7 +2431,6 @@ function targetsToMarkdown(targets) {
 document.getElementById('btn-export').addEventListener('click', () => {
   const d = loadData();
   if (d.targets.length === 0) { showToast('エクスポートするデータがありません'); return; }
-  buildExportBatchOptions();
   const sel = document.getElementById('export-batch');
   const pageIdx = parseInt(sel.value) || 0;
   const startIdx = pageIdx * 10;
@@ -2358,6 +2464,22 @@ document.getElementById('btn-sample').addEventListener('click', () => {
     renderAll();
     showToast('サンプルデータを読み込みました', 2500);
   });
+});
+
+// Reaction checkbox visual state
+document.addEventListener('change', (e) => {
+  if (e.target.classList.contains('t2f-reaction-cb')) {
+    const label = e.target.closest('.reaction-check-label');
+    if (label) label.classList.toggle('checked', e.target.checked);
+  }
+});
+
+// Sent message dropdown → sync to target-post field
+document.getElementById('t2f-sent-msg-select').addEventListener('change', function() {
+  const selected = this.selectedOptions[0];
+  if (selected && selected.dataset.text) {
+    document.getElementById('t2f-target-post').value = selected.dataset.text.slice(0, 100);
+  }
 });
 
 // Modal
