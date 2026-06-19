@@ -946,12 +946,16 @@ function buildConvLog(p) {
     const editNote = sm.edited ? '（編集済み）' : '';
     parts.push(`【自分｜送信${i + 1}（${sm.date}）${sm.label}${editNote}】\n${txt}`);
     replies.filter(r => r.sentMsgId === sm.id).forEach(r => {
-      parts.push(`【相手｜送信${i + 1}への返信（${r.date}）】\n${r.text}`);
+      const rxLabel = r.reaction ? ` ｜${r.reaction}` : '';
+      const body = r.text || '（テキスト返信なし）';
+      parts.push(`【相手｜送信${i + 1}への反応（${r.date}）${rxLabel}】\n${body}`);
     });
   });
   // 特定の送信に紐付かない返信
   replies.filter(r => !msgs.find(m => m.id === r.sentMsgId)).forEach(r => {
-    parts.push(`【相手（${r.date}）】\n${r.text}`);
+    const rxLabel = r.reaction ? ` ｜${r.reaction}` : '';
+    const body = r.text || '（テキスト返信なし）';
+    parts.push(`【相手（${r.date}）${rxLabel}】\n${body}`);
   });
   return parts.join('\n\n');
 }
@@ -2532,18 +2536,25 @@ document.addEventListener('change', (e) => {
 document.getElementById('t2f-add-reply').addEventListener('click', () => {
   if (!selectedPipeline) { showToast('案件を選択してください'); return; }
   const replyText = document.getElementById('t2f-reply-text').value.trim();
-  if (!replyText) { showToast('返信内容を入力してください'); return; }
+  const reaction = getSelectedReactions();
   const sentMsgId = document.getElementById('t2f-reply-to').value || null;
+  if (!replyText && !reaction) { showToast('反応を選択するか返信内容を入力してください'); return; }
   const d = loadData();
   const p = d.pipeline.find(x => x.id === selectedPipeline);
   if (!p) return;
   if (!p.replies) p.replies = [];
-  p.replies.push({ id: uid(), sentMsgId, text: replyText, date: new Date().toISOString().slice(0, 10) });
+  p.replies.push({ id: uid(), sentMsgId, text: replyText, reaction, date: new Date().toISOString().slice(0, 10) });
   saveData(d);
   document.getElementById('t2f-conv').value = buildConvLog(p);
   document.getElementById('t2f-reply-text').value = '';
   document.getElementById('t2f-reply-to').value = '';
-  showToast('返信を追加しました');
+  // 反応チェックボックスをリセット
+  document.querySelectorAll('.t2f-reaction-cb').forEach(cb => {
+    cb.checked = false;
+    const lbl = cb.closest('.reaction-check-label');
+    if (lbl) lbl.classList.remove('checked');
+  });
+  showToast(reaction && !replyText ? `${reaction} を会話ログに追加しました` : '返信を追加しました');
 });
 
 // 会話ログを再構築ボタン
