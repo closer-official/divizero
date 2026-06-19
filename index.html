@@ -560,13 +560,26 @@ body.viewer-mode .admin-only{display:none!important}
             </div>
           </div>
           <div class="flex flex-col gap-1.5 text-xs">
-            <label class="text-slate-500 font-medium flex items-center gap-1">送信した文章 / 対象投稿 <span class="tip text-slate-300" data-tip="送信済み文章から選ぶか、直接URLやメモを入力">?</span></label>
-            <select id="t2f-sent-msg-select" class="input-base text-xs py-2">
-              <option value="">送信済み文章から選ぶ...</option>
-            </select>
-            <input id="t2f-target-post" class="input-base text-xs py-2" placeholder="または直接入力（URL・メモなど）">
+            <label class="text-slate-500 font-medium flex items-center gap-1">対象投稿 / メモ <span class="tip text-slate-300" data-tip="どの投稿・ストーリーへの反応かURLやメモで補足">?</span></label>
+            <input id="t2f-target-post" class="input-base text-xs py-2" placeholder="URL・メモなど（任意）">
           </div>
-          <textarea id="t2f-conv" class="input-base h-28 cs text-xs" placeholder="会話ログ（リプ・DM全履歴）を貼り付け。いいねのみ・無反応の場合は空欄でも可。"></textarea>
+          <!-- 会話ログ組み立て -->
+          <div class="flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+            <div class="flex items-center justify-between">
+              <p class="font-bold text-slate-700 flex items-center gap-1.5"><i class="fa-solid fa-comments text-indigo-400"></i>会話ログ</p>
+              <button id="t2f-rebuild-log" class="text-[10px] px-2 py-0.5 bg-white border border-slate-200 rounded text-slate-500 hover:bg-slate-100 transition"><i class="fa-solid fa-rotate-right mr-1"></i>再構築</button>
+            </div>
+            <textarea id="t2f-conv" class="input-base h-36 cs text-xs" placeholder="送信済み文章があれば自動入力されます。相手の返信は下から追加してください。"></textarea>
+            <!-- 相手の返信を追加 -->
+            <div class="border-t border-slate-200 pt-2 mt-1 flex flex-col gap-1.5">
+              <p class="text-[11px] font-semibold text-indigo-700 flex items-center gap-1"><i class="fa-solid fa-reply"></i>相手からの返信を追加</p>
+              <select id="t2f-reply-to" class="input-base text-xs py-1.5">
+                <option value="">どの送信への返信？</option>
+              </select>
+              <textarea id="t2f-reply-text" class="input-base h-16 cs text-xs" placeholder="相手の返信・リアクション内容を貼り付け（テキスト返信の場合）"></textarea>
+              <button id="t2f-add-reply" class="btn-sec text-xs py-1.5 self-end gap-1.5"><i class="fa-solid fa-plus text-indigo-500"></i>会話ログに追加して保存</button>
+            </div>
+          </div>
           <button id="t2-copy-prompt" class="btn-sec w-full justify-center text-xs">
             <i class="fa-solid fa-copy text-indigo-500"></i>OS②プロンプトをコピー（外部AIで実行）
           </button>
@@ -921,6 +934,27 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 
 // 「」『』を先頭・末尾から除去
 function cleanMsg(s) { return s ? s.replace(/^[「『]|[」』]$/g, '').trim() : ''; }
+
+// 送信メッセージ＋返信から会話ログを構築（自分/相手ラベル付き）
+function buildConvLog(p) {
+  const msgs = p.sentMessages || [];
+  const replies = p.replies || [];
+  if (msgs.length === 0 && replies.length === 0) return '';
+  const parts = [];
+  msgs.forEach((sm, i) => {
+    const txt = sm.actual || sm.original || '';
+    const editNote = sm.edited ? '（編集済み）' : '';
+    parts.push(`【自分｜送信${i + 1}（${sm.date}）${sm.label}${editNote}】\n${txt}`);
+    replies.filter(r => r.sentMsgId === sm.id).forEach(r => {
+      parts.push(`【相手｜送信${i + 1}への返信（${r.date}）】\n${r.text}`);
+    });
+  });
+  // 特定の送信に紐付かない返信
+  replies.filter(r => !msgs.find(m => m.id === r.sentMsgId)).forEach(r => {
+    parts.push(`【相手（${r.date}）】\n${r.text}`);
+  });
+  return parts.join('\n\n');
+}
 
 // 複数選択された反応を取得（＋区切り）
 function getSelectedReactions() {
@@ -1699,37 +1733,29 @@ function showPipelineDetail(id) {
   document.getElementById('t2f-lastdate').value = p.lastContactDate || '';
   document.getElementById('t2f-result').value = '';
   document.getElementById('t2f-target-post').value = '';
-  // 送信済み文章を会話ログに自動挿入
-  const sentMsgs = p.sentMessages || [];
-  if (sentMsgs.length > 0) {
-    const convText = sentMsgs.map((sm, i) => {
-      const msgText = sm.actual || sm.original || '';
-      const editNote = sm.edited ? `（編集済み）` : '';
-      return `【自分の送信${i + 1}（${sm.date}） ${sm.label}${editNote}】\n${msgText}`;
-    }).join('\n\n');
-    document.getElementById('t2f-conv').value = convText + '\n\n▼ 相手の返信・会話の続きをここに追記してください';
-  } else {
-    document.getElementById('t2f-conv').value = '';
-  }
+  document.getElementById('t2f-reply-text').value = '';
+  // 会話ログを構築して表示
+  document.getElementById('t2f-conv').value = buildConvLog(p) || '';
   // Reset reaction checkboxes
   document.querySelectorAll('.t2f-reaction-cb').forEach(cb => {
     cb.checked = false;
     const label = cb.closest('.reaction-check-label');
     if (label) label.classList.remove('checked');
   });
-  // Populate sent messages dropdown
-  const sentSel = document.getElementById('t2f-sent-msg-select');
-  sentSel.innerHTML = '<option value="">送信済み文章から選ぶ...</option>';
-  if (p.sentMessages && p.sentMessages.length > 0) {
-    p.sentMessages.forEach(sm => {
+  // 返信紐付けプルダウンを populate
+  function populateReplyTo(p) {
+    const replyToSel = document.getElementById('t2f-reply-to');
+    replyToSel.innerHTML = '<option value="">どの送信への返信？（選択任意）</option>';
+    (p.sentMessages || []).forEach((sm, i) => {
+      const preview = (sm.actual || sm.original || '').slice(0, 20);
       const opt = document.createElement('option');
-      const preview = (sm.actual || sm.original || '').slice(0, 25);
-      opt.value = sm.id || '';
-      opt.dataset.text = sm.actual || sm.original || '';
-      opt.textContent = `[${sm.date}] ${sm.label}：${preview}${preview.length >= 25 ? '…' : ''}`;
-      sentSel.appendChild(opt);
+      opt.value = sm.id;
+      opt.textContent = `送信${i + 1}（${sm.date}）${sm.label}：${preview}…`;
+      replyToSel.appendChild(opt);
     });
   }
+  populateReplyTo(p);
+  // 送信済み文章プルダウン（対象投稿欄用）は削除 → t2f-reply-toを兼用
 }
 
 function renderClosed() {
@@ -2022,7 +2048,7 @@ function executeSendComplete(label, originalText, isStoryReply, targetId, actual
       repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
       redSignal: null, responseQuality: null, hypothesisVerification: null,
       judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
-      analyses: [], history: [], sentMessages: [], isOpen: true, closedAt: null, closedCaseId: null
+      analyses: [], history: [], sentMessages: [], replies: [], isOpen: true, closedAt: null, closedCaseId: null
     };
     d.pipeline.push(pRec);
     t.pipelineId = pRec.id;
@@ -2074,7 +2100,7 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
     repCount: 0, dmCount: 0, lastContactDate: new Date().toISOString().slice(0,10),
     redSignal: null, responseQuality: null, hypothesisVerification: null,
     judgment: null, nextAction: null, deadline: null, replyA: null, replyB: null, ngAction: null,
-    analyses: [], history: [], sentMessages: [], isOpen: true, closedAt: null, closedCaseId: null
+    analyses: [], history: [], sentMessages: [], replies: [], isOpen: true, closedAt: null, closedCaseId: null
   };
   d.pipeline.push(rec);
   t.pipelineId = rec.id;
@@ -2249,7 +2275,7 @@ document.getElementById('t2-submit').addEventListener('click', () => {
     repCount: parseInt(document.getElementById('t2f-rep').value) || 0,
     dmCount: parseInt(document.getElementById('t2f-dm').value) || 0,
     targetPost: document.getElementById('t2f-target-post').value.trim(),
-    sentMsgLabel: document.getElementById('t2f-sent-msg-select').selectedOptions[0]?.textContent || '',
+    sentMsgLabel: '',
     judgment: parsed.judgment,
     nextAction: parsed.nextAction,
     redSignal: parsed.redSignal,
@@ -2260,7 +2286,6 @@ document.getElementById('t2-submit').addEventListener('click', () => {
   renderAll();
   showPipelineDetail(selectedPipeline);
   document.getElementById('t2f-target-post').value = '';
-  document.getElementById('t2f-sent-msg-select').value = '';
   showToast('判定結果を記録しました');
 });
 
@@ -2503,12 +2528,32 @@ document.addEventListener('change', (e) => {
   }
 });
 
-// Sent message dropdown → sync to target-post field
-document.getElementById('t2f-sent-msg-select').addEventListener('change', function() {
-  const selected = this.selectedOptions[0];
-  if (selected && selected.dataset.text) {
-    document.getElementById('t2f-target-post').value = selected.dataset.text.slice(0, 100);
-  }
+// 相手の返信を追加して会話ログを再構築
+document.getElementById('t2f-add-reply').addEventListener('click', () => {
+  if (!selectedPipeline) { showToast('案件を選択してください'); return; }
+  const replyText = document.getElementById('t2f-reply-text').value.trim();
+  if (!replyText) { showToast('返信内容を入力してください'); return; }
+  const sentMsgId = document.getElementById('t2f-reply-to').value || null;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  if (!p.replies) p.replies = [];
+  p.replies.push({ id: uid(), sentMsgId, text: replyText, date: new Date().toISOString().slice(0, 10) });
+  saveData(d);
+  document.getElementById('t2f-conv').value = buildConvLog(p);
+  document.getElementById('t2f-reply-text').value = '';
+  document.getElementById('t2f-reply-to').value = '';
+  showToast('返信を追加しました');
+});
+
+// 会話ログを再構築ボタン
+document.getElementById('t2f-rebuild-log').addEventListener('click', () => {
+  if (!selectedPipeline) return;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  document.getElementById('t2f-conv').value = buildConvLog(p) || '';
+  showToast('会話ログを再構築しました');
 });
 
 // ──────────────────────────────────────────────
@@ -2535,9 +2580,11 @@ function diagnoseMigration() {
   const autoItems = [];
   const aiItems = [];
 
-  // 1. sentMessages missing
+  // 1. sentMessages / replies missing
   const missingSM = d.pipeline.filter(p => !Array.isArray(p.sentMessages)).length;
   if (missingSM > 0) autoItems.push({ key: 'sentMessages', label: `sentMessagesフィールドを追加（${missingSM}件のパイプライン記録）` });
+  const missingReplies = d.pipeline.filter(p => !Array.isArray(p.replies)).length;
+  if (missingReplies > 0) autoItems.push({ key: 'replies', label: `repliesフィールドを追加（${missingReplies}件のパイプライン記録）` });
 
   // 2. caseId that can be copied from target
   let copyable = 0;
@@ -2602,6 +2649,8 @@ function runAutoMigration() {
   d.pipeline.forEach(p => {
     // sentMessages
     if (!Array.isArray(p.sentMessages)) { p.sentMessages = []; fixCount++; }
+    // replies
+    if (!Array.isArray(p.replies)) { p.replies = []; fixCount++; }
     // history
     if (!Array.isArray(p.history)) { p.history = []; fixCount++; }
     // caseId from target
