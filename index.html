@@ -122,16 +122,10 @@ body.viewer-mode .admin-only{display:none!important}
 <!-- HEADER -->
 <header class="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
   <div class="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between gap-4">
-    <div class="flex items-center gap-3">
-      <div class="bg-violet-600 text-white p-2 rounded-xl shadow shadow-violet-200">
-        <i class="fa-solid fa-bolt text-lg"></i>
-      </div>
-      <span id="deploy-msg-chip" class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"></span>
-    </div>
+    <span id="deploy-msg-chip" class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"></span>
     <div class="flex items-center gap-2" style="flex-wrap:nowrap;overflow-x:auto">
       <span id="role-badge" class="hidden"></span>
-      <button id="btn-sample" class="btn-sec text-xs admin-only"><i class="fa-solid fa-wand-magic-sparkles text-violet-500"></i><span class="hidden sm:inline">サンプル</span></button>
-      <button id="btn-migrate" class="btn-sec text-xs admin-only" title="データアップデート"><i class="fa-solid fa-rotate text-amber-500"></i><span class="hidden sm:inline">アップデート</span></button>
+<button id="btn-migrate" class="btn-sec text-xs admin-only" title="データアップデート"><i class="fa-solid fa-rotate text-amber-500"></i><span class="hidden sm:inline">アップデート</span></button>
       <div class="flex items-center gap-1">
         <select id="export-batch" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400 hidden" style="max-width:110px"></select>
         <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">DL</span></button>
@@ -940,7 +934,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'トップバー';
+const DEPLOY_MSG = 'トップバーのボルトアイコン・サンプルボタン削除';
 
 (async function loadPrompts() {
   const files = [
@@ -3078,25 +3072,6 @@ document.getElementById('btn-export').addEventListener('click', () => {
 });
 
 // Sample data
-document.getElementById('btn-sample').addEventListener('click', () => {
-  confirm('サンプルデータ', 'サンプルデータを読み込みますか？（既存データは保持されます）', () => {
-    const d = loadData();
-    const t1 = { id: uid(), createdAt: new Date(Date.now()-5*86400000).toISOString(), accountName: '@yamada_coach', url: 'https://x.com/yamada_coach', followers: '3,200', industry: 'コーチング', estimatedProduct: '個人コーチングプログラム', estimatedPrice: '30万円〜', skipJudge: '通過', skipReason: '該当なし', track: 'FT', trackReason: '「LPどうしようか悩んでる」の投稿（3日前）あり', hypothesis: 'LP制作の必要性は認識しているが業者選定に迷っている可能性。LP制作事例の話題なら反応するはず', contactA: '山田さん、LPの投稿見ました。コーチングのLP、シンプルな構成が一番申込率上がる傾向あって、最近そのあたり事例が面白かったです。', contactB: 'LP悩んでるの投稿気になってました。最近コーチング業界のLP、申込率に直結する構成の変化があって参考になる事例がありまして。', pipelineId: null };
-    const t2 = { id: uid(), createdAt: new Date(Date.now()-10*86400000).toISOString(), accountName: '@sato_fitness', url: 'https://x.com/sato_fitness', followers: '8,100', industry: 'フィットネス', estimatedProduct: 'オンラインパーソナル', estimatedPrice: '5万円/月', skipJudge: '通過', skipReason: '該当なし', track: 'NT', trackReason: '課題シグナルなし。定期的に集客・SNS運用の話をしている', hypothesis: '問い合わせ数に伸び悩みを感じている可能性。集客効率や導線の話題なら反応しそう', contactA: '佐藤さんのSNS更新頻度すごいですね。フィットネス系って写真と文字のバランスが難しそうで、最近そこが面白い分析見てました。', contactB: 'フィットネス系のアカウント運用、楽しそうに続けてますね。この界隈ってLINEへの誘導率が結構差が出るって聞いて気になってました。', pipelineId: null };
-    const p1 = { id: uid(), targetId: t1.id, accountName: '@yamada_coach', url: 'https://x.com/yamada_coach', track: 'FT', hypothesis: t1.hypothesis, startDate: new Date(Date.now()-5*86400000).toISOString().slice(0,10), currentStep: 'S2', stepHistory: [{ step: 'S2', date: new Date(Date.now()-5*86400000).toISOString().slice(0,10) }], repCount: 0, dmCount: 1, lastContactDate: new Date(Date.now()-5*86400000).toISOString().slice(0,10), redSignal: '無', responseQuality: '質問あり', hypothesisVerification: '的中', judgment: '前進', nextAction: 'DM2往復目：事業開示を軽く触れる', deadline: '24時間以内', replyA: '実は私もWeb制作の仕事をしていて、コーチング系のLP特に得意なんですよね。もう少し詳しく聞かせてもらえますか？', replyB: 'LP、どんな方向性で考えてますか？コーチングって世界観が大事なので、そこをどう表現するかが鍵だと思っていて。', ngAction: 'いきなり金額・プランを提示すること', analyses: [], isOpen: true, closedAt: null, closedCaseId: null };
-    const p2 = { id: uid(), targetId: t2.id, accountName: '@sato_fitness', url: 'https://x.com/sato_fitness', track: 'NT', hypothesis: t2.hypothesis, startDate: new Date(Date.now()-10*86400000).toISOString().slice(0,10), currentStep: 'S1', stepHistory: [{ step: 'S1', date: new Date(Date.now()-10*86400000).toISOString().slice(0,10) }], repCount: 2, dmCount: 0, lastContactDate: new Date(Date.now()-8*86400000).toISOString().slice(0,10), redSignal: '有（R2: 3往復目から質問がなくなった）', responseQuality: '受け答えのみ', hypothesisVerification: '不明', judgment: '維持', nextAction: '話題転換：集客以外のトピックで1往復挟む', deadline: '48時間以内', replyA: 'そういえばフィットネス系って季節によって問い合わせ波がありますよね。今の時期どうですか？', replyB: '写真のクオリティ上がってきましたね。カメラ変えました？', ngAction: '集客・LP・Web制作の話を今すること（営業認定される）', analyses: [], isOpen: true, closedAt: null, closedCaseId: null };
-    const c1 = { id: uid(), pipelineId: null, createdAt: new Date(Date.now()-20*86400000).toISOString(), accountName: '@tanaka_therapist', track: 'NT', hypothesis: 'ホームページの集客に課題感がある可能性', startDate: new Date(Date.now()-30*86400000).toISOString().slice(0,10), closeDate: new Date(Date.now()-20*86400000).toISOString().slice(0,10), result: 'フェードアウト', ruleFired: true, closeType: 'TypeJ', closeTypeReason: 'S2到達後、事業開示のタイミングでDM既読スルー。その後7日放置し失注', hypothesisResult: '部分的中', hypothesisExplanation: 'HP集客への興味はあったが、費用感が合わなかった可能性', bestTiming: '前', roleStart: '一般ユーザー', roleEnd: '業者疑惑', roleChange: 'DM2往復目で「お仕事として？」と聞かれた後に返信が止まった', wanted: '集客', reapproachRating: 'B', reapproachWait: '3ヶ月', reapproachHow: '集客成功事例をリプで自然に投稿→反応を見る', conclusionReason: 'DM移行は成功したが事業開示が早く、信頼形成前に営業認定された', maxLearning: 'リプ往復3回でDM移行はFTでは正しいがNTでは早すぎた', nextTypeAction: 'NT案件はリプ5往復以上・相手から質問2回以上来てからDM移行', learningValue: 70 };
-    t1.pipelineId = p1.id;
-    t2.pipelineId = p2.id;
-    d.targets.push(t1, t2);
-    d.pipeline.push(p1, p2);
-    d.closed.push(c1);
-    saveData(d);
-    renderAll();
-    showToast('サンプルデータを読み込みました', 2500);
-  });
-});
-
 // Reaction checkbox visual state
 document.addEventListener('change', (e) => {
   if (e.target.classList.contains('t2f-reaction-cb')) {
