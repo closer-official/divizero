@@ -130,6 +130,7 @@ body.viewer-mode .admin-only{display:none!important}
         <select id="export-batch" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400 hidden" style="max-width:110px"></select>
         <button id="btn-export" class="btn-sec text-xs"><i class="fa-solid fa-file-arrow-down text-slate-400"></i><span class="hidden sm:inline">DL</span></button>
       </div>
+      <button id="btn-trash" class="btn-sec text-xs relative admin-only" title="ゴミ箱"><i class="fa-solid fa-trash text-slate-400"></i><span class="hidden sm:inline ml-1">ゴミ箱</span><span id="trash-badge" class="hidden absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5"></span></button>
       <button id="btn-logout" class="btn-sec text-xs hidden"><i class="fa-solid fa-arrow-right-from-bracket text-slate-400"></i><span class="hidden sm:inline">ログアウト</span></button>
     </div>
   </div>
@@ -927,6 +928,23 @@ body.viewer-mode .admin-only{display:none!important}
   </div>
 </div>
 
+<!-- Trash Modal -->
+<div id="trash-modal" class="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm hidden items-center justify-center p-4">
+  <div class="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl flex flex-col" style="max-height:85vh">
+    <div class="p-5 border-b border-slate-100 flex items-center justify-between shrink-0">
+      <h3 class="font-bold text-slate-900 text-sm flex items-center gap-2"><i class="fa-solid fa-trash text-rose-500"></i>ゴミ箱<span id="trash-modal-count" class="ml-1 text-slate-400 font-normal text-xs"></span></h3>
+      <button id="trash-close" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div class="flex-1 overflow-y-auto cs p-4 flex flex-col gap-2" id="trash-list">
+      <p class="text-xs text-slate-400 text-center py-8">ゴミ箱は空です</p>
+    </div>
+    <div class="p-4 border-t border-slate-100 flex gap-2 justify-between items-center shrink-0">
+      <span class="text-[10px] text-slate-400">30日後に自動削除されます</span>
+      <button id="trash-empty-btn" class="btn-danger text-xs hidden"><i class="fa-solid fa-trash mr-1"></i>すべて完全削除</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ──────────────────────────────────────────────
 // PROMPT TEMPLATES  (loaded from /prompts/*.md)
@@ -934,7 +952,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = '削除後5秒間「元に戻す」ボタン表示で誤削除復元対応';
+const DEPLOY_MSG = 'ゴミ箱機能：削除アイテムを30日間保存・OS⓪①②から復元対応';
 
 (async function loadPrompts() {
   const files = [
@@ -958,7 +976,7 @@ const DEPLOY_MSG = '削除後5秒間「元に戻す」ボタン表示で誤削�
 // DATA LAYER  (Firestore リアルタイム同期)
 // Firebaseコンフィグは /api/config から取得 → Vercel環境変数で管理
 // ──────────────────────────────────────────────
-const EMPTY_DATA = () => ({ screenings: [], targets: [], pipeline: [], closed: [], excluded: [] });
+const EMPTY_DATA = () => ({ screenings: [], targets: [], pipeline: [], closed: [], excluded: [], trash: [] });
 let _cache = null;
 let _fbReady = false;
 let _docRef = null;
@@ -975,6 +993,55 @@ function saveData(d) {
       showToast('同期エラー: データの保存に失敗しました');
     });
   }
+}
+
+// ──────────────────────────────────────────────
+// TRASH HELPERS
+// ──────────────────────────────────────────────
+function moveToTrash(d, item, source) {
+  if (!d.trash) d.trash = [];
+  const _trashId = 'tr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+  d.trash.push({ ...item, _trashSource: source, _trashedAt: Date.now(), _trashId });
+  return _trashId;
+}
+
+function restoreFromTrash(trashId) {
+  const d = loadData();
+  if (!d.trash) return;
+  const idx = d.trash.findIndex(x => x._trashId === trashId);
+  if (idx === -1) return;
+  const item = d.trash[idx];
+  d.trash.splice(idx, 1);
+  const src = item._trashSource;
+  const restored = { ...item };
+  delete restored._trashSource; delete restored._trashedAt; delete restored._trashId;
+  if (src === 'OS⓪') {
+    d.screenings = d.screenings || [];
+    d.screenings.push(restored);
+    d.excluded = (d.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(restored.handle));
+  } else if (src === 'OS①') {
+    d.targets = d.targets || [];
+    d.targets.push(restored);
+    d.excluded = (d.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(restored.url || restored.accountName));
+  } else if (src === 'OS②') {
+    d.pipeline = d.pipeline || [];
+    d.pipeline.push(restored);
+    if (restored.targetId) { const t = d.targets.find(x => x.id === restored.targetId); if (t) t.pipelineId = restored.id; }
+    d.excluded = (d.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(restored.url || restored.accountName));
+  }
+  saveData(d);
+  renderAll();
+  renderTrash();
+  showToast(`「${restored.accountName || restored.displayName || restored.handle}」を復元しました`);
+}
+
+function purgeOldTrash() {
+  const d = loadData();
+  if (!d.trash || d.trash.length === 0) return;
+  const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const before = d.trash.length;
+  d.trash = d.trash.filter(x => x._trashedAt > cutoff);
+  if (d.trash.length !== before) saveData(d);
 }
 
 function _attachSnapshot() {
@@ -1583,7 +1650,56 @@ let selectedClosed = null;
 let t1Page = 0; // 0-indexed, fixed page assignment (registration order)
 let t2Page = 0;
 
+function renderTrash() {
+  const d = loadData();
+  const items = (d.trash || []).slice().reverse();
+  const listEl = document.getElementById('trash-list');
+  const countEl = document.getElementById('trash-modal-count');
+  const emptyBtn = document.getElementById('trash-empty-btn');
+  if (!listEl) return;
+  if (countEl) countEl.textContent = items.length ? `（${items.length}件）` : '';
+  if (emptyBtn) { if (items.length > 0) emptyBtn.classList.remove('hidden'); else emptyBtn.classList.add('hidden'); }
+  if (items.length === 0) {
+    listEl.innerHTML = '<p class="text-xs text-slate-400 text-center py-8">ゴミ箱は空です</p>';
+    return;
+  }
+  const srcLabel = s => s === 'OS⓪' ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">OS⓪</span>' : s === 'OS①' ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">OS①</span>' : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-600">OS②</span>';
+  const daysLeft = t => Math.max(0, 30 - Math.floor((Date.now() - t) / 86400000));
+  listEl.innerHTML = items.map(item => {
+    const name = item.accountName || item.displayName || item.handle || '不明';
+    const handle = item.url || item.handle || '';
+    const days = daysLeft(item._trashedAt);
+    return `<div class="flex items-center gap-2 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 group" data-trash-id="${item._trashId}">
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          ${srcLabel(item._trashSource)}
+          <span class="text-xs font-semibold text-slate-800 truncate">${name}</span>
+          ${handle ? `<span class="text-[10px] text-slate-400 truncate">${handle}</span>` : ''}
+        </div>
+        <div class="text-[10px] text-slate-400 mt-0.5">削除日：${new Date(item._trashedAt).toLocaleDateString('ja-JP')} ・ あと${days}日</div>
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        <button class="trash-restore-btn btn-sec text-xs py-1 px-2" data-tid="${item._trashId}"><i class="fa-solid fa-rotate-left text-emerald-500 mr-0.5"></i>戻す</button>
+        <button class="trash-perm-btn text-slate-300 hover:text-rose-500 hover:bg-rose-50 w-7 h-7 rounded-lg flex items-center justify-center transition" data-tid="${item._trashId}" title="完全削除"><i class="fa-solid fa-xmark text-xs pointer-events-none"></i></button>
+      </div>
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('.trash-restore-btn').forEach(btn => {
+    btn.addEventListener('click', () => restoreFromTrash(btn.dataset.tid));
+  });
+  listEl.querySelectorAll('.trash-perm-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const d2 = loadData();
+      d2.trash = (d2.trash || []).filter(x => x._trashId !== btn.dataset.tid);
+      saveData(d2);
+      renderTrash();
+      updateBadges();
+    });
+  });
+}
+
 function renderAll() {
+  purgeOldTrash();
   renderScreenings();
   renderExcluded();
   renderTargets();
@@ -1609,6 +1725,9 @@ function updateBadges() {
   const wb = document.getElementById('warn-badge');
   if (warns.length > 0) { wb.textContent = warns.length; wb.classList.remove('hidden'); }
   else wb.classList.add('hidden');
+  const trashCount = (d.trash || []).length;
+  const tb = document.getElementById('trash-badge');
+  if (tb) { if (trashCount > 0) { tb.textContent = trashCount; tb.classList.remove('hidden'); } else tb.classList.add('hidden'); }
 }
 
 function renderScreenings() {
@@ -1647,20 +1766,14 @@ function renderScreenings() {
       e.stopPropagation();
       const id = btn.dataset.delId;
       const d2 = loadData();
-      const item = d2.screenings.find(x => x.id === id);
-      const d2 = loadData();
       const target = d2.screenings.find(x => x.id === id);
       if (!target) return;
       addToExcluded(d2, target.handle, target.displayName, target.channel, '手動削除');
       d2.screenings = d2.screenings.filter(x => x.id !== id);
+      const tid0 = moveToTrash(d2, target, 'OS⓪');
       saveData(d2);
       renderScreenings(); renderExcluded(); updateBadges();
-      showUndoToast(`「${target.displayName || target.handle}」を削除`, () => {
-        const d3 = loadData();
-        d3.screenings.push(target);
-        d3.excluded = (d3.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(target.handle));
-        saveData(d3); renderScreenings(); renderExcluded(); updateBadges();
-      });
+      showUndoToast(`「${target.displayName || target.handle}」を削除`, () => restoreFromTrash(tid0));
     });
   });
 
@@ -1764,21 +1877,15 @@ function renderTargets() {
       e.stopPropagation();
       const id = btn.dataset.delId;
       const d2 = loadData();
-      const t2 = d2.targets.find(x => x.id === id);
-      const d3 = loadData();
-      const tgt = d3.targets.find(x => x.id === id);
+      const tgt = d2.targets.find(x => x.id === id);
       if (!tgt) return;
-      addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
-      d3.targets = d3.targets.filter(x => x.id !== id);
-      saveData(d3);
+      addToExcluded(d2, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
+      d2.targets = d2.targets.filter(x => x.id !== id);
+      const tid1a = moveToTrash(d2, tgt, 'OS①');
+      saveData(d2);
       if (selectedTarget === id) { selectedTarget = null; document.getElementById('t1-detail').classList.add('hidden'); }
       renderTargets(); renderExcluded(); updateBadges();
-      showUndoToast(`「${tgt.accountName || 'アカウント'}」を削除`, () => {
-        const d4 = loadData();
-        d4.targets.push(tgt);
-        d4.excluded = (d4.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(tgt.url || tgt.accountName));
-        saveData(d4); renderTargets(); renderExcluded(); updateBadges();
-      });
+      showUndoToast(`「${tgt.accountName || 'アカウント'}」を削除`, () => restoreFromTrash(tid1a));
     });
   });
   // Pagination controls
@@ -2630,8 +2737,6 @@ document.getElementById('t1d-to-pipeline').addEventListener('click', () => {
 // OS① delete
 document.getElementById('t1d-delete').addEventListener('click', () => {
   if (!selectedTarget) return;
-  const d = loadData();
-  const t = d.targets.find(x => x.id === selectedTarget);
   const d2 = loadData();
   const tgt = d2.targets.find(x => x.id === selectedTarget);
   if (!tgt) return;
@@ -2639,16 +2744,12 @@ document.getElementById('t1d-delete').addEventListener('click', () => {
     const d3 = loadData();
     addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
     d3.targets = d3.targets.filter(x => x.id !== tgt.id);
+    const tid1b = moveToTrash(d3, tgt, 'OS①');
     saveData(d3);
     selectedTarget = null;
     document.getElementById('t1-detail').classList.add('hidden');
     renderTargets(); renderExcluded(); updateBadges();
-    showUndoToast(`「${tgt.accountName}」を削除`, () => {
-      const d4 = loadData();
-      d4.targets.push(tgt);
-      d4.excluded = (d4.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(tgt.url || tgt.accountName));
-      saveData(d4); renderTargets(); renderExcluded(); updateBadges();
-    });
+    showUndoToast(`「${tgt.accountName}」を削除`, () => restoreFromTrash(tid1b));
   });
 });
 
@@ -2708,18 +2809,13 @@ document.getElementById('t2d-delete').addEventListener('click', () => {
     }
     if (p) addToExcluded(d2, p.url || p.accountName, p.accountName, p.channel, 'パイプライン削除');
     d2.pipeline = d2.pipeline.filter(x => x.id !== selectedPipeline);
+    const tid2 = p ? moveToTrash(d2, p, 'OS②') : null;
     saveData(d2);
     selectedPipeline = null;
     document.getElementById('t2-detail').classList.add('hidden');
     document.getElementById('t2-empty-right').classList.remove('hidden');
     renderAll();
-    showUndoToast(`「${p.accountName}」をパイプラインから削除`, () => {
-      const d3 = loadData();
-      d3.pipeline.push(p);
-      if (p.targetId) { const t = d3.targets.find(x => x.id === p.targetId); if (t) t.pipelineId = p.id; }
-      d3.excluded = (d3.excluded || []).filter(e => normalizeHandle(e.handle) !== normalizeHandle(p.url || p.accountName));
-      saveData(d3); renderAll();
-    });
+    if (tid2) showUndoToast(`「${p.accountName}」をパイプラインから削除`, () => restoreFromTrash(tid2));
   });
 });
 
@@ -3384,6 +3480,32 @@ document.getElementById('modal').addEventListener('click', (e) => {
     document.getElementById('modal-box').classList.remove('scale-100','opacity-100');
     setTimeout(() => { document.getElementById('modal').style.display = 'none'; }, 200);
   }
+});
+
+// ──────────────────────────────────────────────
+// TRASH MODAL
+// ──────────────────────────────────────────────
+document.getElementById('btn-trash').addEventListener('click', () => {
+  renderTrash();
+  const m = document.getElementById('trash-modal');
+  m.classList.remove('hidden');
+  m.style.display = 'flex';
+});
+document.getElementById('trash-close').addEventListener('click', () => {
+  document.getElementById('trash-modal').style.display = 'none';
+});
+document.getElementById('trash-modal').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('trash-modal')) document.getElementById('trash-modal').style.display = 'none';
+});
+document.getElementById('trash-empty-btn').addEventListener('click', () => {
+  confirm('ゴミ箱を空にする', 'ゴミ箱内の全アイテムを完全に削除します。この操作は元に戻せません。', () => {
+    const d = loadData();
+    d.trash = [];
+    saveData(d);
+    renderTrash();
+    updateBadges();
+    showToast('ゴミ箱を空にしました');
+  });
 });
 
 // ──────────────────────────────────────────────
