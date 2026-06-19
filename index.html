@@ -1250,26 +1250,59 @@ function updateT0ModeUI() {
 }
 
 function parseOS0(text, channel) {
+  // 1. ▼判定一覧 から詳細情報を抽出（全角・半角パイプ両対応）
+  const detailMap = new Map();
   const sectionMatch = text.match(/▼判定一覧([\s\S]*?)(?=▼OS①送り候補|▼選別サマリ|$)/);
-  if (!sectionMatch) return [];
-  const lines = sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l);
-  const results = [];
-  for (const line of lines) {
-    const parts = line.split('｜');
-    if (parts.length < 4) continue;
-    const verdict = parts[3].trim();
-    if (!verdict.startsWith('◯')) continue;
-    results.push({
+  if (sectionMatch) {
+    for (const line of sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l)) {
+      const parts = line.split(/[｜|]/);
+      if (parts.length < 4) continue;
+      const handle = parts[2]?.trim() || '';
+      if (!handle.startsWith('@')) continue;
+      detailMap.set(handle.toLowerCase(), {
+        displayName: parts[1]?.trim() || '',
+        handle,
+        verdict: parts[3]?.trim() || '',
+        reason: parts[4]?.trim() || '',
+      });
+    }
+  }
+
+  // 2. ▼OS①送り候補 を正の権威リストとして使う
+  const candidateMatch = text.match(/▼OS①送り候補[^\n]*\n([\s\S]*?)(?=▼選別サマリ|$)/);
+  if (candidateMatch) {
+    const passingHandles = candidateMatch[1].split('\n')
+      .map(l => l.trim()).filter(l => l.startsWith('@'));
+    if (passingHandles.length > 0) {
+      return passingHandles.map(raw => {
+        const isTeikei = raw.includes('提携');
+        const handle = raw.replace(/【提携】.*/, '').trim();
+        const detail = detailMap.get(handle.toLowerCase()) || {};
+        return {
+          id: uid(),
+          createdAt: new Date().toISOString(),
+          channel,
+          displayName: detail.displayName || '',
+          handle,
+          verdict: isTeikei ? '◯【提携】' : '◯',
+          reason: detail.reason || '',
+        };
+      });
+    }
+  }
+
+  // 3. フォールバック：▼OS①送り候補 がない場合は ▼判定一覧 の ◯ 行を使う
+  return [...detailMap.values()]
+    .filter(d => d.verdict.startsWith('◯'))
+    .map(d => ({
       id: uid(),
       createdAt: new Date().toISOString(),
       channel,
-      displayName: parts[1]?.trim() || '',
-      handle: parts[2]?.trim() || '',
-      verdict: verdict.includes('提携') ? '◯【提携】' : '◯',
-      reason: parts[4]?.trim() || '',
-    });
-  }
-  return results;
+      displayName: d.displayName,
+      handle: d.handle,
+      verdict: d.verdict.includes('提携') ? '◯【提携】' : '◯',
+      reason: d.reason,
+    }));
 }
 
 // ──────────────────────────────────────────────
