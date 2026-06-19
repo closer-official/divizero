@@ -127,7 +127,10 @@ body.viewer-mode .admin-only{display:none!important}
         <i class="fa-solid fa-bolt text-lg"></i>
       </div>
       <div>
-        <h1 class="font-bold text-slate-900 text-base leading-tight">営業OS ワークスペース</h1>
+        <div class="flex items-center gap-2">
+          <h1 class="font-bold text-slate-900 text-base leading-tight">営業OS ワークスペース</h1>
+          <span id="deploy-msg-chip" class="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium"></span>
+        </div>
         <p class="text-[11px] text-slate-400 hidden sm:block">Ver4 — スクリーニング → パイプライン → 案件検証</p>
       </div>
     </div>
@@ -469,6 +472,11 @@ body.viewer-mode .admin-only{display:none!important}
             <p class="text-sm font-medium">案件がありません</p>
             <p class="text-xs text-slate-400">OS①でスクリーニング後、パイプラインへ移動してください</p>
           </div>
+        </div>
+        <div id="t2-pagination" class="hidden items-center justify-between px-4 py-2.5 border-t border-slate-100 text-xs">
+          <button id="t2-page-prev" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition"><i class="fa-solid fa-chevron-left text-[10px]"></i> 前</button>
+          <span id="t2-page-info" class="text-slate-500 font-medium"></span>
+          <button id="t2-page-next" class="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition">次 <i class="fa-solid fa-chevron-right text-[10px]"></i></button>
         </div>
       </div>
     </section>
@@ -917,6 +925,8 @@ body.viewer-mode .admin-only{display:none!important}
 // ──────────────────────────────────────────────
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
+
+const DEPLOY_MSG = 'パイプライン10件ページネーション・履歴↓展開・デプロイバッジ追加';
 
 (async function loadPrompts() {
   const files = [
@@ -1501,6 +1511,7 @@ let selectedTarget = null;
 let selectedPipeline = null;
 let selectedClosed = null;
 let t1Page = 0; // 0-indexed, fixed page assignment (registration order)
+let t2Page = 0;
 
 function renderAll() {
   renderScreenings();
@@ -1802,11 +1813,20 @@ function renderPipeline() {
   if (filter === 'warn') active = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30);
 
   const list = document.getElementById('t2-list');
+  const pagination = document.getElementById('t2-pagination');
   if (active.length === 0) {
     list.innerHTML = '<div class="flex flex-col items-center justify-center h-64 text-slate-300 gap-2"><i class="fa-solid fa-chart-gantt text-4xl"></i><p class="text-sm font-medium">案件がありません</p></div>';
+    pagination.classList.add('hidden');
     return;
   }
-  list.innerHTML = active.map(p => {
+  const total = active.length;
+  const totalPages = Math.ceil(total / 10);
+  if (t2Page >= totalPages) t2Page = totalPages - 1;
+  if (t2Page < 0) t2Page = 0;
+  const startIdx = t2Page * 10;
+  const endIdx = Math.min(startIdx + 10, total);
+  const pageItems = active.slice(startIdx, endIdx);
+  list.innerHTML = pageItems.map(p => {
     const days = daysSince(p.lastContactDate);
     const totalDays = daysSince(p.startDate);
     const uc = urgencyClass(days);
@@ -1827,6 +1847,17 @@ function renderPipeline() {
   list.querySelectorAll('[data-id]').forEach(el => {
     el.addEventListener('click', () => showPipelineDetail(el.dataset.id));
   });
+
+  // Pagination controls
+  if (totalPages > 1) {
+    pagination.classList.remove('hidden');
+    pagination.style.display = 'flex';
+    document.getElementById('t2-page-info').textContent = `${startIdx + 1}〜${endIdx}件 / 全${total}件`;
+    document.getElementById('t2-page-prev').disabled = t2Page === 0;
+    document.getElementById('t2-page-next').disabled = t2Page === totalPages - 1;
+  } else {
+    pagination.classList.add('hidden');
+  }
 
   // Warnings bar
   const warnCases = d.pipeline.filter(p => p.isOpen && (daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30));
@@ -1949,8 +1980,11 @@ function showPipelineDetail(id) {
           ${h.sentMsgLabel ? `<p class="text-[10px] text-violet-600 truncate mb-0.5"><i class="fa-solid fa-paper-plane mr-0.5"></i>${h.sentMsgLabel}</p>` : ''}
           ${h.targetPost ? `<p class="text-[10px] text-slate-400 truncate mb-0.5"><i class="fa-solid fa-link mr-0.5"></i>${h.targetPost}</p>` : ''}
           ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
-          ${h.replyA ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-violet-600 leading-snug line-clamp-2 flex-1"><span class="font-bold">案A：</span>${h.replyA}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-500 rounded border border-violet-200 hover:bg-violet-100 transition" data-idx="${aIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${aIdx}" data-label="案A（前進案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
-          ${h.replyB ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-indigo-500 leading-snug line-clamp-2 flex-1"><span class="font-bold">案B：</span>${h.replyB}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition" data-idx="${bIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${bIdx}" data-label="案B（安全案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
+          ${(h.replyA || h.replyB) ? `<div id="hist-replies-${i}" class="hist-replies-wrap">
+            ${h.replyA ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-violet-600 leading-snug line-clamp-2 flex-1"><span class="font-bold">案A：</span>${h.replyA}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-500 rounded border border-violet-200 hover:bg-violet-100 transition" data-idx="${aIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${aIdx}" data-label="案A（前進案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
+            ${h.replyB ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-indigo-500 leading-snug line-clamp-2 flex-1"><span class="font-bold">案B：</span>${h.replyB}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition" data-idx="${bIdx}"><i class="fa-regular fa-copy"></i></button><button class="t2d-hist-send shrink-0 text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition" data-idx="${bIdx}" data-label="案B（安全案）"><i class="fa-regular fa-square-check"></i></button></div>` : ''}
+          </div>
+          <button class="t2d-hist-expand mt-1 text-[10px] text-slate-400 hover:text-indigo-500 flex items-center gap-0.5 transition" data-target="hist-replies-${i}" data-open="false"><i class="fa-solid fa-chevron-down text-[9px]"></i> 全部見る</button>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -1959,6 +1993,20 @@ function showPipelineDetail(id) {
     });
     document.getElementById('t2d-history').querySelectorAll('.t2d-hist-send').forEach(btn => {
       btn.addEventListener('click', () => t2RecordSent(btn.dataset.label, _histCopyTexts[parseInt(btn.dataset.idx)]));
+    });
+    document.getElementById('t2d-history').querySelectorAll('.t2d-hist-expand').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const target = document.getElementById(btn.dataset.target);
+        const isOpen = btn.dataset.open === 'true';
+        target.querySelectorAll('p').forEach(p => {
+          if (!isOpen) p.classList.remove('line-clamp-2');
+          else p.classList.add('line-clamp-2');
+        });
+        btn.dataset.open = String(!isOpen);
+        btn.innerHTML = !isOpen
+          ? '<i class="fa-solid fa-chevron-up text-[9px]"></i> 閉じる'
+          : '<i class="fa-solid fa-chevron-down text-[9px]"></i> 全部見る';
+      });
     });
   } else {
     histSec.classList.add('hidden');
@@ -2490,7 +2538,21 @@ document.getElementById('t1-page-next').addEventListener('click', () => {
 });
 
 // OS② filter
-document.getElementById('t2-filter').addEventListener('change', renderPipeline);
+document.getElementById('t2-filter').addEventListener('change', () => { t2Page = 0; renderPipeline(); });
+
+document.getElementById('t2-page-prev').addEventListener('click', () => {
+  if (t2Page > 0) { t2Page--; renderPipeline(); }
+});
+document.getElementById('t2-page-next').addEventListener('click', () => {
+  const d = loadData();
+  const filter = document.getElementById('t2-filter').value;
+  let active = d.pipeline.filter(p => p.isOpen);
+  if (filter === 'FT') active = active.filter(p => p.track === 'FT');
+  if (filter === 'NT') active = active.filter(p => p.track === 'NT');
+  if (filter === 'warn') active = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30);
+  const totalPages = Math.ceil(active.length / 10);
+  if (t2Page < totalPages - 1) { t2Page++; renderPipeline(); }
+});
 
 // OS② close panel
 document.getElementById('t2d-close-panel').addEventListener('click', () => {
@@ -3371,6 +3433,13 @@ document.getElementById('mode-threads').addEventListener('click', () => {
 updateT0ModeUI();
 updateModeUI();
 document.getElementById('t2f-lastdate').value = new Date().toISOString().slice(0,10);
+(function() {
+  const chip = document.getElementById('deploy-msg-chip');
+  if (DEPLOY_MSG && chip) {
+    chip.innerHTML = `<i class="fa-solid fa-circle-check"></i>${DEPLOY_MSG}`;
+    chip.classList.remove('hidden');
+  }
+})();
 initAuth();
 startFirestoreListener();
 </script>
