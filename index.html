@@ -464,16 +464,32 @@ body.viewer-mode .admin-only{display:none!important}
     <!-- パイプラインリスト -->
     <section class="lg:col-span-5 flex flex-col gap-3">
       <div class="card flex flex-col" style="min-height:560px">
-        <div class="p-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
-            <i class="fa-solid fa-chart-gantt text-indigo-500"></i>アクティブ案件
-          </h3>
-          <select id="t2-filter" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
-            <option value="all">すべて</option>
-            <option value="FT">FT（ファストトラック）</option>
-            <option value="NT">NT（通常トラック）</option>
-            <option value="warn">⚠ 要対応</option>
-          </select>
+        <div class="p-3 border-b border-slate-100 flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+              <i class="fa-solid fa-chart-gantt text-indigo-500"></i>アクティブ案件
+            </h3>
+            <select id="t2-sort" class="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
+              <option value="new">新しい順</option>
+              <option value="urgent">対応必要順</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <select id="t2-filter" class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
+              <option value="all">すべて（トラック）</option>
+              <option value="FT">FT（ファストトラック）</option>
+              <option value="NT">NT（通常トラック）</option>
+              <option value="warn">⚠ 要対応</option>
+            </select>
+            <select id="t2-filter-step" class="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-white outline-none focus:border-violet-400">
+              <option value="all">すべて（ステップ）</option>
+              <option value="S1">S1 リプ交流</option>
+              <option value="S2">S2 DM移行</option>
+              <option value="S3">S3 事業開示</option>
+              <option value="S4">S4 ヒアリング</option>
+              <option value="S5">S5 提案・クローズ</option>
+            </select>
+          </div>
         </div>
         <div class="flex-1 overflow-y-auto cs" id="t2-list">
           <div class="flex flex-col items-center justify-center h-64 text-slate-300 gap-2">
@@ -958,7 +974,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = '更新';
+const DEPLOY_MSG = 'リスト順序入れ替え';
 
 (async function loadPrompts() {
   const files = [
@@ -1848,14 +1864,14 @@ function renderTargets() {
     pagination.classList.add('hidden');
     return;
   }
-  const total = d.targets.length;
+  const allTargets = d.targets.slice().reverse(); // newest first
+  const total = allTargets.length;
   const totalPages = Math.ceil(total / 10);
   if (t1Page >= totalPages) t1Page = totalPages - 1;
   if (t1Page < 0) t1Page = 0;
   const startIdx = t1Page * 10;
   const endIdx = Math.min(startIdx + 10, total);
-  // Within page: show newest first (reverse the fixed-assigned slice)
-  const pageTargets = d.targets.slice(startIdx, endIdx).slice().reverse();
+  const pageTargets = allTargets.slice(startIdx, endIdx);
   list.innerHTML = pageTargets.map(t => {
     const inPipeline = t.pipelineId ? '<span class="text-[10px] text-indigo-500 font-semibold"><i class="fa-solid fa-arrow-right mr-0.5"></i>パイプライン済</span>' : '';
     const channelBadge = t.channel === 'instagram'
@@ -2042,10 +2058,19 @@ function showTargetDetail(id) {
 function renderPipeline() {
   const d = loadData();
   const filter = document.getElementById('t2-filter').value;
+  const filterStep = document.getElementById('t2-filter-step').value;
+  const sort = document.getElementById('t2-sort').value;
   let active = d.pipeline.filter(p => p.isOpen);
   if (filter === 'FT') active = active.filter(p => p.track === 'FT');
   if (filter === 'NT') active = active.filter(p => p.track === 'NT');
   if (filter === 'warn') active = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30);
+  if (filterStep !== 'all') active = active.filter(p => p.currentStep === filterStep);
+  // Sort
+  if (sort === 'urgent') {
+    active = active.slice().sort((a, b) => daysSince(a.lastContactDate) - daysSince(b.lastContactDate)).reverse();
+  } else {
+    active = active.slice().reverse(); // newest first
+  }
 
   const list = document.getElementById('t2-list');
   const pagination = document.getElementById('t2-pagination');
@@ -2618,8 +2643,8 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   document.getElementById('t1-post').value = '';
   document.getElementById('t1-post-warn').style.display = 'none';
   document.getElementById('t1-result').value = '';
-  // Navigate to the page containing the new record (last page)
-  t1Page = Math.floor((d.targets.length - 1) / 10);
+  // Navigate to page 0 (newest item is always first)
+  t1Page = 0;
   renderTargets();
   renderExcluded();
   updateBadges();
@@ -2784,8 +2809,10 @@ document.getElementById('t1-page-next').addEventListener('click', () => {
   if (t1Page < totalPages - 1) { t1Page++; renderTargets(); }
 });
 
-// OS② filter
+// OS② filters
 document.getElementById('t2-filter').addEventListener('change', () => { t2Page = 0; renderPipeline(); });
+document.getElementById('t2-filter-step').addEventListener('change', () => { t2Page = 0; renderPipeline(); });
+document.getElementById('t2-sort').addEventListener('change', () => { t2Page = 0; renderPipeline(); });
 
 document.getElementById('t2-page-prev').addEventListener('click', () => {
   if (t2Page > 0) { t2Page--; renderPipeline(); }
@@ -2793,12 +2820,30 @@ document.getElementById('t2-page-prev').addEventListener('click', () => {
 document.getElementById('t2-page-next').addEventListener('click', () => {
   const d = loadData();
   const filter = document.getElementById('t2-filter').value;
+  const filterStep = document.getElementById('t2-filter-step').value;
   let active = d.pipeline.filter(p => p.isOpen);
   if (filter === 'FT') active = active.filter(p => p.track === 'FT');
   if (filter === 'NT') active = active.filter(p => p.track === 'NT');
   if (filter === 'warn') active = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30);
+  if (filterStep !== 'all') active = active.filter(p => p.currentStep === filterStep);
   const totalPages = Math.ceil(active.length / 10);
   if (t2Page < totalPages - 1) { t2Page++; renderPipeline(); }
+});
+
+// OS② step auto-save
+document.getElementById('t2f-step').addEventListener('change', () => {
+  if (!selectedPipeline) return;
+  const newStep = document.getElementById('t2f-step').value;
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  p.currentStep = newStep;
+  if (!p.stepHistory) p.stepHistory = [];
+  p.stepHistory.push({ step: newStep, date: new Date().toISOString().slice(0, 10) });
+  saveData(d);
+  renderPipeline();
+  document.getElementById('t2d-steps').innerHTML = stepsBar(newStep);
+  showToast(`ステップを ${newStep} に変更しました`);
 });
 
 // OS② close panel
