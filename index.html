@@ -946,7 +946,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = '削除リスト';
+const DEPLOY_MSG = 'ログイン状態をlocalStorageで永続化（スマホでパスワード記憶）';
 
 (async function loadPrompts() {
   const files = [
@@ -3391,7 +3391,7 @@ function skipAuth() {
 }
 
 function initAuth() {
-  const stored = sessionStorage.getItem(AUTH_KEY);
+  const stored = localStorage.getItem(AUTH_KEY);
   if (stored) {
     try {
       const { role } = JSON.parse(stored);
@@ -3437,7 +3437,7 @@ document.getElementById('login-btn').addEventListener('click', async () => {
     let data;
     try { data = await res.json(); } catch { data = {}; }
     if (data.success) {
-      sessionStorage.setItem(AUTH_KEY, JSON.stringify({ role: data.role }));
+      localStorage.setItem(AUTH_KEY, JSON.stringify({ role: data.role }));
       document.getElementById('login-overlay').classList.add('hidden');
       applyRole(data.role);
       errEl.classList.add('hidden');
@@ -3458,7 +3458,7 @@ document.getElementById('login-password').addEventListener('keydown', e => {
 });
 
 document.getElementById('btn-logout').addEventListener('click', () => {
-  sessionStorage.removeItem(AUTH_KEY);
+  localStorage.removeItem(AUTH_KEY);
   document.body.classList.remove('viewer-mode');
   document.getElementById('role-badge').classList.add('hidden');
   document.getElementById('btn-logout').classList.add('hidden');
