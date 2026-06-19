@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "deploy": "git add -A && git commit -m \"%npm_config_m%\" && git push"
+    "deploy": "node deploy.js"
   },
   "repository": {
     "type": "git",
