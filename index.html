@@ -831,6 +831,20 @@ body.viewer-mode .admin-only{display:none!important}
     <h3 class="font-bold text-sm text-slate-800 mb-3 flex items-center gap-2"><i class="fa-solid fa-triangle-exclamation text-amber-500"></i>OS調整チェック（10件ごと）</h3>
     <div id="t4-check" class="text-xs text-slate-600 leading-relaxed"></div>
   </div>
+  <div class="card p-5 flex flex-col gap-3">
+    <div>
+      <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2"><i class="fa-solid fa-file-arrow-down text-violet-500"></i>送信文章ログ エクスポート</h3>
+      <p class="text-xs text-slate-400 mt-1">送信した文章・元のAI案・編集理由をMDでまとめてDL。Claudeに渡して出力ルール改善の参考にできます。DL後にリセットすれば以降の蓄積だけが残ります。</p>
+    </div>
+    <div class="flex gap-2 items-center flex-wrap">
+      <select id="sent-export-range" class="input-base text-xs py-2" style="max-width:200px">
+        <option value="">期間を選択</option>
+      </select>
+      <button id="sent-export-dl" class="btn-primary text-xs"><i class="fa-solid fa-file-arrow-down"></i>MDをDL</button>
+      <button id="sent-export-reset" class="btn-danger text-xs"><i class="fa-solid fa-trash mr-1"></i>この期間をリセット</button>
+    </div>
+    <p id="sent-export-count" class="text-xs text-slate-400"></p>
+  </div>
 </div>
 
 </main>
@@ -2125,6 +2139,110 @@ function renderDashboard() {
   document.getElementById('t4-check').innerHTML = checks.map(c =>
     `<p class="${c.warn ? 'text-amber-700 font-semibold' : 'text-slate-600'} mb-1">${c.msg}</p>`
   ).join('') || '<p class="text-slate-400">チェック項目なし（案件データを蓄積してください）</p>';
+
+  buildSentExportOptions();
+}
+
+// ──────────────────────────────────────────────
+// SENT MESSAGE EXPORT
+// ──────────────────────────────────────────────
+
+function buildSentExportOptions() {
+  const sel = document.getElementById('sent-export-range');
+  const countEl = document.getElementById('sent-export-count');
+  if (!sel) return;
+
+  const d = loadData();
+  const allMsgs = [];
+  d.pipeline.forEach(p => {
+    (p.sentMessages || []).forEach(sm => {
+      allMsgs.push({ ...sm, accountName: p.accountName, handle: p.url, channel: p.channel });
+    });
+  });
+
+  if (allMsgs.length === 0) {
+    sel.innerHTML = '<option value="">送信記録がありません</option>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+
+  // 週単位（月〜日）でバケット分け
+  const weekBuckets = {};
+  allMsgs.forEach(msg => {
+    const dt = new Date(msg.date);
+    const dow = dt.getDay();
+    const diffToMon = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(dt);
+    mon.setDate(dt.getDate() + diffToMon);
+    const sun = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    const key = mon.toISOString().slice(0, 10);
+    if (!weekBuckets[key]) weekBuckets[key] = { start: new Date(mon), end: new Date(sun), msgs: [] };
+    weekBuckets[key].msgs.push(msg);
+  });
+
+  const fmt = dt => `${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')}`;
+  const sorted = Object.entries(weekBuckets).sort((a, b) => a[0] < b[0] ? -1 : 1);
+
+  sel.innerHTML = '<option value="">期間を選択してください</option>';
+  sorted.forEach(([key, { start, end, msgs }]) => {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = `${fmt(start)}〜${fmt(end)}（${msgs.length}件）`;
+    sel.appendChild(opt);
+  });
+
+  if (countEl) countEl.textContent = `全${allMsgs.length}件の送信記録 / ${sorted.length}週分`;
+}
+
+function collectSentMsgsInRange(startKey) {
+  const d = loadData();
+  const startDate = new Date(startKey);
+  const endDate = new Date(startKey);
+  endDate.setDate(endDate.getDate() + 6);
+  endDate.setHours(23, 59, 59, 999);
+
+  const result = [];
+  d.pipeline.forEach(p => {
+    (p.sentMessages || []).forEach(sm => {
+      const smDate = new Date(sm.date);
+      if (smDate >= startDate && smDate <= endDate) {
+        result.push({ ...sm, accountName: p.accountName, handle: p.url, channel: p.channel });
+      }
+    });
+  });
+  return result;
+}
+
+function buildSentMdContent(msgs, rangeStr) {
+  const byAccount = {};
+  msgs.forEach(msg => {
+    const key = msg.handle || msg.accountName || '不明';
+    if (!byAccount[key]) byAccount[key] = { accountName: msg.accountName, handle: msg.handle, channel: msg.channel, msgs: [] };
+    byAccount[key].msgs.push(msg);
+  });
+
+  const chLabel = ch => ch === 'instagram' ? 'Instagram' : ch === 'threads' ? 'Threads' : 'Twitter/X';
+
+  let md = `# 送信文章ログ ${rangeStr}\n\n`;
+  md += `> 出力日時：${new Date().toLocaleDateString('ja-JP')} ／ 件数：${msgs.length}件\n\n---\n\n`;
+
+  Object.values(byAccount).forEach(({ accountName, handle, channel, msgs: amsgs }) => {
+    md += `## ${accountName || '(名前なし)'}（${handle || '-'}）— ${chLabel(channel)}\n\n`;
+    amsgs.forEach((sm, i) => {
+      md += `### [送信${i + 1}] ${sm.label} — ${sm.date}\n\n`;
+      md += `**元の文章（AI生成）**\n\`\`\`\n${sm.original || ''}\n\`\`\`\n\n`;
+      if (sm.edited && sm.actual && sm.actual !== sm.original) {
+        md += `**実際に送った文章（編集済み）**\n\`\`\`\n${sm.actual}\n\`\`\`\n\n`;
+        md += `**編集理由：** ${sm.reason || '（記録なし）'}\n\n`;
+      } else {
+        md += `**実際に送った文章：** 元の文章のまま送信\n\n`;
+      }
+      md += `---\n\n`;
+    });
+  });
+
+  return md;
 }
 
 // ──────────────────────────────────────────────
@@ -2651,6 +2769,58 @@ document.getElementById('t3-clear').addEventListener('click', () => {
     const d = loadData(); d.closed = []; saveData(d);
     selectedClosed = null; document.getElementById('t3-detail').classList.add('hidden');
     renderAll(); showToast('削除しました');
+  });
+});
+
+// 送信ログ DL
+document.getElementById('sent-export-dl').addEventListener('click', () => {
+  const key = document.getElementById('sent-export-range').value;
+  if (!key) { showToast('期間を選択してください'); return; }
+  const msgs = collectSentMsgsInRange(key);
+  if (msgs.length === 0) { showToast('この期間の送信記録がありません'); return; }
+  const startDate = new Date(key);
+  const endDate = new Date(key);
+  endDate.setDate(endDate.getDate() + 6);
+  const fmt = dt => `${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')}`;
+  const rangeStr = `${fmt(startDate)}〜${fmt(endDate)}`;
+  const md = buildSentMdContent(msgs, rangeStr);
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `送信ログ_${fmt(startDate)}_${fmt(endDate)}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`${rangeStr} の送信ログをダウンロードしました（${msgs.length}件）`);
+});
+
+// 送信ログ リセット
+document.getElementById('sent-export-reset').addEventListener('click', () => {
+  const key = document.getElementById('sent-export-range').value;
+  if (!key) { showToast('期間を選択してください'); return; }
+  const msgs = collectSentMsgsInRange(key);
+  if (msgs.length === 0) { showToast('この期間の送信記録がありません'); return; }
+  const startDate = new Date(key);
+  const endDate = new Date(key);
+  endDate.setDate(endDate.getDate() + 6);
+  endDate.setHours(23, 59, 59, 999);
+  const fmt = dt => `${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')}`;
+  const rangeStr = `${fmt(startDate)}〜${fmt(endDate)}`;
+  confirm('リセット確認', `${rangeStr}の送信記録（${msgs.length}件）を削除しますか？\nDL済みの場合のみ実行してください。`, () => {
+    const d2 = loadData();
+    d2.pipeline.forEach(p => {
+      if (p.sentMessages) {
+        p.sentMessages = p.sentMessages.filter(sm => {
+          const smDate = new Date(sm.date);
+          return smDate < new Date(key) || smDate > endDate;
+        });
+      }
+    });
+    saveData(d2);
+    buildSentExportOptions();
+    showToast(`${rangeStr}の送信記録をリセットしました`);
   });
 });
 
