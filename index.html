@@ -934,7 +934,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'トップ２';
+const DEPLOY_MSG = 'OS①へ移動時にOS⓪リストから自動削除';
 
 (async function loadPrompts() {
   const files = [
@@ -1605,7 +1605,7 @@ function renderScreenings() {
         <p class="text-[11px] text-slate-500 truncate">${item.handle}${item.reason ? ' — ' + item.reason : ''}</p>
       </div>
       <a href="${profileUrl}" target="_blank" class="btn-sec text-xs py-1.5 px-2.5 shrink-0"><i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>開く</a>
-      <button class="t0-goto-os1 btn-sec text-xs py-1.5 px-2 shrink-0" data-handle="${item.handle}" data-channel="${item.channel || 'twitter'}"><i class="fa-solid fa-arrow-right text-violet-500 mr-0.5"></i><span class="hidden sm:inline">OS①へ</span></button>
+      <button class="t0-goto-os1 btn-sec text-xs py-1.5 px-2 shrink-0" data-id="${item.id}" data-handle="${item.handle}" data-channel="${item.channel || 'twitter'}"><i class="fa-solid fa-arrow-right text-violet-500 mr-0.5"></i><span class="hidden sm:inline">OS①へ</span></button>
       <button class="t0-del-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50 active:bg-rose-100 transition shrink-0" data-del-id="${item.id}" aria-label="削除"><i class="fa-solid fa-trash text-xs pointer-events-none"></i></button>
     </div>`;
   }).join('');
@@ -1633,10 +1633,16 @@ function renderScreenings() {
   list.querySelectorAll('.t0-goto-os1').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
+      const id = btn.dataset.id;
       const ch = btn.dataset.channel || 'twitter';
+      const d2 = loadData();
+      d2.screenings = d2.screenings.filter(x => x.id !== id);
+      saveData(d2);
       currentMode = ch;
       localStorage.setItem('os_screening_mode', ch);
       updateModeUI();
+      renderScreenings();
+      updateBadges();
       document.querySelector('[data-tab="tab1"]').click();
     });
   });
