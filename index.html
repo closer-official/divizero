@@ -866,6 +866,12 @@ body.viewer-mode .admin-only{display:none!important}
 
 </main>
 
+<!-- Pull-to-refresh indicator -->
+<div id="ptr-bar" class="fixed inset-x-0 top-0 z-[60] flex justify-center items-center gap-1.5 text-xs text-slate-500 bg-white border-b border-slate-100 py-2 shadow-sm pointer-events-none" style="transform:translateY(-100%);transition:transform 0.15s ease">
+  <i class="fa-solid fa-rotate text-violet-500 text-sm" id="ptr-icon"></i>
+  <span id="ptr-text">引っ張って更新</span>
+</div>
+
 <!-- Toast -->
 <div id="toast" class="fixed bottom-5 right-5 bg-slate-950 text-white text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 transform translate-y-16 opacity-0 transition duration-300 pointer-events-none z-50 border border-slate-700">
   <i class="fa-solid fa-circle-check text-emerald-400"></i><span id="toast-msg">完了</span>
@@ -952,7 +958,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = '詳細';
+const DEPLOY_MSG = 'スマホ：下引っ張りで画面更新（プルトゥリフレッシュ）';
 
 (async function loadPrompts() {
   const files = [
@@ -3733,6 +3739,52 @@ document.getElementById('t2f-lastdate').value = new Date().toISOString().slice(0
 })();
 initAuth();
 startFirestoreListener();
+
+// ──────────────────────────────────────────────
+// PULL-TO-REFRESH (mobile)
+// ──────────────────────────────────────────────
+(function() {
+  const THRESHOLD = 70;
+  const bar = document.getElementById('ptr-bar');
+  const icon = document.getElementById('ptr-icon');
+  const txt = document.getElementById('ptr-text');
+  let startY = 0, lastDy = 0, active = false;
+
+  document.addEventListener('touchstart', e => {
+    if (window.scrollY === 0 && e.touches.length === 1) {
+      startY = e.touches[0].clientY;
+      lastDy = 0;
+      active = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', e => {
+    if (!active) return;
+    const dy = Math.max(0, e.touches[0].clientY - startY);
+    lastDy = dy;
+    if (dy <= 0) return;
+    const progress = Math.min(dy / THRESHOLD, 1);
+    const show = Math.min(dy * 0.5, THRESHOLD * 0.7);
+    bar.style.transform = `translateY(calc(-100% + ${show}px))`;
+    icon.style.transform = `rotate(${progress * 300}deg)`;
+    txt.textContent = progress >= 1 ? '離して更新' : '引っ張って更新';
+  }, { passive: true });
+
+  document.addEventListener('touchend', () => {
+    if (!active) return;
+    active = false;
+    if (lastDy >= THRESHOLD) {
+      bar.style.transform = 'translateY(0)';
+      icon.classList.add('fa-spin');
+      icon.style.transform = '';
+      txt.textContent = '更新中...';
+      setTimeout(() => location.reload(), 600);
+    } else {
+      bar.style.transform = 'translateY(-100%)';
+    }
+    startY = 0; lastDy = 0;
+  });
+})();
 </script>
 </body>
 </html>
