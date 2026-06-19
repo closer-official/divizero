@@ -147,6 +147,10 @@ body.viewer-mode .admin-only{display:none!important}
 <!-- NAV -->
 <div class="bg-white border-b border-slate-200 sticky top-[57px] z-30">
   <div class="max-w-7xl mx-auto px-5 flex gap-0 overflow-x-auto cs">
+    <button class="nav-tab" data-tab="tab0">
+      <i class="fa-solid fa-layer-group"></i>OS⓪ 一次選別
+      <span class="badge bg-fuchsia-100 text-fuchsia-700" id="badge0">0</span>
+    </button>
     <button class="nav-tab active" data-tab="tab1">
       <i class="fa-solid fa-filter"></i>OS① スクリーニング
       <span class="badge bg-violet-100 text-violet-700" id="badge1">0</span>
@@ -167,6 +171,67 @@ body.viewer-mode .admin-only{display:none!important}
 </div>
 
 <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
+
+<!-- ===================== TAB0: OS⓪ ===================== -->
+<div id="tab0" class="tab-panel">
+  <div class="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-3 text-xs text-fuchsia-900">
+    <span class="font-bold"><i class="fa-solid fa-layer-group mr-1"></i>OS⓪ 設計原則：</span>
+    検索一覧のbioだけで「明白なゴミ」を除去し、それ以外は全てOS①へ。迷ったら通す。深く見ないからこそ速い。
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+    <!-- 左：入力パネル -->
+    <section class="lg:col-span-5 flex flex-col gap-3">
+      <div class="card p-5 flex flex-col gap-4">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+          <div class="flex items-center gap-2">
+            <span class="w-6 h-6 rounded-full bg-fuchsia-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
+            <span class="font-bold text-sm text-slate-800">一覧を貼り付けてプロンプトをコピー</span>
+          </div>
+          <div class="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+            <button id="t0-mode-twitter" class="text-xs font-bold px-2.5 py-1 rounded-md bg-white text-violet-700 shadow-sm transition">
+              <i class="fa-brands fa-x-twitter mr-1"></i>Twitter
+            </button>
+            <button id="t0-mode-instagram" class="text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition">
+              <i class="fa-brands fa-instagram mr-1"></i>Instagram
+            </button>
+            <button id="t0-mode-threads" class="text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition">
+              <i class="fa-brands fa-threads mr-1"></i>Threads
+            </button>
+          </div>
+        </div>
+        <textarea id="t0-input" class="input-base h-28 cs" placeholder="検索タイムライン・フォロワー一覧などを丸ごとコピペ"></textarea>
+        <button id="t0-copy-prompt" class="btn-sec w-full justify-center">
+          <i class="fa-solid fa-copy text-fuchsia-500"></i>OS⓪プロンプトをコピー（外部AIで実行）
+        </button>
+        <div class="flex items-center gap-2 pb-2 border-b border-slate-100">
+          <span class="w-6 h-6 rounded-full bg-fuchsia-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
+          <span class="font-bold text-sm text-slate-800">AIの出力を貼り付けてリストに追加</span>
+        </div>
+        <textarea id="t0-result" class="input-base h-32 cs" placeholder="AIが出力した【一次選別】〜▼選別サマリのテキストをそのまま貼り付け"></textarea>
+        <button id="t0-submit" class="btn-primary w-full justify-center text-sm">
+          <i class="fa-solid fa-circle-plus"></i>通過アカウントをリストに追加
+        </button>
+      </div>
+    </section>
+
+    <!-- 右：一次選別済みリスト -->
+    <section class="lg:col-span-7 flex flex-col gap-3">
+      <div class="card flex flex-col" style="min-height:520px">
+        <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 class="font-bold text-sm text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-fuchsia-500"></i>一次選別済みリスト
+          </h3>
+        </div>
+        <div class="flex-1 overflow-y-auto cs" id="t0-list">
+          <div class="flex flex-col items-center justify-center h-64 text-slate-300 gap-2">
+            <i class="fa-solid fa-layer-group text-4xl"></i>
+            <p class="text-sm font-medium">記録がありません</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
 
 <!-- ===================== TAB1: OS① ===================== -->
 <div id="tab1" class="tab-panel active">
@@ -494,14 +559,20 @@ body.viewer-mode .admin-only{display:none!important}
               <div class="bg-white border border-violet-100 rounded-lg p-2.5">
                 <div class="flex items-center justify-between mb-1.5">
                   <span class="font-bold text-violet-700 text-[10px]">案A（前進案）</span>
-                  <button class="t2d-copy-reply text-[10px] px-2 py-0.5 bg-violet-50 text-violet-600 rounded border border-violet-200" data-target="t2d-reply-a"><i class="fa-regular fa-copy"></i></button>
+                  <div class="flex gap-1">
+                    <button class="t2d-copy-reply text-[10px] px-2 py-0.5 bg-violet-50 text-violet-600 rounded border border-violet-200 hover:bg-violet-100 transition" data-target="t2d-reply-a"><i class="fa-regular fa-copy"></i></button>
+                    <button id="t2d-send-reply-a" class="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition"><i class="fa-regular fa-square-check mr-0.5"></i>送信済み</button>
+                  </div>
                 </div>
                 <p id="t2d-reply-a" class="text-slate-600 leading-relaxed select-all text-[11px]"></p>
               </div>
               <div class="bg-white border border-slate-100 rounded-lg p-2.5">
                 <div class="flex items-center justify-between mb-1.5">
                   <span class="font-bold text-slate-600 text-[10px]">案B（安全案）</span>
-                  <button class="t2d-copy-reply text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 rounded border border-slate-200" data-target="t2d-reply-b"><i class="fa-regular fa-copy"></i></button>
+                  <div class="flex gap-1">
+                    <button class="t2d-copy-reply text-[10px] px-2 py-0.5 bg-slate-50 text-slate-600 rounded border border-slate-200 hover:bg-slate-100 transition" data-target="t2d-reply-b"><i class="fa-regular fa-copy"></i></button>
+                    <button id="t2d-send-reply-b" class="text-[10px] px-2 py-0.5 bg-emerald-50 text-emerald-600 rounded border border-emerald-200 hover:bg-emerald-100 transition"><i class="fa-regular fa-square-check mr-0.5"></i>送信済み</button>
+                  </div>
                 </div>
                 <p id="t2d-reply-b" class="text-slate-600 leading-relaxed select-all text-[11px]"></p>
               </div>
@@ -831,11 +902,12 @@ body.viewer-mode .admin-only{display:none!important}
 // PROMPT TEMPLATES  (loaded from /prompts/*.md)
 // ──────────────────────────────────────────────
 
-let IG_READ_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
+let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
 (async function loadPrompts() {
   const files = [
     ['IG_READ_PROMPT',       'prompts/IG読み取りOCR_latest.md'],
+    ['OS0_PROMPT',           'prompts/OS0_一次選別_latest.md'],
     ['OS1_PROMPT',           'prompts/OS1_X_接触スクリーニング_latest.md'],
     ['OS1_THREADS_PROMPT',   'prompts/OS1_Threads_接触スクリーニング_latest.md'],
     ['OS1_INSTAGRAM_PROMPT', 'prompts/OS1_Instagram_接触スクリーニング_latest.md'],
@@ -844,7 +916,7 @@ let IG_READ_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PR
   ];
   try {
     const texts = await Promise.all(files.map(([, path]) => fetch(path).then(r => r.text())));
-    [IG_READ_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT] = texts;
+    [IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT] = texts;
   } catch (e) {
     console.error('プロンプトファイルの読み込みに失敗しました:', e);
   }
@@ -854,7 +926,7 @@ let IG_READ_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PR
 // DATA LAYER  (Firestore リアルタイム同期)
 // Firebaseコンフィグは /api/config から取得 → Vercel環境変数で管理
 // ──────────────────────────────────────────────
-const EMPTY_DATA = () => ({ targets: [], pipeline: [], closed: [] });
+const EMPTY_DATA = () => ({ screenings: [], targets: [], pipeline: [], closed: [] });
 let _cache = null;
 let _fbReady = false;
 let _docRef = null;
@@ -1145,6 +1217,48 @@ function parseOS1Threads(text) {
 }
 
 // ──────────────────────────────────────────────
+// OS⓪ MODE & PARSE
+// ──────────────────────────────────────────────
+let t0Mode = localStorage.getItem('os0_mode') || 'twitter';
+
+function updateT0ModeUI() {
+  const inactiveClass = 'text-xs font-bold px-2.5 py-1 rounded-md text-slate-400 transition';
+  document.getElementById('t0-mode-twitter').className = inactiveClass;
+  document.getElementById('t0-mode-instagram').className = inactiveClass;
+  document.getElementById('t0-mode-threads').className = inactiveClass;
+  if (t0Mode === 'instagram') {
+    document.getElementById('t0-mode-instagram').className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-pink-600 shadow-sm transition';
+  } else if (t0Mode === 'threads') {
+    document.getElementById('t0-mode-threads').className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-slate-800 shadow-sm transition';
+  } else {
+    document.getElementById('t0-mode-twitter').className = 'text-xs font-bold px-2.5 py-1 rounded-md bg-white text-violet-700 shadow-sm transition';
+  }
+}
+
+function parseOS0(text, channel) {
+  const sectionMatch = text.match(/▼判定一覧([\s\S]*?)(?=▼OS①送り候補|▼選別サマリ|$)/);
+  if (!sectionMatch) return [];
+  const lines = sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l);
+  const results = [];
+  for (const line of lines) {
+    const parts = line.split('｜');
+    if (parts.length < 4) continue;
+    const verdict = parts[3].trim();
+    if (!verdict.startsWith('◯')) continue;
+    results.push({
+      id: uid(),
+      createdAt: new Date().toISOString(),
+      channel,
+      displayName: parts[1]?.trim() || '',
+      handle: parts[2]?.trim() || '',
+      verdict: verdict.includes('提携') ? '◯【提携】' : '◯',
+      reason: parts[4]?.trim() || '',
+    });
+  }
+  return results;
+}
+
+// ──────────────────────────────────────────────
 // MODE MANAGEMENT
 // ──────────────────────────────────────────────
 let currentMode = localStorage.getItem('os_screening_mode') || 'twitter';
@@ -1342,6 +1456,7 @@ let selectedClosed = null;
 let t1Page = 0; // 0-indexed, fixed page assignment (registration order)
 
 function renderAll() {
+  renderScreenings();
   renderTargets();
   renderPipeline();
   renderClosed();
@@ -1352,6 +1467,7 @@ function renderAll() {
 
 function updateBadges() {
   const d = loadData();
+  document.getElementById('badge0').textContent = (d.screenings || []).length;
   document.getElementById('badge1').textContent = d.targets.length;
   const active = d.pipeline.filter(p => p.isOpen);
   document.getElementById('badge2').textContent = active.length;
@@ -1364,6 +1480,66 @@ function updateBadges() {
   const wb = document.getElementById('warn-badge');
   if (warns.length > 0) { wb.textContent = warns.length; wb.classList.remove('hidden'); }
   else wb.classList.add('hidden');
+}
+
+function renderScreenings() {
+  const d = loadData();
+  const list = document.getElementById('t0-list');
+  const items = d.screenings || [];
+  if (items.length === 0) {
+    list.innerHTML = '<div class="flex flex-col items-center justify-center h-64 text-slate-300 gap-2"><i class="fa-solid fa-layer-group text-4xl"></i><p class="text-sm font-medium">記録がありません</p></div>';
+    return;
+  }
+  list.innerHTML = [...items].reverse().map(item => {
+    const verdictBadge = item.verdict === '◯【提携】'
+      ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700">提携</span>'
+      : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">通過</span>';
+    const channelIcon = item.channel === 'instagram'
+      ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pink-100 text-pink-600"><i class="fa-brands fa-instagram mr-0.5"></i>IG</span>'
+      : item.channel === 'threads'
+      ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"><i class="fa-brands fa-threads mr-0.5"></i>TH</span>'
+      : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500"><i class="fa-brands fa-x-twitter mr-0.5"></i>X</span>';
+    const profileUrl = buildProfileUrl(item.handle, item.channel);
+    return `<div class="border-b border-slate-100 py-3 px-4 hover:bg-slate-50 transition flex items-center gap-2">
+      ${verdictBadge}
+      ${channelIcon}
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-sm text-slate-800 truncate">${item.displayName || '(名前なし)'}</p>
+        <p class="text-[11px] text-slate-500 truncate">${item.handle}${item.reason ? ' — ' + item.reason : ''}</p>
+      </div>
+      <a href="${profileUrl}" target="_blank" class="btn-sec text-xs py-1.5 px-2.5 shrink-0"><i class="fa-solid fa-arrow-up-right-from-square text-xs"></i>開く</a>
+      <button class="t0-goto-os1 btn-sec text-xs py-1.5 px-2 shrink-0" data-handle="${item.handle}" data-channel="${item.channel || 'twitter'}"><i class="fa-solid fa-arrow-right text-violet-500 mr-0.5"></i><span class="hidden sm:inline">OS①へ</span></button>
+      <button class="t0-del-btn w-9 h-9 flex items-center justify-center rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50 active:bg-rose-100 transition shrink-0" data-del-id="${item.id}" aria-label="削除"><i class="fa-solid fa-trash text-xs pointer-events-none"></i></button>
+    </div>`;
+  }).join('');
+
+  list.querySelectorAll('.t0-del-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.delId;
+      const d2 = loadData();
+      const item = d2.screenings.find(x => x.id === id);
+      confirm('削除確認', `「${item?.displayName || 'このアカウント'}」を削除しますか？`, () => {
+        const d3 = loadData();
+        d3.screenings = d3.screenings.filter(x => x.id !== id);
+        saveData(d3);
+        renderScreenings();
+        updateBadges();
+        showToast('削除しました');
+      });
+    });
+  });
+
+  list.querySelectorAll('.t0-goto-os1').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const ch = btn.dataset.channel || 'twitter';
+      currentMode = ch;
+      localStorage.setItem('os_screening_mode', ch);
+      updateModeUI();
+      document.querySelector('[data-tab="tab1"]').click();
+    });
+  });
 }
 
 function renderTargets() {
@@ -1705,7 +1881,11 @@ function showPipelineDetail(id) {
       }).join('');
     };
     const judgmentColor = j => j === '前進' ? 'text-violet-700 font-bold' : j === 'クローズ' ? 'text-rose-600 font-bold' : 'text-amber-600 font-bold';
-    document.getElementById('t2d-history').innerHTML = history.slice().reverse().map((h, i) => `
+    const _histCopyTexts = [];
+    document.getElementById('t2d-history').innerHTML = history.slice().reverse().map((h, i) => {
+      const aIdx = _histCopyTexts.push(h.replyA || '') - 1;
+      const bIdx = _histCopyTexts.push(h.replyB || '') - 1;
+      return `
       <div class="history-line">
         <div class="flex-shrink-0 flex flex-col items-center pt-0.5 gap-1">
           <span class="w-5 h-5 rounded-full text-[9px] font-bold flex items-center justify-center bg-slate-100 text-slate-500">${history.length - i}</span>
@@ -1722,10 +1902,14 @@ function showPipelineDetail(id) {
           ${h.sentMsgLabel ? `<p class="text-[10px] text-violet-600 truncate mb-0.5"><i class="fa-solid fa-paper-plane mr-0.5"></i>${h.sentMsgLabel}</p>` : ''}
           ${h.targetPost ? `<p class="text-[10px] text-slate-400 truncate mb-0.5"><i class="fa-solid fa-link mr-0.5"></i>${h.targetPost}</p>` : ''}
           ${h.nextAction ? `<p class="text-[11px] text-slate-500 truncate">→ ${h.nextAction}</p>` : ''}
-          ${h.replyA ? `<p class="text-[10px] text-violet-600 mt-0.5 leading-snug line-clamp-2"><span class="font-bold">案A：</span>${h.replyA}</p>` : ''}
-          ${h.replyB ? `<p class="text-[10px] text-indigo-500 mt-0.5 leading-snug line-clamp-2"><span class="font-bold">案B：</span>${h.replyB}</p>` : ''}
+          ${h.replyA ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-violet-600 leading-snug line-clamp-2 flex-1"><span class="font-bold">案A：</span>${h.replyA}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-violet-50 text-violet-500 rounded border border-violet-200 hover:bg-violet-100 transition" data-idx="${aIdx}"><i class="fa-regular fa-copy"></i></button></div>` : ''}
+          ${h.replyB ? `<div class="flex items-start gap-1 mt-0.5"><p class="text-[10px] text-indigo-500 leading-snug line-clamp-2 flex-1"><span class="font-bold">案B：</span>${h.replyB}</p><button class="t2d-hist-copy shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-50 text-slate-500 rounded border border-slate-200 hover:bg-slate-100 transition" data-idx="${bIdx}"><i class="fa-regular fa-copy"></i></button></div>` : ''}
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
+    document.getElementById('t2d-history').querySelectorAll('.t2d-hist-copy').forEach(btn => {
+      btn.addEventListener('click', () => copyText(_histCopyTexts[parseInt(btn.dataset.idx)]));
+    });
   } else {
     histSec.classList.add('hidden');
   }
@@ -2337,6 +2521,31 @@ document.querySelectorAll('.t2d-copy-reply').forEach(btn => {
   });
 });
 
+// OS② 送信済みボタン
+function t2RecordSent(label, text) {
+  if (!selectedPipeline) return;
+  if (!text || text === '-') { showToast('送信テキストがありません'); return; }
+  const d = loadData();
+  const p = d.pipeline.find(x => x.id === selectedPipeline);
+  if (!p) return;
+  if (!p.sentMessages) p.sentMessages = [];
+  p.sentMessages.push({
+    id: uid(), label, original: text, actual: text,
+    edited: false, reason: '', date: new Date().toISOString().slice(0, 10)
+  });
+  p.lastContactDate = new Date().toISOString().slice(0, 10);
+  saveData(d);
+  showPipelineDetail(selectedPipeline);
+  showToast(`${label} を送信済みとして記録しました`);
+}
+
+document.getElementById('t2d-send-reply-a').addEventListener('click', () => {
+  t2RecordSent('案A（前進案）', document.getElementById('t2d-reply-a').textContent);
+});
+document.getElementById('t2d-send-reply-b').addEventListener('click', () => {
+  t2RecordSent('案B（安全案）', document.getElementById('t2d-reply-b').textContent);
+});
+
 // OS③ copy prompt
 document.getElementById('t3-copy-prompt').addEventListener('click', () => {
   const name = document.getElementById('t3-name').value;
@@ -2888,6 +3097,51 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   document.getElementById('login-overlay').classList.remove('hidden');
 });
 
+// OS⓪ mode toggle
+document.getElementById('t0-mode-twitter').addEventListener('click', () => {
+  t0Mode = 'twitter';
+  localStorage.setItem('os0_mode', 'twitter');
+  updateT0ModeUI();
+});
+document.getElementById('t0-mode-instagram').addEventListener('click', () => {
+  t0Mode = 'instagram';
+  localStorage.setItem('os0_mode', 'instagram');
+  updateT0ModeUI();
+});
+document.getElementById('t0-mode-threads').addEventListener('click', () => {
+  t0Mode = 'threads';
+  localStorage.setItem('os0_mode', 'threads');
+  updateT0ModeUI();
+});
+
+// OS⓪ copy prompt
+document.getElementById('t0-copy-prompt').addEventListener('click', () => {
+  if (!OS0_PROMPT) { showToast('プロンプトを読み込み中です。しばらくお待ちください'); return; }
+  const input = document.getElementById('t0-input').value.trim();
+  const full = OS0_PROMPT + (input ? '\n' + input : '');
+  copyText(full);
+  showToast('OS⓪プロンプトをコピーしました。AIにそのまま貼り付けてください');
+});
+
+// OS⓪ submit
+document.getElementById('t0-submit').addEventListener('click', () => {
+  const text = document.getElementById('t0-result').value.trim();
+  if (!text) { showToast('AIの出力を貼り付けてください', 2000); return; }
+  const items = parseOS0(text, t0Mode);
+  if (items.length === 0) {
+    showToast('通過アカウントが見つかりませんでした。▼判定一覧の形式を確認してください', 3000); return;
+  }
+  const d = loadData();
+  if (!d.screenings) d.screenings = [];
+  d.screenings.push(...items);
+  saveData(d);
+  document.getElementById('t0-input').value = '';
+  document.getElementById('t0-result').value = '';
+  renderScreenings();
+  updateBadges();
+  showToast(`${items.length}件の通過アカウントをリストに追加しました`);
+});
+
 // mode toggle
 document.getElementById('mode-twitter').addEventListener('click', () => {
   currentMode = 'twitter';
@@ -2908,6 +3162,7 @@ document.getElementById('mode-threads').addEventListener('click', () => {
 // ──────────────────────────────────────────────
 // INIT
 // ──────────────────────────────────────────────
+updateT0ModeUI();
 updateModeUI();
 document.getElementById('t2f-lastdate').value = new Date().toISOString().slice(0,10);
 initAuth();
