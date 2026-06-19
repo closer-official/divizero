@@ -232,6 +232,26 @@ body.viewer-mode .admin-only{display:none!important}
           </div>
         </div>
       </div>
+      <!-- 除外済みリスト -->
+      <div class="card overflow-hidden">
+        <div class="p-4 flex items-center justify-between cursor-pointer select-none" id="t0-excluded-toggle">
+          <h3 class="font-bold text-sm text-slate-700 flex items-center gap-2">
+            <i class="fa-solid fa-ban text-rose-400"></i>除外済みリスト
+            <span class="badge bg-rose-100 text-rose-600" id="t0-excluded-count">0</span>
+          </h3>
+          <div class="flex items-center gap-2">
+            <span class="text-[11px] text-slate-400" id="t0-excluded-hint">OS⓪プロンプトに自動反映</span>
+            <i class="fa-solid fa-chevron-down text-slate-400 text-xs transition-transform" id="t0-excluded-chevron"></i>
+          </div>
+        </div>
+        <div id="t0-excluded-body" class="hidden border-t border-slate-100">
+          <p class="text-[11px] text-slate-400 px-4 py-2">OS⓪NG・SKIP・手動削除したアカウント。OS⓪プロンプトコピー時に自動付加され、AIが再判定しないようになります。</p>
+          <div id="t0-excluded-list" class="max-h-60 overflow-y-auto cs"></div>
+          <div class="p-3 border-t border-slate-100 flex justify-end">
+            <button id="t0-excluded-clear" class="btn-danger text-xs py-1.5 px-3 admin-only"><i class="fa-solid fa-trash mr-1"></i>リストをリセット</button>
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </div>
@@ -926,7 +946,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'message';
+const DEPLOY_MSG = '除外リスト機能追加：OS⓪NG・SKIP・手動削除アカウントを自動記録しOS⓪プロンプトに反映';
 
 (async function loadPrompts() {
   const files = [
@@ -950,7 +970,7 @@ const DEPLOY_MSG = 'message';
 // DATA LAYER  (Firestore リアルタイム同期)
 // Firebaseコンフィグは /api/config から取得 → Vercel環境変数で管理
 // ──────────────────────────────────────────────
-const EMPTY_DATA = () => ({ screenings: [], targets: [], pipeline: [], closed: [] });
+const EMPTY_DATA = () => ({ screenings: [], targets: [], pipeline: [], closed: [], excluded: [] });
 let _cache = null;
 let _fbReady = false;
 let _docRef = null;
@@ -1315,6 +1335,36 @@ function parseOS0(text, channel) {
     }));
 }
 
+function parseOS0NG(text, channel) {
+  const ngs = [];
+  const sectionMatch = text.match(/▼判定一覧([\s\S]*?)(?=▼OS①送り候補|▼選別サマリ|$)/);
+  if (!sectionMatch) return ngs;
+  for (const line of sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l)) {
+    const parts = line.split(/[｜|]/);
+    if (parts.length < 4) continue;
+    const handle = parts[2]?.trim() || '';
+    if (!handle.startsWith('@')) continue;
+    const verdict = parts[3]?.trim() || '';
+    if (verdict.startsWith('◯')) continue;
+    const skipCodeMatch = verdict.match(/X(\d)/);
+    ngs.push({ handle, displayName: parts[1]?.trim() || '', channel, reason: 'OS⓪NG', skipCode: skipCodeMatch ? 'X' + skipCodeMatch[1] : '' });
+  }
+  return ngs;
+}
+
+function normalizeHandle(u) {
+  return (u || '').trim().replace(/^@/, '').toLowerCase().replace(/^.*\//, '');
+}
+
+function addToExcluded(d, handle, displayName, channel, reason, skipCode) {
+  if (!d.excluded) d.excluded = [];
+  const nh = normalizeHandle(handle);
+  if (!nh) return;
+  if (d.excluded.some(e => normalizeHandle(e.handle) === nh)) return;
+  const h = handle.startsWith('@') ? handle : '@' + handle;
+  d.excluded.push({ id: uid(), handle: h, displayName: displayName || '', channel: channel || 'twitter', reason: reason || '手動削除', skipCode: skipCode || '', addedAt: new Date().toISOString() });
+}
+
 // ──────────────────────────────────────────────
 // MODE MANAGEMENT
 // ──────────────────────────────────────────────
@@ -1515,6 +1565,7 @@ let t2Page = 0;
 
 function renderAll() {
   renderScreenings();
+  renderExcluded();
   renderTargets();
   renderPipeline();
   renderClosed();
@@ -1577,13 +1628,16 @@ function renderScreenings() {
       const id = btn.dataset.delId;
       const d2 = loadData();
       const item = d2.screenings.find(x => x.id === id);
-      confirm('削除確認', `「${item?.displayName || 'このアカウント'}」を削除しますか？`, () => {
+      confirm('削除確認', `「${item?.displayName || 'このアカウント'}」を削除しますか？（除外リストに追加されます）`, () => {
         const d3 = loadData();
+        const target = d3.screenings.find(x => x.id === id);
+        if (target) addToExcluded(d3, target.handle, target.displayName, target.channel, '手動削除');
         d3.screenings = d3.screenings.filter(x => x.id !== id);
         saveData(d3);
         renderScreenings();
+        renderExcluded();
         updateBadges();
-        showToast('削除しました');
+        showToast('削除し、除外リストに追加しました');
       });
     });
   });
@@ -1596,6 +1650,44 @@ function renderScreenings() {
       localStorage.setItem('os_screening_mode', ch);
       updateModeUI();
       document.querySelector('[data-tab="tab1"]').click();
+    });
+  });
+}
+
+function renderExcluded() {
+  const d = loadData();
+  const excluded = d.excluded || [];
+  const countEl = document.getElementById('t0-excluded-count');
+  const listEl = document.getElementById('t0-excluded-list');
+  if (countEl) countEl.textContent = excluded.length;
+  if (!listEl) return;
+  if (excluded.length === 0) {
+    listEl.innerHTML = '<div class="flex items-center justify-center h-16 text-slate-300 text-xs gap-1"><i class="fa-solid fa-ban"></i>除外済みアカウントはありません</div>';
+    return;
+  }
+  const reasonLabel = r => {
+    if (r === 'OS⓪NG') return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-600">OS⓪NG</span>';
+    if (r === 'SKIP') return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">SKIP</span>';
+    if (r === 'パイプライン削除') return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">パイプライン削除</span>';
+    return '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">手動削除</span>';
+  };
+  listEl.innerHTML = [...excluded].reverse().map(e => `
+    <div class="border-b border-slate-100 py-2.5 px-4 flex items-center gap-2 hover:bg-slate-50 transition">
+      ${reasonLabel(e.reason)}
+      ${e.skipCode ? `<span class="text-[10px] font-mono text-rose-500">${e.skipCode}</span>` : ''}
+      <div class="flex-1 min-w-0">
+        <p class="font-semibold text-xs text-slate-700 truncate">${e.displayName || e.handle}</p>
+        <p class="text-[11px] text-slate-400">${e.handle}</p>
+      </div>
+      <button class="t0-excluded-del shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition text-xs" data-id="${e.id}" title="除外を解除"><i class="fa-solid fa-xmark pointer-events-none"></i></button>
+    </div>`).join('');
+  listEl.querySelectorAll('.t0-excluded-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const d2 = loadData();
+      d2.excluded = (d2.excluded || []).filter(e => e.id !== btn.dataset.id);
+      saveData(d2);
+      renderExcluded();
+      showToast('除外を解除しました');
     });
   });
 }
@@ -1645,8 +1737,10 @@ function renderTargets() {
       const id = btn.dataset.delId;
       const d2 = loadData();
       const t2 = d2.targets.find(x => x.id === id);
-      confirm('削除確認', `「${t2?.accountName || 'この記録'}」を削除しますか？`, () => {
+      confirm('削除確認', `「${t2?.accountName || 'この記録'}」を削除しますか？（除外リストに追加されます）`, () => {
         const d3 = loadData();
+        const tgt = d3.targets.find(x => x.id === id);
+        if (tgt) addToExcluded(d3, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
         d3.targets = d3.targets.filter(x => x.id !== id);
         saveData(d3);
         if (selectedTarget === id) {
@@ -1654,8 +1748,9 @@ function renderTargets() {
           document.getElementById('t1-detail').classList.add('hidden');
         }
         renderTargets();
+        renderExcluded();
         updateBadges();
-        showToast('削除しました');
+        showToast('削除し、除外リストに追加しました');
       });
     });
   });
@@ -2362,13 +2457,16 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   if (!parsed.channel) parsed.channel = 'twitter';
   const d = loadData();
   // Duplicate handle check
-  const normalizeHandle = (u) => (u || '').trim().replace(/^@/, '').toLowerCase().replace(/^.*\//, '');
   const parsedHandle = normalizeHandle(parsed.url);
   if (parsedHandle && d.targets.some(t => normalizeHandle(t.url) === parsedHandle)) {
     showToast('このアカウントは登録済みです（@' + parsedHandle + '）', 3000); return;
   }
   const rec = { id: uid(), createdAt: new Date().toISOString(), rawInput: document.getElementById('t1-input').value, aiOutput: text, pipelineId: null, ...parsed };
   d.targets.push(rec);
+  // Auto-add SKIP accounts to excluded list
+  if (rec.track === 'SKIP' || rec.skipJudge === 'SKIP') {
+    addToExcluded(d, rec.url || rec.accountName, rec.accountName, rec.channel, 'SKIP');
+  }
   saveData(d);
   document.getElementById('t1-input').value = '';
   document.getElementById('t1-post').value = '';
@@ -2377,6 +2475,7 @@ document.getElementById('t1-submit').addEventListener('click', () => {
   // Navigate to the page containing the new record (last page)
   t1Page = Math.floor((d.targets.length - 1) / 10);
   renderTargets();
+  renderExcluded();
   updateBadges();
   showToast(`${rec.accountName || 'アカウント'} を記録しました`);
   showTargetDetail(rec.id);
@@ -2506,15 +2605,18 @@ document.getElementById('t1d-delete').addEventListener('click', () => {
   if (!selectedTarget) return;
   const d = loadData();
   const t = d.targets.find(x => x.id === selectedTarget);
-  confirm('削除確認', `「${t?.accountName || 'この記録'}」を削除しますか？`, () => {
+  confirm('削除確認', `「${t?.accountName || 'この記録'}」を削除しますか？（除外リストに追加されます）`, () => {
     const d2 = loadData();
+    const tgt = d2.targets.find(x => x.id === selectedTarget);
+    if (tgt) addToExcluded(d2, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除');
     d2.targets = d2.targets.filter(x => x.id !== selectedTarget);
     saveData(d2);
     selectedTarget = null;
     document.getElementById('t1-detail').classList.add('hidden');
     renderTargets();
+    renderExcluded();
     updateBadges();
-    showToast('削除しました');
+    showToast('削除し、除外リストに追加しました');
   });
 });
 
@@ -2566,20 +2668,20 @@ document.getElementById('t2d-delete').addEventListener('click', () => {
   if (!selectedPipeline) return;
   const d = loadData();
   const p = d.pipeline.find(x => x.id === selectedPipeline);
-  confirm('削除確認', `「${p?.accountName || 'この案件'}」をパイプラインから削除しますか？\n（OS①のリストには影響しません）`, () => {
+  confirm('削除確認', `「${p?.accountName || 'この案件'}」をパイプラインから削除しますか？\n（除外リストに追加されます）`, () => {
     const d2 = loadData();
-    // Unlink from target if exists
     if (p?.targetId) {
       const t = d2.targets.find(x => x.id === p.targetId);
       if (t) t.pipelineId = null;
     }
+    if (p) addToExcluded(d2, p.url || p.accountName, p.accountName, p.channel, 'パイプライン削除');
     d2.pipeline = d2.pipeline.filter(x => x.id !== selectedPipeline);
     saveData(d2);
     selectedPipeline = null;
     document.getElementById('t2-detail').classList.add('hidden');
     document.getElementById('t2-empty-right').classList.remove('hidden');
     renderAll();
-    showToast('削除しました');
+    showToast('削除し、除外リストに追加しました');
   });
 });
 
@@ -3386,7 +3488,14 @@ document.getElementById('t0-mode-threads').addEventListener('click', () => {
 document.getElementById('t0-copy-prompt').addEventListener('click', () => {
   if (!OS0_PROMPT) { showToast('プロンプトを読み込み中です。しばらくお待ちください'); return; }
   const input = document.getElementById('t0-input').value.trim();
-  const full = OS0_PROMPT + (input ? '\n' + input : '');
+  const d = loadData();
+  const excluded = d.excluded || [];
+  let excludedSection = '';
+  if (excluded.length > 0) {
+    const handles = excluded.map(e => e.handle).filter(Boolean).join(', ');
+    excludedSection = `\n\n【除外済みアカウント（再判定不要）】\n以下のアカウントは過去に接触済み・SKIP・除外済みです。▼判定一覧に含まれていた場合は無条件で✕（除外済み）としてください：\n${handles}`;
+  }
+  const full = OS0_PROMPT + excludedSection + (input ? '\n' + input : '');
   copyText(full);
   showToast('OS⓪プロンプトをコピーしました。AIにそのまま貼り付けてください');
 });
@@ -3395,19 +3504,30 @@ document.getElementById('t0-copy-prompt').addEventListener('click', () => {
 document.getElementById('t0-submit').addEventListener('click', () => {
   const text = document.getElementById('t0-result').value.trim();
   if (!text) { showToast('AIの出力を貼り付けてください', 2000); return; }
-  const items = parseOS0(text, t0Mode);
-  if (items.length === 0) {
+  const allPassing = parseOS0(text, t0Mode);
+  if (allPassing.length === 0) {
     showToast('通過アカウントが見つかりませんでした。▼判定一覧の形式を確認してください', 3000); return;
   }
   const d = loadData();
   if (!d.screenings) d.screenings = [];
+  // Save NG accounts to excluded list
+  const ngs = parseOS0NG(text, t0Mode);
+  ngs.forEach(ng => addToExcluded(d, ng.handle, ng.displayName, ng.channel, ng.reason, ng.skipCode));
+  // Filter out already-excluded accounts from passing list
+  const excluded = d.excluded || [];
+  const items = allPassing.filter(item => !excluded.some(e => normalizeHandle(e.handle) === normalizeHandle(item.handle)));
+  const skippedCount = allPassing.length - items.length;
   d.screenings.push(...items);
   saveData(d);
   document.getElementById('t0-input').value = '';
   document.getElementById('t0-result').value = '';
   renderScreenings();
+  renderExcluded();
   updateBadges();
-  showToast(`${items.length}件の通過アカウントをリストに追加しました`);
+  let msg = `${items.length}件の通過アカウントをリストに追加しました`;
+  if (ngs.length > 0) msg += `（NG${ngs.length}件を除外リストに保存）`;
+  if (skippedCount > 0) msg += `（除外済み${skippedCount}件はスキップ）`;
+  showToast(msg, 3500);
 });
 
 // mode toggle
@@ -3425,6 +3545,26 @@ document.getElementById('mode-threads').addEventListener('click', () => {
   currentMode = 'threads';
   localStorage.setItem('os_screening_mode', 'threads');
   updateModeUI();
+});
+
+// 除外済みリスト toggle
+document.getElementById('t0-excluded-toggle').addEventListener('click', () => {
+  const body = document.getElementById('t0-excluded-body');
+  const chevron = document.getElementById('t0-excluded-chevron');
+  const isOpen = !body.classList.contains('hidden');
+  body.classList.toggle('hidden', isOpen);
+  chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+});
+
+// 除外済みリスト リセット
+document.getElementById('t0-excluded-clear').addEventListener('click', () => {
+  confirm('リセット確認', '除外済みリストをすべてクリアしますか？', () => {
+    const d = loadData();
+    d.excluded = [];
+    saveData(d);
+    renderExcluded();
+    showToast('除外リストをリセットしました');
+  });
 });
 
 // ──────────────────────────────────────────────
