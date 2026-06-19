@@ -974,7 +974,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'OS2update';
+const DEPLOY_MSG = '削除';
 
 (async function loadPrompts() {
   const files = [
@@ -2239,6 +2239,7 @@ function showPipelineDetail(id) {
             ${reactionBadges(h.reaction)}
             <span class="${judgmentColor(h.judgment)} text-xs font-bold">${h.judgment || '-'}</span>
             ${h.redSignal && h.redSignal !== '無' ? '<span class="red-signal">赤信号</span>' : ''}
+            <button class="t2d-hist-del ml-auto shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition" data-hist-idx="${history.length - 1 - i}" title="この記録を削除"><i class="fa-solid fa-xmark text-[10px] pointer-events-none"></i></button>
           </div>
           ${hasDetail ? `
           <div id="hist-detail-${i}" class="hidden flex-col gap-1.5 mt-1.5 p-2.5 bg-slate-50 rounded-lg border border-slate-100">
@@ -2273,6 +2274,32 @@ function showPipelineDetail(id) {
         btn.innerHTML = !isOpen
           ? '<i class="fa-solid fa-chevron-up text-[9px]"></i> 閉じる'
           : '<i class="fa-solid fa-chevron-down text-[9px]"></i> 詳細を見る';
+      });
+    });
+    document.getElementById('t2d-history').querySelectorAll('.t2d-hist-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const origIdx = parseInt(btn.dataset.histIdx);
+        const d2 = loadData();
+        const p2 = d2.pipeline.find(x => x.id === selectedPipeline);
+        if (!p2) return;
+        const isLatest = origIdx === p2.history.length - 1;
+        p2.history.splice(origIdx, 1);
+        if (p2.analyses && p2.analyses.length > origIdx) p2.analyses.splice(origIdx, 1);
+        if (isLatest) {
+          const prev = p2.history.length > 0 ? p2.history[p2.history.length - 1] : null;
+          p2.judgment = prev?.judgment || null;
+          p2.nextAction = prev?.nextAction || null;
+          p2.deadline = prev?.deadline || null;
+          p2.replyA = prev?.replyA || null;
+          p2.replyB = prev?.replyB || null;
+          p2.ngAction = prev?.ngAction || null;
+          p2.redSignal = prev?.redSignal || null;
+          p2.responseQuality = prev?.responseQuality || null;
+          p2.hypothesisVerification = prev?.hypothesisCheck || null;
+        }
+        saveData(d2);
+        showPipelineDetail(selectedPipeline);
+        showToast('記録を削除しました。再出力を貼り付けてください');
       });
     });
   } else {
