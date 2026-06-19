@@ -974,7 +974,7 @@ body.viewer-mode .admin-only{display:none!important}
 
 let IG_READ_PROMPT, OS0_PROMPT, OS1_PROMPT, OS1_THREADS_PROMPT, OS1_INSTAGRAM_PROMPT, OS2_PROMPT, OS3_PROMPT;
 
-const DEPLOY_MSG = 'リスト順序入れ替え';
+const DEPLOY_MSG = 'OS2update';
 
 (async function loadPrompts() {
   const files = [
@@ -1182,7 +1182,8 @@ function field(text, label) {
 }
 
 function block(text, header) {
-  const re = new RegExp('【' + header + '】\\s*\\n([\\s\\S]*?)(?=【|$)');
+  // Match content after 【header】 whether value is on same line or next line
+  const re = new RegExp('【' + header + '】\\s*([\\s\\S]*?)(?=【|$)');
   const m = text.match(re);
   return m ? m[1].trim() : '';
 }
@@ -2183,12 +2184,12 @@ function showPipelineDetail(id) {
   document.getElementById('t2d-last').textContent = lc + (p.lastContactDate ? ` (${daysSince(p.lastContactDate)}日前)` : '');
   document.getElementById('t2d-hypo').textContent = p.hypothesis || '-';
 
-  // Last judgment
+  // Last judgment — show if any field is available
   const jSec = document.getElementById('t2d-last-judgment');
-  if (p.judgment) {
+  if (p.judgment || p.nextAction || p.replyA || p.replyB || p.ngAction || p.deadline || p.redSignal) {
     jSec.classList.remove('hidden');
-    document.getElementById('t2d-judgment').textContent = p.judgment;
-    document.getElementById('t2d-judgment').className = 'font-bold ' + (p.judgment === '前進' ? 'text-violet-700' : p.judgment === 'クローズ' ? 'text-rose-600' : 'text-amber-600');
+    document.getElementById('t2d-judgment').textContent = p.judgment || '-';
+    document.getElementById('t2d-judgment').className = 'font-bold ' + (p.judgment === '前進' ? 'text-violet-700' : p.judgment === 'クローズ' ? 'text-rose-600' : p.judgment ? 'text-amber-600' : 'text-slate-400');
     document.getElementById('t2d-deadline').textContent = p.deadline || '-';
     document.getElementById('t2d-red').textContent = p.redSignal || '-';
     document.getElementById('t2d-red').className = 'font-bold ' + (p.redSignal && p.redSignal !== '無' ? 'text-rose-600' : 'text-emerald-600');
