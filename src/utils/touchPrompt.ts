@@ -6,7 +6,9 @@ export interface ParsedTouch {
   targetValidity: string
   gateJudgment: string
   suggestedTextA: string
+  provisionalJudgmentA: string
   suggestedTextB: string
+  provisionalJudgmentB: string
   nextAim: string
 }
 
@@ -94,7 +96,9 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
     targetValidity: normalizeValidity(pick('対象妥当性')),
     gateJudgment: pick('ゲート判定'),
     suggestedTextA: pick('提案文A'),
+    provisionalJudgmentA: pick('仮判定A').trim(),
     suggestedTextB: pick('提案文B'),
+    provisionalJudgmentB: pick('仮判定B').trim(),
     nextAim: pick('次の狙い'),
   }
 }

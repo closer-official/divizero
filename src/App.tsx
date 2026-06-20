@@ -7,8 +7,9 @@ import Tab1 from './components/tabs/Tab1'
 import Tab2 from './components/tabs/Tab2'
 import Tab3 from './components/tabs/Tab3'
 import Tab4 from './components/tabs/Tab4'
+import Tab5 from './components/tabs/Tab5'
 
-type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4'
+type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5'
 
 export interface ToastAPI {
   show: (msg: string, duration?: number) => void
@@ -176,6 +177,7 @@ export default function App() {
             { id: 'tab2' as TabId, icon: 'fa-chart-gantt', label: 'OS② パイプライン', badgeColor: 'bg-indigo-100 text-indigo-700', count: openPipeline.length, warn: warnCount },
             { id: 'tab3' as TabId, icon: 'fa-graduation-cap', label: 'OS③ 案件検証', badgeColor: 'bg-emerald-100 text-emerald-700', count: data.closed.length },
             { id: 'tab4' as TabId, icon: 'fa-chart-pie', label: '集計ダッシュボード', badgeColor: '', count: null },
+            { id: 'tab5' as TabId, icon: 'fa-clock-rotate-left', label: '分析履歴', badgeColor: 'bg-violet-100 text-violet-700', count: (data.analyses || []).filter(a => a.status === 'completed').length || null },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -209,6 +211,7 @@ export default function App() {
         {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} />}
         {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} />}
+        {activeTab === 'tab5' && <Tab5 data={data} role={role} />}
       </main>
 
       {/* Toast */}

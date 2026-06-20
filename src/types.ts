@@ -3,7 +3,7 @@ export type Track = 'FT' | 'NT' | 'SKIP';
 export type Step = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 
 export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・嬉しい報告' | '愚痴・本音' | 'ネタ' | 'ストーリー' | 'その他';
-export type TouchValidity = '◯' | '△' | '✕' | '未評価';
+export type TouchValidity = '◯' | '△' | '✕' | '未評価' | '未判定';
 export type TouchReaction = 'テキスト返信' | 'いいね返り' | 'フォロー返し' | 'スタンプ・絵文字' | '無反応' | '公開拒絶（R5）' | '未記録';
 
 export interface Touch {
@@ -24,6 +24,11 @@ export interface Touch {
   os2NextAction?: string;
   os2ReplyA?: string;
   os2ReplyB?: string;
+  judgmentReason?: string;
+  editEvaluation?: string;
+  editComment?: string;
+  improvementSuggestion?: string;
+  judgedAt?: string;
 }
 
 export interface Screening {
@@ -206,6 +211,31 @@ export interface LogEntry {
   messageValidity: '◯' | '△' | '✕' | '未評価';
 }
 
+export interface Analysis {
+  id: string;
+  type: 'case_pattern' | 'touch_trend' | 'emergency_alert';
+  triggeredAt: string;
+  status: 'pending' | 'prompted' | 'completed';
+  promptedAt?: string;
+  completedAt?: string;
+  targetCount: number;
+  topLossType?: string;
+  winRate?: string;
+  patternSummary?: string;
+  lastActionImprovement?: string;
+  highValuePattern?: string;
+  actionItem?: string;
+  nextFocusPoint?: string;
+  targetValiditySummary?: string;
+  messageValiditySummary?: string;
+  editEvalSummary?: string;
+  topImprovementPattern?: string;
+  frequentNgPostType?: string;
+  trendComment?: string;
+  alertDetail?: string;
+  rawOutput?: string;
+}
+
 export interface AppData {
   screenings: Screening[];
   targets: Target[];
@@ -214,6 +244,7 @@ export interface AppData {
   excluded: ExcludedAccount[];
   trash: TrashItem[];
   logs?: LogEntry[];
+  analyses?: Analysis[];
 }
 
 export type Prompts = {

@@ -1,13 +1,23 @@
 import { useState, useRef } from 'react'
-import type { AppData, Prompts, PipelineItem, Touch } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch, Analysis } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
+import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
+import {
+  getActiveNotifications, setDismissedUntil, createPendingAnalysis,
+  markEmergencyAlertRead, buildEmergencyAlertDetail,
+  type ActiveNotification,
+} from '../../utils/analysisNotification'
+import {
+  buildCaseAnalysisPrompt, parseCaseAnalysis,
+  buildTouchAnalysisPrompt, parseTouchAnalysis,
+} from '../../utils/analysisPrompt'
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
-  trackBadgeClass, stepsBarData, urgencyClass, daysSince,
+  trackBadgeClass, stepsBarData, daysSince,
   uid, todayStr,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
@@ -18,6 +28,13 @@ function validityBadge(v: string) {
   if (v === '△') return 'bg-yellow-100 text-yellow-700'
   if (v === '✕') return 'bg-red-100 text-red-700'
   return 'bg-gray-100 text-gray-500'
+}
+function provisionalBadgeText(j: string) {
+  if (!j) return null
+  if (j.startsWith('◯')) return { text: j, cls: 'text-emerald-600' }
+  if (j.startsWith('△')) return { text: j, cls: 'text-amber-600' }
+  if (j.startsWith('✕')) return { text: j, cls: 'text-rose-600' }
+  return { text: j, cls: 'text-slate-500' }
 }
 function postTypeBadge(t: string) {
   const m: Record<string, string> = {
@@ -79,6 +96,7 @@ function StepsBar({ currentStep }: { currentStep: string }) {
 // ── constants ──────────────────────────────────────────────────
 const POST_TYPES: TouchPostType[] = ['課題ツイート', '通常投稿', '達成・嬉しい報告', '愚痴・本音', 'ネタ', 'ストーリー', 'その他']
 const VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未評価']
+const MSG_VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未判定']
 const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）']
 const CLOSE_RESULTS = ['断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', '受注']
 
@@ -98,6 +116,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [filter, setFilter] = useState('all')
   const [filterStep, setFilterStep] = useState('all')
   const [sort, setSort] = useState('newest')
+
+  // ── Analysis modal state ──────────────────────────────────────
+  const [modalNotif, setModalNotif] = useState<ActiveNotification | null>(null)
+  const [modalCopyState, setModalCopyState] = useState<'idle' | 'copied'>('idle')
+  const [modalOutput, setModalOutput] = useState('')
+  const [modalParseError, setModalParseError] = useState<string | null>(null)
+  const [modalParseSuccess, setModalParseSuccess] = useState(false)
+  // Emergency alert detail view
+  const [emergencyDetail, setEmergencyDetail] = useState<string | null>(null)
+
+  const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
   let filtered = [...active]
@@ -122,8 +151,122 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
   }
 
+  // ── Analysis modal handlers ───────────────────────────────────
+  async function handleOpenModal(notif: ActiveNotification) {
+    if (notif.type === 'emergency_alert') {
+      setEmergencyDetail(buildEmergencyAlertDetail(data))
+      setModalNotif(notif)
+      return
+    }
+    setModalOutput('')
+    setModalParseError(null)
+    setModalParseSuccess(false)
+    setModalCopyState('idle')
+    setModalNotif(notif)
+  }
+
+  async function handleModalCopyPrompt() {
+    if (!modalNotif) return
+    try {
+      const prompt = modalNotif.type === 'case_pattern'
+        ? await buildCaseAnalysisPrompt(data)
+        : await buildTouchAnalysisPrompt(data)
+      await navigator.clipboard.writeText(prompt)
+      setModalCopyState('copied')
+      setTimeout(() => setModalCopyState('idle'), 2000)
+      // Create pending analysis record
+      const pending = createPendingAnalysis(data, modalNotif.type, modalNotif.count)
+      saveData(prev => ({ ...prev, analyses: [...(prev.analyses || []), pending] }))
+    } catch {
+      setModalParseError('プロンプトのコピーに失敗しました。')
+    }
+  }
+
+  function handleModalImport() {
+    if (!modalNotif) return
+    setModalParseError(null)
+    const parsed = modalNotif.type === 'case_pattern'
+      ? parseCaseAnalysis(modalOutput)
+      : parseTouchAnalysis(modalOutput)
+    if (!parsed) {
+      setModalParseError('AI出力の形式が認識できませんでした。開始タグから終了タグまで含めて貼り付けてください。')
+      return
+    }
+    saveData(prev => {
+      const analyses = [...(prev.analyses || [])]
+      const pendingIdx = [...analyses].reverse().findIndex(a => a.type === modalNotif.type && a.status !== 'completed')
+      const now = new Date().toISOString()
+      if (pendingIdx >= 0) {
+        const realIdx = analyses.length - 1 - pendingIdx
+        analyses[realIdx] = { ...analyses[realIdx], ...parsed, status: 'completed', completedAt: now }
+      } else {
+        analyses.push({
+          id: uid(), type: modalNotif.type, triggeredAt: now,
+          status: 'completed', completedAt: now, targetCount: modalNotif.count,
+          ...parsed,
+        } as Analysis)
+      }
+      return { ...prev, analyses }
+    })
+    setModalParseSuccess(true)
+    setTimeout(() => {
+      setModalNotif(null)
+      setModalParseSuccess(false)
+    }, 1500)
+    toast.show('分析結果を保存しました')
+  }
+
+  function handleDismiss(type: ActiveNotification['type']) {
+    setDismissedUntil(type)
+    // Force re-render by toggling state (notifications computed from data+localStorage)
+    setFilter(f => f)
+  }
+
+  function handleEmergencyConfirm() {
+    markEmergencyAlertRead(data, saveData)
+    setModalNotif(null)
+    setEmergencyDetail(null)
+    toast.show('確認済みにしました')
+  }
+
   return (
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
+
+      {/* ── Analysis Notifications ────────────────────────────── */}
+      {notifications.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {[...notifications].sort((a, b) => (a.severity === 'critical' ? -1 : 1) - (b.severity === 'critical' ? -1 : 1)).map(notif => (
+            <div
+              key={notif.type}
+              className={`border rounded-xl p-3 flex flex-col gap-2 text-xs ${
+                notif.severity === 'critical'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-violet-50 border-violet-200'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <span className="text-base shrink-0">{notif.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className={`font-bold ${notif.severity === 'critical' ? 'text-red-700' : 'text-violet-700'}`}>{notif.label}</p>
+                  <p className={`mt-0.5 ${notif.severity === 'critical' ? 'text-red-600' : 'text-violet-600'}`}>{notif.message}</p>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                {notif.severity !== 'critical' && (
+                  <button className="btn-sec text-[11px] py-1 px-3" onClick={() => handleDismiss(notif.type)}>あとで</button>
+                )}
+                <button
+                  className={`text-[11px] py-1 px-3 rounded-lg font-semibold ${notif.severity === 'critical' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-violet-600 text-white hover:bg-violet-700'} transition`}
+                  onClick={() => handleOpenModal(notif)}
+                >
+                  {notif.severity === 'critical' ? '確認する →' : '分析する →'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-900">
         <span className="font-bold"><i className="fa-solid fa-chart-gantt mr-1" />OS②案件管理：</span>
         タッチを追加→反応を記録→S1ループ管理。テキスト返信のみOS②判定を実行。
@@ -189,6 +332,86 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           ))}
         </div>
       )}
+
+      {/* ── Analysis Modal ────────────────────────────────────── */}
+      {modalNotif && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className={`p-4 flex items-center gap-2 ${modalNotif.severity === 'critical' ? 'bg-red-50' : 'bg-violet-50'}`}>
+              <span className="text-lg">{modalNotif.icon}</span>
+              <p className={`font-bold text-sm flex-1 ${modalNotif.severity === 'critical' ? 'text-red-700' : 'text-violet-700'}`}>{modalNotif.label}</p>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setModalNotif(null); setEmergencyDetail(null) }}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex flex-col gap-3 flex-1">
+              {/* Emergency alert: show list only */}
+              {modalNotif.type === 'emergency_alert' && emergencyDetail && (
+                <>
+                  <p className="text-xs text-red-600 font-semibold">直近10タッチの対象妥当性：</p>
+                  <pre className="text-[11px] text-slate-700 bg-slate-50 rounded-lg p-3 whitespace-pre-wrap leading-relaxed border border-slate-200">{emergencyDetail}</pre>
+                  <p className="text-[11px] text-slate-500">✕が3件以上あります。Rinパターンを確認してください。</p>
+                  <button
+                    className="btn-danger text-xs py-2.5 justify-center"
+                    onClick={handleEmergencyConfirm}
+                  >
+                    確認済みにする
+                  </button>
+                </>
+              )}
+
+              {/* case_pattern / touch_trend: 分析フロー */}
+              {modalNotif.type !== 'emergency_alert' && (
+                <>
+                  <div className="flex flex-col gap-1 text-xs text-slate-500">
+                    <span>対象件数：{modalNotif.count}件</span>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-bold text-slate-700">① プロンプトをコピーして外部AIで実行</p>
+                    <button
+                      className={`btn-sec text-xs py-2.5 justify-center ${modalCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                      onClick={handleModalCopyPrompt}
+                    >
+                      <i className={`fa-solid ${modalCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                      {modalCopyState === 'copied' ? '✓ コピーしました' : 'プロンプトをコピー'}
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs font-bold text-slate-700">② AI出力を貼り付け</p>
+                    <textarea
+                      rows={4}
+                      className="input-base cs text-xs resize-y"
+                      placeholder={`===CASE_ANALYSIS_START=== または ===TOUCH_ANALYSIS_START=== から貼り付けてください`}
+                      value={modalOutput}
+                      onChange={e => { setModalOutput(e.target.value); setModalParseError(null) }}
+                    />
+                    {modalParseError && (
+                      <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{modalParseError}</p>
+                    )}
+                    {modalParseSuccess && (
+                      <p className="text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">✓ 保存しました</p>
+                    )}
+                    <button
+                      className="btn-primary text-xs py-2.5 justify-center"
+                      style={{ background: '#4f46e5' }}
+                      onClick={handleModalImport}
+                    >
+                      <i className="fa-solid fa-bolt mr-1" />結果を取り込む
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="bg-slate-50 px-4 py-3 flex justify-end">
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => { setModalNotif(null); setEmergencyDetail(null) }}>キャンセル</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -212,10 +435,12 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [closeOpen, setCloseOpen] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
 
-  // AI generation
+  // AI generation (touch prompt)
   const [aiOutput, setAiOutput] = useState('')
   const [suggestionA, setSuggestionA] = useState('')
   const [suggestionB, setSuggestionB] = useState('')
+  const [pJudgmentA, setPJudgmentA] = useState('')
+  const [pJudgmentB, setPJudgmentB] = useState('')
   const [copyBtnState, setCopyBtnState] = useState<'idle' | 'copied'>('idle')
   const [autoFillError, setAutoFillError] = useState<string | null>(null)
   const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
@@ -227,7 +452,18 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tAiText, setTAiText] = useState('')
   const [tSentText, setTSentText] = useState('')
   const [tEditReason, setTEditReason] = useState('')
-  const [tMsgValidity, setTMsgValidity] = useState<TouchValidity>('未評価')
+  const [tMsgValidity, setTMsgValidity] = useState<TouchValidity>('未判定')
+
+  // judgment (文面再判定)
+  const [tJudgmentExpanded, setTJudgmentExpanded] = useState(false)
+  const [tJudgmentOutput, setTJudgmentOutput] = useState('')
+  const [tJudgmentCopyState, setTJudgmentCopyState] = useState<'idle' | 'copied'>('idle')
+  const [tJudgmentReason, setTJudgmentReason] = useState('')
+  const [tImprovementSuggestion, setTImprovementSuggestion] = useState('')
+  const [tEditEvaluation, setTEditEvaluation] = useState('')
+  const [tEditComment, setTEditComment] = useState('')
+  const [tJudgedAt, setTJudgedAt] = useState<string | undefined>(undefined)
+  const [tJudgmentError, setTJudgmentError] = useState<string | null>(null)
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -242,12 +478,20 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const days = daysSince(lastTouchedAt || undefined)
   const totalDays = daysSince(item.startDate)
 
-  // judgment from latest OS② touch or fallback to pipeline item
   const latestOs2Touch = [...touches].reverse().find(t => t.os2Judgment)
   const displayJudgment = latestOs2Touch?.os2Judgment || item.judgment
   const displayNextAction = latestOs2Touch?.os2NextAction || item.nextAction
   const displayReplyA = latestOs2Touch?.os2ReplyA || item.replyA
   const displayReplyB = latestOs2Touch?.os2ReplyB || item.replyB
+
+  function resetForm() {
+    setAiOutput(''); setSuggestionA(''); setSuggestionB(''); setPJudgmentA(''); setPJudgmentB('')
+    setTPostText(''); setTPostType('通常投稿'); setTValidity('未評価')
+    setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
+    setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
+    setTImprovementSuggestion(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
+    setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
+  }
 
   function startAddTouch() {
     setAddingTouch(true)
@@ -280,9 +524,46 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTAiText(`A: ${parsed.suggestedTextA}\nB: ${parsed.suggestedTextB}`)
     setSuggestionA(parsed.suggestedTextA)
     setSuggestionB(parsed.suggestedTextB)
+    setPJudgmentA(parsed.provisionalJudgmentA)
+    setPJudgmentB(parsed.provisionalJudgmentB)
     if (parsed.gateJudgment.includes('✕') || parsed.gateJudgment.includes('対象切替')) {
       setAutoFillWarning('⚠️ ゲート判定「対象外」。営業意図での接触は見送り、別投稿を待つことを推奨します。')
     }
+  }
+
+  async function handleCopyJudgmentPrompt() {
+    setTJudgmentError(null)
+    try {
+      const prompt = await buildJudgmentPrompt({
+        targetPostText: tPostText,
+        targetPostType: tPostType,
+        suggestedTextA: suggestionA || tAiText,
+        suggestedTextB: suggestionB,
+        actualSentText: tSentText,
+        editReason: tEditReason,
+      })
+      await navigator.clipboard.writeText(prompt)
+      setTJudgmentExpanded(true)
+      setTJudgmentCopyState('copied')
+      setTimeout(() => setTJudgmentCopyState('idle'), 2000)
+    } catch {
+      setTJudgmentError('コピーに失敗しました。')
+    }
+  }
+
+  function handleParseJudgment() {
+    setTJudgmentError(null)
+    const parsed = parseJudgmentOutput(tJudgmentOutput)
+    if (!parsed) {
+      setTJudgmentError('AI出力の形式が認識できませんでした。===JUDGMENT_START=== から ===JUDGMENT_END=== まで含めて貼り付けてください。')
+      return
+    }
+    setTMsgValidity(parsed.judgment)
+    setTJudgmentReason(parsed.judgmentReason)
+    setTEditEvaluation(parsed.editEvaluation)
+    setTEditComment(parsed.editComment)
+    setTImprovementSuggestion(parsed.improvementSuggestion)
+    setTJudgedAt(new Date().toISOString())
   }
 
   function handleAddTouch() {
@@ -295,6 +576,11 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       status: 'awaiting_reaction',
       reactionType: '未記録',
       reactionNote: '',
+      judgmentReason: tJudgmentReason,
+      editEvaluation: tEditEvaluation,
+      editComment: tEditComment,
+      improvementSuggestion: tImprovementSuggestion,
+      judgedAt: tJudgedAt,
     }
     saveData(prev => ({
       ...prev,
@@ -303,9 +589,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         : p
       ),
     }))
-    setAiOutput(''); setSuggestionA(''); setSuggestionB('')
-    setTPostText(''); setTPostType('通常投稿'); setTValidity('未評価')
-    setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未評価')
+    resetForm()
     setAddingTouch(false)
     toast.show('タッチを記録しました（反応待ち）')
   }
@@ -323,11 +607,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     })
   }
 
-  function handleReactionSaved(
-    touchId: string,
-    touchUpdates: Partial<Touch>,
-    pipelineUpdates: Partial<PipelineItem>
-  ) {
+  function handleReactionSaved(touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) {
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => {
@@ -519,28 +799,28 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 )}
               </div>
 
-              {/* suggestion A/B (shown after auto-fill) */}
+              {/* suggestion A/B with 仮判定 badges */}
               {(suggestionA || suggestionB) && (
                 <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex flex-col gap-2">
                   <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">AI提案（タップで送信文にコピー）</p>
                   {suggestionA && (
-                    <div className="flex items-start gap-2">
-                      <span className="text-violet-600 font-bold text-xs shrink-0">A</span>
-                      <p className="text-violet-700 text-xs flex-1 leading-relaxed">{suggestionA}</p>
-                      <button
-                        className="shrink-0 btn-sec text-[10px] py-1 px-2"
-                        onClick={() => setTSentText(suggestionA)}
-                      >使う</button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-start gap-2">
+                        <span className="text-violet-600 font-bold text-xs shrink-0">A</span>
+                        <p className="text-violet-700 text-xs flex-1 leading-relaxed">{suggestionA}</p>
+                        <button className="shrink-0 btn-sec text-[10px] py-1 px-2" onClick={() => setTSentText(suggestionA)}>使う</button>
+                      </div>
+                      {pJudgmentA && (() => { const b = provisionalBadgeText(pJudgmentA); return b ? <p className={`text-[10px] ml-4 ${b.cls} font-medium`}>{b.text}</p> : null })()}
                     </div>
                   )}
                   {suggestionB && (
-                    <div className="flex items-start gap-2">
-                      <span className="text-indigo-500 font-bold text-xs shrink-0">B</span>
-                      <p className="text-indigo-600 text-xs flex-1 leading-relaxed">{suggestionB}</p>
-                      <button
-                        className="shrink-0 btn-sec text-[10px] py-1 px-2"
-                        onClick={() => setTSentText(suggestionB)}
-                      >使う</button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-start gap-2">
+                        <span className="text-indigo-500 font-bold text-xs shrink-0">B</span>
+                        <p className="text-indigo-600 text-xs flex-1 leading-relaxed">{suggestionB}</p>
+                        <button className="shrink-0 btn-sec text-[10px] py-1 px-2" onClick={() => setTSentText(suggestionB)}>使う</button>
+                      </div>
+                      {pJudgmentB && (() => { const b = provisionalBadgeText(pJudgmentB); return b ? <p className={`text-[10px] ml-4 ${b.cls} font-medium`}>{b.text}</p> : null })()}
                     </div>
                   )}
                 </div>
@@ -585,16 +865,57 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="AIの提案から変更した理由" value={tEditReason} onChange={e => setTEditReason(e.target.value)} />
                 </div>
 
+                {/* ── 文面再判定セクション ─────────────────────── */}
+                <div className="flex flex-col gap-2 pt-1">
+                  <button
+                    className={`btn-sec text-xs py-2 justify-center ${!tSentText.trim() ? 'opacity-40 pointer-events-none' : ''} ${tJudgmentCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                    disabled={!tSentText.trim()}
+                    onClick={handleCopyJudgmentPrompt}
+                  >
+                    <i className={`fa-solid ${tJudgmentCopyState === 'copied' ? 'fa-check' : 'fa-magnifying-glass'} mr-1`} />
+                    {tJudgmentCopyState === 'copied' ? '✓ コピーしました' : 'AIに文面を判定してもらう'}
+                  </button>
+
+                  {tJudgmentExpanded && (
+                    <div className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3">
+                      <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
+                      <textarea
+                        rows={3}
+                        className="input-base cs text-xs resize-y"
+                        placeholder="AIの判定出力をここに貼り付け（===JUDGMENT_START=== から ===JUDGMENT_END=== まで）"
+                        value={tJudgmentOutput}
+                        onChange={e => { setTJudgmentOutput(e.target.value); setTJudgmentError(null) }}
+                      />
+                      <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseJudgment}>
+                        <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                      </button>
+                      {tJudgmentError && (
+                        <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{tJudgmentError}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {tJudgmentReason && (
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 flex flex-col gap-1 text-[11px]">
+                      <p className="text-slate-400">判定理由：<span className="text-slate-700 font-medium">{tJudgmentReason}</span></p>
+                      {tImprovementSuggestion && tImprovementSuggestion !== 'なし' && (
+                        <p className="text-amber-600">改善提案：{tImprovementSuggestion}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-slate-500">文面妥当性</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
+                    {MSG_VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
                   </div>
+                  {tJudgedAt && <p className="text-[10px] text-emerald-600">✓ AI判定済み（手動変更も可）</p>}
                 </div>
               </div>
 
               <div className="flex gap-2 mt-1">
-                <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { setAddingTouch(false); setSuggestionA(''); setSuggestionB(''); setAiOutput('') }}>キャンセル</button>
+                <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { resetForm(); setAddingTouch(false) }}>キャンセル</button>
                 <button className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center" style={{ background: '#4f46e5' }} onClick={handleAddTouch}>
                   <i className="fa-solid fa-paper-plane" />送信完了として記録
                 </button>
@@ -651,7 +972,6 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
-  // S1-L streak after this reaction
   const newLikeStreak = (pipelineItem.likeReturnStreak || 0) + 1
   const newNoReactionStreak = (pipelineItem.noReactionStreak || 0) + 1
   const touchesWithFollow = (pipelineItem.touches || []).some(t => t.reactionType === 'フォロー返し') || selectedReaction === 'フォロー返し'
@@ -668,7 +988,6 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
   function handleStartReaction() {
     setRecordingReaction(true)
-    // pre-fill conv log for テキスト返信
     setOs2ConvLog(`自分の送信（${touch.date.slice(0, 10)}）：\n${touch.actualSentText}\n\n相手の返信：\n`)
   }
 
@@ -715,13 +1034,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       pipelineUpdates.likeReturnStreak = 0
       pipelineUpdates.noReactionStreak = 0
     } else if (['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction)) {
-      const judgment = s1CapJudgment()
-      touchUpdates.os2Judgment = judgment
+      touchUpdates.os2Judgment = s1CapJudgment()
       pipelineUpdates.likeReturnStreak = newLikeStreak
       pipelineUpdates.noReactionStreak = 0
     } else if (selectedReaction === '無反応') {
-      const judgment = noReactionJudgment()
-      touchUpdates.os2Judgment = judgment
+      touchUpdates.os2Judgment = noReactionJudgment()
       pipelineUpdates.noReactionStreak = newNoReactionStreak
       pipelineUpdates.likeReturnStreak = 0
     } else if (selectedReaction === '公開拒絶（R5）') {
@@ -744,6 +1061,9 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const isR5 = selectedReaction === '公開拒絶（R5）'
   const isTextReply = selectedReaction === 'テキスト返信'
 
+  // messageValidity display: treat '未評価' as '未判定' for backward compat
+  const displayMsgValidity = (!touch.messageValidity || touch.messageValidity === '未評価') ? '未判定' : touch.messageValidity
+
   return (
     <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
       {/* ── touch summary ─────────────────── */}
@@ -754,6 +1074,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${postTypeBadge(touch.targetPostType)}`}>{touch.targetPostType}</span>
           )}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(touch.targetValidity)}`}>対象{touch.targetValidity}</span>
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(displayMsgValidity)}`}>文{displayMsgValidity}</span>
           {!isAwaiting && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${reactionBadge(touch.reactionType)}`}>{touch.reactionType}</span>
           )}
@@ -779,10 +1100,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         {isAwaiting && !recordingReaction && (
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
-            <button
-              className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2"
-              onClick={handleStartReaction}
-            >
+            <button className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2" onClick={handleStartReaction}>
               反応を記録 →
             </button>
           </div>
@@ -812,8 +1130,26 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             )}
             <div className="flex items-center gap-2">
               <span className="text-slate-400 text-[10px]">文面妥当性</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(touch.messageValidity)}`}>{touch.messageValidity}</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(displayMsgValidity)}`}>{displayMsgValidity}</span>
             </div>
+            {touch.judgmentReason && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">判定理由</p>
+                <p className="text-slate-600 text-[11px]">{touch.judgmentReason}</p>
+              </div>
+            )}
+            {touch.improvementSuggestion && touch.improvementSuggestion !== 'なし' && (
+              <div>
+                <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-0.5">改善提案</p>
+                <p className="text-amber-700 text-[11px]">{touch.improvementSuggestion}</p>
+              </div>
+            )}
+            {touch.editEvaluation && (
+              <div className="flex gap-2">
+                <span className="text-slate-400 text-[10px] shrink-0">編集評価</span>
+                <span className={`text-[10px] font-medium ${touch.editEvaluation === '適切' ? 'text-emerald-600' : touch.editEvaluation === '悪化' ? 'text-rose-600' : 'text-slate-500'}`}>{touch.editEvaluation}</span>
+              </div>
+            )}
             {touch.os2ConversationLog && (
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">会話ログ（OS②）</p>
