@@ -1,4 +1,4 @@
-module.exports = function handler(req, res) {
+export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -19,10 +19,9 @@ module.exports = function handler(req, res) {
     return res.status(200).json({ success: true, role: 'viewer' });
   }
 
-  // 環境変数が未設定の場合はローカル開発用にadminを許可
   if (!adminPass && !viewerPass && password === 'dev') {
     return res.status(200).json({ success: true, role: 'admin' });
   }
 
   return res.status(401).json({ success: false, error: 'パスワードが違います' });
-};
+}
