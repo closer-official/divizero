@@ -1,13 +1,14 @@
 import { useState, useRef } from 'react'
-import type { AppData, Prompts, PipelineItem, Touch, SentMessage } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
+import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
   trackBadgeClass, stepsBarData, urgencyClass, daysSince,
-  buildConvLog, uid, todayStr,
+  uid, todayStr,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -37,8 +38,15 @@ function reactionBadge(r: string) {
     'スタンプ・絵文字': 'bg-indigo-100 text-indigo-700',
     '無反応': 'bg-gray-100 text-gray-500',
     '公開拒絶（R5）': 'bg-red-100 text-red-700',
+    '未記録': 'bg-gray-100 text-gray-400',
   }
   return m[r] ?? 'bg-gray-100 text-gray-400'
+}
+function judgmentColor(j: string) {
+  if (j === '前進' || j.startsWith('前進')) return 'text-violet-700'
+  if (j === 'クローズ') return 'text-rose-600'
+  if (j === '休眠') return 'text-slate-500'
+  return 'text-amber-600'
 }
 
 // ── chip ───────────────────────────────────────────────────────
@@ -71,8 +79,7 @@ function StepsBar({ currentStep }: { currentStep: string }) {
 // ── constants ──────────────────────────────────────────────────
 const POST_TYPES: TouchPostType[] = ['課題ツイート', '通常投稿', '達成・嬉しい報告', '愚痴・本音', 'ネタ', 'ストーリー', 'その他']
 const VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未評価']
-const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）', '未記録']
-const OS2_REACTIONS = ['テキスト返信', 'いいね', 'スタンプ/絵文字', 'リポスト', '無反応', '既読スルー']
+const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）']
 const CLOSE_RESULTS = ['断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', '受注']
 
 // ── Tab2 ───────────────────────────────────────────────────────
@@ -111,7 +118,6 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       return next
     })
   }
-
   function expandId(id: string) {
     setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
   }
@@ -120,7 +126,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
       <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3 text-xs text-indigo-900">
         <span className="font-bold"><i className="fa-solid fa-chart-gantt mr-1" />OS②案件管理：</span>
-        各案件のタッチ履歴を記録し、S1→S5の進捗を管理します。
+        タッチを追加→反応を記録→S1ループ管理。テキスト返信のみOS②判定を実行。
       </div>
 
       {warnItems.length > 0 && (
@@ -203,11 +209,18 @@ interface CardProps {
 
 function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3 }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
-  const [os2Open, setOs2Open] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
 
-  // touch add form state
+  // AI generation
+  const [aiOutput, setAiOutput] = useState('')
+  const [suggestionA, setSuggestionA] = useState('')
+  const [suggestionB, setSuggestionB] = useState('')
+  const [copyBtnState, setCopyBtnState] = useState<'idle' | 'copied'>('idle')
+  const [autoFillError, setAutoFillError] = useState<string | null>(null)
+  const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
+
+  // touch add form
   const [tPostText, setTPostText] = useState('')
   const [tPostType, setTPostType] = useState<TouchPostType>('通常投稿')
   const [tValidity, setTValidity] = useState<TouchValidity>('未評価')
@@ -215,26 +228,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tSentText, setTSentText] = useState('')
   const [tEditReason, setTEditReason] = useState('')
   const [tMsgValidity, setTMsgValidity] = useState<TouchValidity>('未評価')
-  const [tReaction, setTReaction] = useState<TouchReaction>('未記録')
-  const [tReactionNote, setTReactionNote] = useState('')
 
-  // OS② form state
-  const [step, setStep] = useState<PipelineItem['currentStep']>(item.currentStep)
-  const [repCount, setRepCount] = useState(item.repCount || 0)
-  const [dmCount, setDmCount] = useState(item.dmCount || 0)
-  const [lastDate, setLastDate] = useState(item.lastContactDate || todayStr())
-  const [os2Reaction, setOs2Reaction] = useState<string[]>([])
-  const [targetPost, setTargetPost] = useState('')
-  const [convText, setConvText] = useState(() => buildConvLog(item))
-  const [resultText, setResultText] = useState('')
-
-  // close + send modal
+  // close
   const [closeResult, setCloseResult] = useState('断り')
-  const [sendModalOpen, setSendModalOpen] = useState(false)
-  const [sendLabel, setSendLabel] = useState('')
-  const [sendOriginal, setSendOriginal] = useState('')
-  const [sendActual, setSendActual] = useState('')
-  const [sendReason, setSendReason] = useState('')
 
   const touches = item.touches || []
   const s1Count = touches.length
@@ -243,13 +239,50 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const lastTouchedAt = touches.length > 0
     ? touches.reduce((l, t) => t.date > l ? t.date : l, touches[0].date)
     : item.lastContactDate || null
-
   const days = daysSince(lastTouchedAt || undefined)
   const totalDays = daysSince(item.startDate)
+
+  // judgment from latest OS② touch or fallback to pipeline item
+  const latestOs2Touch = [...touches].reverse().find(t => t.os2Judgment)
+  const displayJudgment = latestOs2Touch?.os2Judgment || item.judgment
+  const displayNextAction = latestOs2Touch?.os2NextAction || item.nextAction
+  const displayReplyA = latestOs2Touch?.os2ReplyA || item.replyA
+  const displayReplyB = latestOs2Touch?.os2ReplyB || item.replyB
 
   function startAddTouch() {
     setAddingTouch(true)
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+  }
+
+  async function handleCopyPrompt() {
+    setAutoFillError(null)
+    try {
+      const prompt = await buildTouchPrompt(item, touches)
+      await navigator.clipboard.writeText(prompt)
+      setCopyBtnState('copied')
+      setTimeout(() => setCopyBtnState('idle'), 2000)
+    } catch {
+      setAutoFillError('プロンプトのコピーに失敗しました。')
+    }
+  }
+
+  function handleAutoFill() {
+    setAutoFillError(null)
+    setAutoFillWarning(null)
+    const parsed = parseTouchOutput(aiOutput)
+    if (!parsed) {
+      setAutoFillError('AI出力の形式が認識できませんでした。===TOUCH_START=== から ===TOUCH_END=== までを含めて貼り付けてください。')
+      return
+    }
+    setTPostText(parsed.targetPostText)
+    setTPostType(parsed.targetPostType as TouchPostType)
+    setTValidity(parsed.targetValidity as TouchValidity)
+    setTAiText(`A: ${parsed.suggestedTextA}\nB: ${parsed.suggestedTextB}`)
+    setSuggestionA(parsed.suggestedTextA)
+    setSuggestionB(parsed.suggestedTextB)
+    if (parsed.gateJudgment.includes('✕') || parsed.gateJudgment.includes('対象切替')) {
+      setAutoFillWarning('⚠️ ゲート判定「対象外」。営業意図での接触は見送り、別投稿を待つことを推奨します。')
+    }
   }
 
   function handleAddTouch() {
@@ -258,7 +291,10 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       id: uid(), date: new Date().toISOString(),
       targetPostText: tPostText, targetPostType: tPostType, targetValidity: tValidity,
       aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-      messageValidity: tMsgValidity, reactionType: tReaction, reactionNote: tReactionNote,
+      messageValidity: tMsgValidity,
+      status: 'awaiting_reaction',
+      reactionType: '未記録',
+      reactionNote: '',
     }
     saveData(prev => ({
       ...prev,
@@ -267,11 +303,11 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         : p
       ),
     }))
+    setAiOutput(''); setSuggestionA(''); setSuggestionB('')
     setTPostText(''); setTPostType('通常投稿'); setTValidity('未評価')
     setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未評価')
-    setTReaction('未記録'); setTReactionNote('')
     setAddingTouch(false)
-    toast.show('タッチを記録しました')
+    toast.show('タッチを記録しました（反応待ち）')
   }
 
   function handleDeleteTouch(touchId: string) {
@@ -287,40 +323,23 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     })
   }
 
-  function handleSubmitOS2() {
-    const text = resultText.trim()
-    if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
-    const parsed = parseOS2(text)
-    const reactionStr = os2Reaction.join('＋')
+  function handleReactionSaved(
+    touchId: string,
+    touchUpdates: Partial<Touch>,
+    pipelineUpdates: Partial<PipelineItem>
+  ) {
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => {
         if (p.id !== item.id) return p
-        const newEntry = {
-          date: lastDate || todayStr(), reaction: reactionStr,
-          step: step, repCount: Number(repCount), dmCount: Number(dmCount),
-          targetPost: targetPost || '',
-          judgment: parsed.judgment || '', nextAction: parsed.nextAction || '',
-          deadline: parsed.deadline || '', redSignal: parsed.redSignal || '',
-          responseQuality: parsed.responseQuality || '', hypothesisCheck: parsed.hypothesisCheck || '',
-          ngAction: parsed.ngAction || '', replyA: parsed.replyA || '', replyB: parsed.replyB || '',
-        }
         return {
           ...p,
-          currentStep: (parsed.step || step) as PipelineItem['currentStep'],
-          repCount: Number(repCount), dmCount: Number(dmCount),
-          lastContactDate: lastDate || todayStr(),
-          judgment: parsed.judgment || null, nextAction: parsed.nextAction || null,
-          deadline: parsed.deadline || null, replyA: parsed.replyA || null,
-          replyB: parsed.replyB || null, ngAction: parsed.ngAction || null,
-          redSignal: parsed.redSignal || null, responseQuality: parsed.responseQuality || null,
-          history: [...(p.history || []), newEntry],
-          analyses: [...(p.analyses || []), { date: lastDate || todayStr(), aiInput: text, aiOutput: text, judgment: parsed.judgment || '' }],
+          ...pipelineUpdates,
+          lastContactDate: todayStr(),
+          touches: (p.touches || []).map(t => t.id === touchId ? { ...t, ...touchUpdates } : t),
         }
       }),
     }))
-    setResultText(''); setOs2Reaction([])
-    toast.show('OS②分析を記録しました')
   }
 
   function handleDelete() {
@@ -357,148 +376,180 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     })
   }
 
-  function openSendModal(label: string, text: string) {
-    setSendLabel(label); setSendOriginal(text); setSendActual(''); setSendReason(''); setSendModalOpen(true)
-  }
-
-  function handleRecordSend() {
-    const actual = sendActual.trim() || sendOriginal
-    const msg: SentMessage = {
-      id: uid(), label: sendLabel, original: sendOriginal, actual,
-      edited: !!sendActual.trim() && sendActual.trim() !== sendOriginal,
-      reason: sendReason, date: todayStr(),
-    }
-    saveData(prev => ({
-      ...prev,
-      pipeline: prev.pipeline.map(p => {
-        if (p.id !== item.id) return p
-        const updated = { ...p, sentMessages: [...(p.sentMessages || []), msg] }
-        if (p.currentStep === 'S1') {
-          updated.currentStep = 'S2'
-          updated.stepHistory = [...(updated.stepHistory || []), { step: 'S2' as const, date: todayStr() }]
-        }
-        return updated
-      }),
-    }))
-    toast.show(`${sendLabel} を送信完了として記録しました`)
-    setSendModalOpen(false)
-  }
-
   const profileUrl = buildProfileUrl(item.url, item.channel)
   const lastTouchedDisplay = lastTouchedAt
     ? new Date(lastTouchedAt).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')
     : null
 
   return (
-    <>
-      <div className="card overflow-hidden">
-        {/* ── collapsed header ─────────────────── */}
-        <div
-          className="p-4 cursor-pointer select-none active:bg-slate-50"
-          onClick={onToggle}
-        >
-          <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.track)}`}>{item.track}</span>
-            <p className="font-semibold text-sm text-slate-800 flex-1 min-w-0 truncate">{item.accountName}</p>
-            <span className="text-xs font-bold text-indigo-600 shrink-0">{item.currentStep}</span>
-            {totalDays >= 30 && (
-              <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>
-            )}
-            {totalDays < 30 && days >= 7 && (
-              <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>
-            )}
-            <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
-          </div>
-          {item.hypothesis && (
-            <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>
-          )}
-          <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
-            {lastTouchedDisplay
-              ? <span>最終タッチ：{lastTouchedDisplay}</span>
-              : <span className="text-slate-300">タッチなし</span>
-            }
-            <span>計{s1Count}回</span>
-            {likeReturnCount > 0 && <span className="text-blue-500">♡{likeReturnCount}</span>}
-            {followReturned && <span className="text-purple-500 font-medium">フォロー返し✓</span>}
-          </div>
+    <div className="card overflow-hidden">
+      {/* ── collapsed header ─────────────────── */}
+      <div className="p-4 cursor-pointer select-none active:bg-slate-50" onClick={onToggle}>
+        <div className="flex items-center gap-2">
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.track)}`}>{item.track}</span>
+          <p className="font-semibold text-sm text-slate-800 flex-1 min-w-0 truncate">{item.accountName}</p>
+          <span className="text-xs font-bold text-indigo-600 shrink-0">{item.currentStep}</span>
+          {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
+          {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
+          <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
+        {item.hypothesis && <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>}
+        <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
+          {lastTouchedDisplay ? <span>最終タッチ：{lastTouchedDisplay}</span> : <span className="text-slate-300">タッチなし</span>}
+          <span>計{s1Count}回</span>
+          {likeReturnCount > 0 && <span className="text-blue-500">♡{likeReturnCount}</span>}
+          {followReturned && <span className="text-purple-500 font-medium">フォロー返し✓</span>}
+        </div>
+      </div>
 
-        {/* ── expanded ─────────────────────────── */}
-        {expanded && (
-          <div className="border-t border-slate-100">
-            {/* step bar + actions */}
-            <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b border-slate-100">
-              <StepsBar currentStep={item.currentStep} />
-              <div className="ml-auto flex items-center gap-1 shrink-0">
-                {profileUrl && (
-                  <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-[11px] py-1 px-2">
-                    <i className="fa-solid fa-arrow-up-right-from-square" />
-                  </a>
-                )}
-                {role === 'admin' && (
-                  <button className="btn-danger text-[11px] py-1 px-2" onClick={handleDelete}>
-                    <i className="fa-solid fa-trash" />
-                  </button>
-                )}
-              </div>
+      {/* ── expanded ─────────────────────────── */}
+      {expanded && (
+        <div className="border-t border-slate-100">
+          {/* step bar + actions */}
+          <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b border-slate-100">
+            <StepsBar currentStep={item.currentStep} />
+            <div className="ml-auto flex items-center gap-1 shrink-0">
+              {profileUrl && (
+                <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-[11px] py-1 px-2">
+                  <i className="fa-solid fa-arrow-up-right-from-square" />
+                </a>
+              )}
+              {role === 'admin' && (
+                <button className="btn-danger text-[11px] py-1 px-2" onClick={handleDelete}>
+                  <i className="fa-solid fa-trash" />
+                </button>
+              )}
             </div>
+          </div>
 
-            {/* latest OS② judgment */}
-            {(item.judgment || item.nextAction || item.replyA || item.replyB) && (
-              <div className="mx-4 mt-3 bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex flex-col gap-1.5 text-xs">
-                <p className="font-bold text-indigo-700 text-[10px] uppercase tracking-wide">最新OS②判定</p>
-                {item.judgment && (
-                  <p className={`font-bold ${item.judgment === '前進' ? 'text-violet-700' : item.judgment === 'クローズ' ? 'text-rose-600' : 'text-amber-600'}`}>{item.judgment}</p>
-                )}
-                {item.nextAction && <div className="flex gap-2"><span className="text-slate-400 shrink-0">次アクション</span><span className="text-slate-700 font-semibold">{item.nextAction}</span></div>}
-                {item.deadline && <div className="flex gap-2"><span className="text-slate-400 shrink-0">期限</span><span className="text-amber-600 font-semibold">{item.deadline}</span></div>}
-                {item.redSignal && item.redSignal !== '無' && <p className="text-rose-600 font-medium">🚨 {item.redSignal}</p>}
-                {item.ngAction && <div className="flex gap-2"><span className="text-slate-400 shrink-0">NGアクション</span><span className="text-rose-600">{item.ngAction}</span></div>}
-                {item.replyA && (
-                  <div className="flex items-start gap-1 mt-1">
-                    <span className="text-violet-600 font-bold shrink-0 text-[11px]">案A</span>
-                    <p className="text-violet-700 flex-1 text-[11px] leading-relaxed">{item.replyA}</p>
-                    <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => openSendModal('案A（前進案）', item.replyA!)}>送信完了</button>
-                  </div>
-                )}
-                {item.replyB && (
-                  <div className="flex items-start gap-1">
-                    <span className="text-indigo-500 font-bold shrink-0 text-[11px]">案B</span>
-                    <p className="text-indigo-600 flex-1 text-[11px] leading-relaxed">{item.replyB}</p>
-                    <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => openSendModal('案B（安全案）', item.replyB!)}>送信完了</button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── touch history ─────────────────── */}
-            <div className="p-4">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-3">タッチ履歴</p>
-              {touches.length === 0 ? (
-                <p className="text-xs text-slate-300 text-center py-6">タッチ履歴がありません</p>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  {[...touches].reverse().map(touch => (
-                    <TouchItem key={touch.id} touch={touch} role={role} onDelete={() => handleDeleteTouch(touch.id)} />
-                  ))}
+          {/* latest OS② judgment */}
+          {(displayJudgment || displayNextAction || displayReplyA || displayReplyB) && (
+            <div className="mx-4 mt-3 bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex flex-col gap-1.5 text-xs">
+              <p className="font-bold text-indigo-700 text-[10px] uppercase tracking-wide">最新OS②判定</p>
+              {displayJudgment && <p className={`font-bold ${judgmentColor(displayJudgment)}`}>{displayJudgment}</p>}
+              {displayNextAction && <div className="flex gap-2"><span className="text-slate-400 shrink-0">次アクション</span><span className="text-slate-700 font-semibold">{displayNextAction}</span></div>}
+              {item.deadline && <div className="flex gap-2"><span className="text-slate-400 shrink-0">期限</span><span className="text-amber-600 font-semibold">{item.deadline}</span></div>}
+              {item.redSignal && item.redSignal !== '無' && <p className="text-rose-600 font-medium">🚨 {item.redSignal}</p>}
+              {displayReplyA && (
+                <div className="flex items-start gap-1 mt-1">
+                  <span className="text-violet-600 font-bold shrink-0 text-[11px]">案A</span>
+                  <p className="text-violet-700 flex-1 text-[11px] leading-relaxed">{displayReplyA}</p>
+                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyA, () => toast.show('案Aをコピーしました'))}>
+                    <i className="fa-regular fa-copy" />
+                  </button>
+                </div>
+              )}
+              {displayReplyB && (
+                <div className="flex items-start gap-1">
+                  <span className="text-indigo-500 font-bold shrink-0 text-[11px]">案B</span>
+                  <p className="text-indigo-600 flex-1 text-[11px] leading-relaxed">{displayReplyB}</p>
+                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyB, () => toast.show('案Bをコピーしました'))}>
+                    <i className="fa-regular fa-copy" />
+                  </button>
                 </div>
               )}
             </div>
+          )}
 
-            {/* ── add touch ─────────────────────── */}
-            {!addingTouch ? (
-              <div className="px-4 pb-4">
-                <button
-                  className="w-full py-3 text-sm font-semibold text-indigo-600 border-2 border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition min-h-[44px]"
-                  onClick={startAddTouch}
-                >
-                  <i className="fa-solid fa-plus mr-1" />タッチを追加
-                </button>
-              </div>
+          {/* touch history */}
+          <div className="p-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-3">タッチ履歴</p>
+            {touches.length === 0 ? (
+              <p className="text-xs text-slate-300 text-center py-6">タッチ履歴がありません</p>
             ) : (
-              <div ref={addFormRef} className="mx-4 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
-                <p className="font-bold text-sm text-slate-800">タッチを追加</p>
+              <div className="flex flex-col gap-2">
+                {[...touches].reverse().map(touch => (
+                  <TouchItem
+                    key={touch.id}
+                    touch={touch}
+                    pipelineItem={item}
+                    prompts={prompts}
+                    role={role}
+                    onDelete={() => handleDeleteTouch(touch.id)}
+                    onReactionSaved={handleReactionSaved}
+                    onGoToTab3={onGoToTab3}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
 
+          {/* add touch */}
+          {!addingTouch ? (
+            <div className="px-4 pb-4">
+              <button
+                className="w-full py-3 text-sm font-semibold text-indigo-600 border-2 border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition min-h-[44px]"
+                onClick={startAddTouch}
+              >
+                <i className="fa-solid fa-plus mr-1" />タッチを追加
+              </button>
+            </div>
+          ) : (
+            <div ref={addFormRef} className="mx-4 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-4">
+              <p className="font-bold text-sm text-slate-800">タッチを追加</p>
+
+              {/* ① AI generation section */}
+              <div className="bg-white border border-indigo-100 rounded-xl p-3 flex flex-col gap-2">
+                <p className="text-xs font-bold text-indigo-700">① AIで生成</p>
+                <button
+                  className={`btn-sec text-xs py-2 justify-center ${copyBtnState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                  onClick={handleCopyPrompt}
+                >
+                  <i className={`fa-solid ${copyBtnState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                  {copyBtnState === 'copied' ? '✓ コピーしました' : 'プロンプトをコピー'}
+                </button>
+                <p className="text-[10px] text-slate-400 text-center">↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行</p>
+
+                <p className="text-xs font-bold text-indigo-700 mt-1">② AI出力を貼り付け</p>
+                <textarea
+                  rows={3}
+                  className="input-base cs text-xs resize-y"
+                  placeholder="AIの出力をここに貼り付け（===TOUCH_START=== から ===TOUCH_END=== まで）"
+                  value={aiOutput}
+                  onChange={e => { setAiOutput(e.target.value); setAutoFillError(null); setAutoFillWarning(null) }}
+                />
+                <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleAutoFill}>
+                  <i className="fa-solid fa-bolt mr-1" />自動入力
+                </button>
+                {autoFillError && (
+                  <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{autoFillError}</p>
+                )}
+                {autoFillWarning && (
+                  <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">{autoFillWarning}</p>
+                )}
+              </div>
+
+              {/* suggestion A/B (shown after auto-fill) */}
+              {(suggestionA || suggestionB) && (
+                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex flex-col gap-2">
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">AI提案（タップで送信文にコピー）</p>
+                  {suggestionA && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-violet-600 font-bold text-xs shrink-0">A</span>
+                      <p className="text-violet-700 text-xs flex-1 leading-relaxed">{suggestionA}</p>
+                      <button
+                        className="shrink-0 btn-sec text-[10px] py-1 px-2"
+                        onClick={() => setTSentText(suggestionA)}
+                      >使う</button>
+                    </div>
+                  )}
+                  {suggestionB && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-indigo-500 font-bold text-xs shrink-0">B</span>
+                      <p className="text-indigo-600 text-xs flex-1 leading-relaxed">{suggestionB}</p>
+                      <button
+                        className="shrink-0 btn-sec text-[10px] py-1 px-2"
+                        onClick={() => setTSentText(suggestionB)}
+                      >使う</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="h-px bg-slate-200" />
+
+              {/* form fields */}
+              <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-slate-500">接触した投稿（相手の文）</label>
                   <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を引用または要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
@@ -540,217 +591,354 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
                   </div>
                 </div>
+              </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">相手の反応</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={tReaction === r} onClick={() => setTReaction(r)} />)}
-                  </div>
-                </div>
+              <div className="flex gap-2 mt-1">
+                <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { setAddingTouch(false); setSuggestionA(''); setSuggestionB(''); setAiOutput('') }}>キャンセル</button>
+                <button className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center" style={{ background: '#4f46e5' }} onClick={handleAddTouch}>
+                  <i className="fa-solid fa-paper-plane" />送信完了として記録
+                </button>
+              </div>
+            </div>
+          )}
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">反応の補足（任意）</label>
-                  <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手のテキスト返信内容など" value={tReactionNote} onChange={e => setTReactionNote(e.target.value)} />
-                </div>
-
-                <div className="flex gap-2 mt-1">
-                  <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => setAddingTouch(false)}>キャンセル</button>
-                  <button className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center" style={{ background: '#4f46e5' }} onClick={handleAddTouch}>
-                    <i className="fa-solid fa-check" />記録する
-                  </button>
-                </div>
+          {/* close section */}
+          <div className="border-t border-slate-100">
+            <button
+              className="w-full px-4 py-3 text-xs text-slate-600 font-semibold flex items-center gap-2 hover:bg-slate-50 transition min-h-[44px]"
+              onClick={() => setCloseOpen(v => !v)}
+            >
+              <i className="fa-solid fa-flag-checkered text-slate-400" />クローズ
+              <i className={`fa-solid fa-chevron-${closeOpen ? 'up' : 'down'} text-slate-400 ml-auto text-[10px]`} />
+            </button>
+            {closeOpen && (
+              <div className="px-4 pb-4 flex gap-2">
+                <select className="input-base text-xs py-2 flex-1" value={closeResult} onChange={e => setCloseResult(e.target.value)}>
+                  {CLOSE_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <button className="btn-danger text-xs px-4 min-h-[44px]" onClick={handleClose}>
+                  <i className="fa-solid fa-flag-checkered mr-1" />クローズ
+                </button>
               </div>
             )}
-
-            {/* ── OS② section ───────────────────── */}
-            <div className="border-t border-slate-100">
-              <button
-                className="w-full px-4 py-3 text-xs text-slate-600 font-semibold flex items-center gap-2 hover:bg-slate-50 transition min-h-[44px]"
-                onClick={() => setOs2Open(v => !v)}
-              >
-                <i className="fa-solid fa-robot text-indigo-400" />OS②行動判定
-                <i className={`fa-solid fa-chevron-${os2Open ? 'up' : 'down'} text-slate-400 ml-auto text-[10px]`} />
-              </button>
-              {os2Open && (
-                <div className="px-4 pb-4 flex flex-col gap-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">ステップ</label>
-                      <select className="input-base text-xs py-2" value={step} onChange={e => setStep(e.target.value as PipelineItem['currentStep'])}>
-                        {['S1','S2','S3','S4','S5'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">接触日</label>
-                      <input type="date" className="input-base text-xs py-2" value={lastDate} onChange={e => setLastDate(e.target.value)} />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">リプ往復数</label>
-                      <input type="number" className="input-base text-xs py-2" value={repCount} min={0} onChange={e => setRepCount(Number(e.target.value))} />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-400">DM往復数</label>
-                      <input type="number" className="input-base text-xs py-2" value={dmCount} min={0} onChange={e => setDmCount(Number(e.target.value))} />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">相手の反応</label>
-                    <div className="flex gap-1.5 flex-wrap">
-                      {OS2_REACTIONS.map(r => (
-                        <label key={r} className={`reaction-check-label ${os2Reaction.includes(r) ? 'checked' : ''}`}>
-                          <input type="checkbox" className="hidden" checked={os2Reaction.includes(r)} onChange={() => setOs2Reaction(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])} />
-                          {r}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">接触対象の投稿（任意）</label>
-                    <textarea rows={2} className="input-base cs text-xs" value={targetPost} onChange={e => setTargetPost(e.target.value)} />
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-xs text-slate-400">会話ログ（OS②に流す）</label>
-                    <textarea rows={4} className="input-base cs text-xs" value={convText} onChange={e => setConvText(e.target.value)} placeholder="自動生成されます。編集可" />
-                  </div>
-
-                  <button
-                    className="btn-sec w-full justify-center text-xs"
-                    onClick={() => {
-                      if (!prompts.OS2) { toast.show('プロンプトを読み込み中です'); return }
-                      copyText(prompts.OS2 + '\n' + convText, () => toast.show('OS②プロンプトをコピーしました'))
-                    }}
-                  >
-                    <i className="fa-solid fa-copy text-indigo-500" />OS②プロンプトをコピー（外部AIで実行）
-                  </button>
-
-                  <textarea rows={4} className="input-base cs text-xs" placeholder="AIの出力を貼り付け" value={resultText} onChange={e => setResultText(e.target.value)} />
-                  <button className="btn-primary w-full justify-center text-sm" style={{ background: '#4f46e5' }} onClick={handleSubmitOS2}>
-                    <i className="fa-solid fa-circle-plus" />OS②判定を記録
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* ── close section ─────────────────── */}
-            <div className="border-t border-slate-100">
-              <button
-                className="w-full px-4 py-3 text-xs text-slate-600 font-semibold flex items-center gap-2 hover:bg-slate-50 transition min-h-[44px]"
-                onClick={() => setCloseOpen(v => !v)}
-              >
-                <i className="fa-solid fa-flag-checkered text-slate-400" />クローズ
-                <i className={`fa-solid fa-chevron-${closeOpen ? 'up' : 'down'} text-slate-400 ml-auto text-[10px]`} />
-              </button>
-              {closeOpen && (
-                <div className="px-4 pb-4 flex gap-2">
-                  <select className="input-base text-xs py-2 flex-1" value={closeResult} onChange={e => setCloseResult(e.target.value)}>
-                    {CLOSE_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <button className="btn-danger text-xs px-4 min-h-[44px]" onClick={handleClose}>
-                    <i className="fa-solid fa-flag-checkered mr-1" />クローズ
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* send modal */}
-      {sendModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl p-5 flex flex-col gap-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                <i className="fa-solid fa-paper-plane text-violet-500" />送信完了を記録
-              </h3>
-              <button className="text-slate-400 hover:text-slate-600 p-1 min-h-[36px] min-w-[36px]" onClick={() => setSendModalOpen(false)}>
-                <i className="fa-solid fa-xmark" />
-              </button>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">元の文章（AIが生成）</label>
-              <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3 border border-slate-200 whitespace-pre-wrap max-h-32 overflow-y-auto cs">{sendOriginal}</p>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-700 font-semibold">実際に送った文章 <span className="text-slate-400 font-normal">（変更した場合は修正）</span></label>
-              <textarea rows={4} className="input-base cs text-xs" placeholder="元の文章のまま送った場合は空白でOK" value={sendActual} onChange={e => setSendActual(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500">編集理由（任意）</label>
-              <textarea rows={2} className="input-base cs text-xs" value={sendReason} onChange={e => setSendReason(e.target.value)} />
-            </div>
-            <div className="flex gap-2 justify-end mt-1">
-              <button className="btn-sec text-xs py-2.5 px-4" onClick={() => setSendModalOpen(false)}>キャンセル</button>
-              <button className="btn-primary text-xs py-2.5 px-4" onClick={handleRecordSend}><i className="fa-solid fa-check" />送信完了として記録</button>
-            </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   )
 }
 
 // ── TouchItem ──────────────────────────────────────────────────
-function TouchItem({ touch, role, onDelete }: { touch: Touch; role: Role; onDelete: () => void }) {
+interface TouchItemProps {
+  touch: Touch
+  pipelineItem: PipelineItem
+  prompts: Prompts
+  role: Role
+  onDelete: () => void
+  onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
+  onGoToTab3: () => void
+}
+
+function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3 }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
+  const [recordingReaction, setRecordingReaction] = useState(false)
+  const [selectedReaction, setSelectedReaction] = useState<TouchReaction | null>(null)
+  const [reactionNote, setReactionNote] = useState('')
+  const [os2ConvLog, setOs2ConvLog] = useState('')
+  const [os2Output, setOs2Output] = useState('')
+  const [os2Parsed, setOs2Parsed] = useState<{ judgment: string; nextAction: string; replyA: string; replyB: string } | null>(null)
+  const [os2CopyState, setOs2CopyState] = useState<'idle' | 'copied'>('idle')
+
+  const isAwaiting = touch.status === 'awaiting_reaction'
+
+  // S1-L streak after this reaction
+  const newLikeStreak = (pipelineItem.likeReturnStreak || 0) + 1
+  const newNoReactionStreak = (pipelineItem.noReactionStreak || 0) + 1
+  const touchesWithFollow = (pipelineItem.touches || []).some(t => t.reactionType === 'フォロー返し') || selectedReaction === 'フォロー返し'
+
+  function s1CapJudgment(): string {
+    if (newLikeStreak < 3) return `前進（新規投稿待ち → 別の具体点でS1再生成）`
+    if (touchesWithFollow) return `前進（チャネル格上げ）`
+    return `休眠`
+  }
+  function noReactionJudgment(): string {
+    if (newNoReactionStreak === 1) return `維持（次の新規投稿を待つ）`
+    return `休眠（無反応${newNoReactionStreak}連続。追いS1はしない）`
+  }
+
+  function handleStartReaction() {
+    setRecordingReaction(true)
+    // pre-fill conv log for テキスト返信
+    setOs2ConvLog(`自分の送信（${touch.date.slice(0, 10)}）：\n${touch.actualSentText}\n\n相手の返信：\n`)
+  }
+
+  function handleCopyOs2Prompt() {
+    if (!prompts.OS2) return
+    copyText(prompts.OS2 + '\n' + os2ConvLog, () => {
+      setOs2CopyState('copied')
+      setTimeout(() => setOs2CopyState('idle'), 2000)
+    })
+  }
+
+  function handleParseOs2() {
+    const parsed = parseOS2(os2Output)
+    setOs2Parsed({
+      judgment: parsed.judgment || '',
+      nextAction: parsed.nextAction || '',
+      replyA: parsed.replyA || '',
+      replyB: parsed.replyB || '',
+    })
+  }
+
+  function handleSaveReaction() {
+    if (!selectedReaction) return
+
+    const touchUpdates: Partial<Touch> = {
+      status: 'reacted',
+      reactionType: selectedReaction,
+      reactionNote,
+    }
+    const pipelineUpdates: Partial<PipelineItem> = {}
+
+    if (selectedReaction === 'テキスト返信') {
+      if (os2Parsed) {
+        touchUpdates.os2ConversationLog = os2ConvLog
+        touchUpdates.os2Judgment = os2Parsed.judgment
+        touchUpdates.os2NextAction = os2Parsed.nextAction
+        touchUpdates.os2ReplyA = os2Parsed.replyA
+        touchUpdates.os2ReplyB = os2Parsed.replyB
+        pipelineUpdates.judgment = os2Parsed.judgment || null
+        pipelineUpdates.nextAction = os2Parsed.nextAction || null
+        pipelineUpdates.replyA = os2Parsed.replyA || null
+        pipelineUpdates.replyB = os2Parsed.replyB || null
+      }
+      pipelineUpdates.likeReturnStreak = 0
+      pipelineUpdates.noReactionStreak = 0
+    } else if (['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction)) {
+      const judgment = s1CapJudgment()
+      touchUpdates.os2Judgment = judgment
+      pipelineUpdates.likeReturnStreak = newLikeStreak
+      pipelineUpdates.noReactionStreak = 0
+    } else if (selectedReaction === '無反応') {
+      const judgment = noReactionJudgment()
+      touchUpdates.os2Judgment = judgment
+      pipelineUpdates.noReactionStreak = newNoReactionStreak
+      pipelineUpdates.likeReturnStreak = 0
+    } else if (selectedReaction === '公開拒絶（R5）') {
+      touchUpdates.os2Judgment = 'クローズ'
+      pipelineUpdates.judgment = 'クローズ'
+    }
+
+    onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
+    setRecordingReaction(false)
+    setSelectedReaction(null)
+    setReactionNote('')
+    setOs2ConvLog('')
+    setOs2Output('')
+    setOs2Parsed(null)
+  }
+
   const dateStr = new Date(touch.date).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')
+  const isMicroPositive = ['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction || '')
+  const isNoReaction = selectedReaction === '無反応'
+  const isR5 = selectedReaction === '公開拒絶（R5）'
+  const isTextReply = selectedReaction === 'テキスト返信'
 
   return (
-    <div className="bg-white border border-slate-100 rounded-xl p-3 flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[10px] text-slate-400 shrink-0">{dateStr}</span>
-        {touch.targetPostType && (
-          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${postTypeBadge(touch.targetPostType)}`}>{touch.targetPostType}</span>
-        )}
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(touch.targetValidity)}`}>対象{touch.targetValidity}</span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${reactionBadge(touch.reactionType)}`}>{touch.reactionType}</span>
-        <div className="ml-auto flex items-center gap-1 shrink-0">
-          <button
-            className="text-[10px] text-slate-400 hover:text-indigo-500 px-1.5 py-0.5 rounded transition"
-            onClick={() => setDetailOpen(v => !v)}
-          >
-            詳細{detailOpen ? '▲' : '▼'}
-          </button>
-          {role === 'admin' && (
-            <button
-              className="text-slate-300 hover:text-rose-500 p-1 rounded transition min-h-[28px] min-w-[28px] flex items-center justify-center"
-              onClick={onDelete}
-            >
-              <i className="fa-solid fa-trash text-[10px]" />
-            </button>
+    <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
+      {/* ── touch summary ─────────────────── */}
+      <div className="p-3 flex flex-col gap-2">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-slate-400 shrink-0">{dateStr}</span>
+          {touch.targetPostType && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${postTypeBadge(touch.targetPostType)}`}>{touch.targetPostType}</span>
           )}
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(touch.targetValidity)}`}>対象{touch.targetValidity}</span>
+          {!isAwaiting && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${reactionBadge(touch.reactionType)}`}>{touch.reactionType}</span>
+          )}
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            <button className="text-[10px] text-slate-400 hover:text-indigo-500 px-1.5 py-0.5 rounded transition" onClick={() => setDetailOpen(v => !v)}>
+              詳細{detailOpen ? '▲' : '▼'}
+            </button>
+            {role === 'admin' && (
+              <button className="text-slate-300 hover:text-rose-500 p-1 rounded transition min-h-[28px] min-w-[28px] flex items-center justify-center" onClick={onDelete}>
+                <i className="fa-solid fa-trash text-[10px]" />
+              </button>
+            )}
+          </div>
         </div>
+
+        {touch.targetPostText && (
+          <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">📝 {touch.targetPostText}</p>
+        )}
+        <p className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3 leading-relaxed">{touch.actualSentText}</p>
+        {touch.reactionNote && <p className="text-[11px] text-slate-500 leading-relaxed">💬 {touch.reactionNote}</p>}
+
+        {/* reaction status */}
+        {isAwaiting && !recordingReaction && (
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
+            <button
+              className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2"
+              onClick={handleStartReaction}
+            >
+              反応を記録 →
+            </button>
+          </div>
+        )}
+
+        {/* os2 judgment result (reacted) */}
+        {!isAwaiting && touch.os2Judgment && (
+          <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${touch.reactionType === 'テキスト返信' ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : 'bg-blue-50 text-blue-700'}`}>
+            → {touch.os2Judgment}
+          </div>
+        )}
+
+        {/* detail accordion */}
+        {detailOpen && (
+          <div className="mt-1 p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2 text-xs">
+            {touch.aiSuggestedText && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">AI提案文</p>
+                <p className="text-slate-600 whitespace-pre-wrap">{touch.aiSuggestedText}</p>
+              </div>
+            )}
+            {touch.editReason && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">変えた理由</p>
+                <p className="text-slate-600">{touch.editReason}</p>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 text-[10px]">文面妥当性</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(touch.messageValidity)}`}>{touch.messageValidity}</span>
+            </div>
+            {touch.os2ConversationLog && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">会話ログ（OS②）</p>
+                <p className="text-slate-600 whitespace-pre-wrap text-[10px]">{touch.os2ConversationLog}</p>
+              </div>
+            )}
+            {touch.os2NextAction && (
+              <div className="flex gap-2">
+                <span className="text-slate-400 shrink-0 text-[10px]">次アクション</span>
+                <span className="text-slate-700 font-semibold text-[10px]">{touch.os2NextAction}</span>
+              </div>
+            )}
+            {(touch.os2ReplyA || touch.os2ReplyB) && (
+              <div className="flex flex-col gap-1">
+                {touch.os2ReplyA && <p className="text-[10px]"><span className="text-violet-600 font-bold">案A</span> {touch.os2ReplyA}</p>}
+                {touch.os2ReplyB && <p className="text-[10px]"><span className="text-indigo-500 font-bold">案B</span> {touch.os2ReplyB}</p>}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {touch.targetPostText && (
-        <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">📝 {touch.targetPostText}</p>
-      )}
-      <p className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3 leading-relaxed">{touch.actualSentText}</p>
-      {touch.reactionNote && (
-        <p className="text-[11px] text-slate-500 leading-relaxed">💬 {touch.reactionNote}</p>
-      )}
-
-      {detailOpen && (
-        <div className="mt-1 p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2 text-xs">
-          {touch.aiSuggestedText && (
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">AI提案文</p>
-              <p className="text-slate-600 whitespace-pre-wrap">{touch.aiSuggestedText}</p>
-            </div>
-          )}
-          {touch.editReason && (
-            <div>
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">変えた理由</p>
-              <p className="text-slate-600">{touch.editReason}</p>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 text-[10px]">文面妥当性</span>
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(touch.messageValidity)}`}>{touch.messageValidity}</span>
+      {/* ── reaction recording flow ───────── */}
+      {recordingReaction && (
+        <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
+          <p className="text-xs font-bold text-slate-700">相手の反応</p>
+          <div className="flex flex-wrap gap-1.5">
+            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction === r} onClick={() => { setSelectedReaction(r); setOs2Parsed(null) }} />)}
           </div>
+
+          {/* テキスト返信 → OS②展開 */}
+          {isTextReply && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">反応の補足（相手の返信テキスト）</label>
+                <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手が返信してきたテキスト" value={reactionNote} onChange={e => setReactionNote(e.target.value)} />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">会話ログ（OS②に流す）</label>
+                <textarea rows={4} className="input-base cs text-xs resize-y" value={os2ConvLog} onChange={e => setOs2ConvLog(e.target.value)} />
+              </div>
+              <button
+                className={`btn-sec text-xs py-2 justify-center ${os2CopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                onClick={handleCopyOs2Prompt}
+              >
+                <i className={`fa-solid ${os2CopyState === 'copied' ? 'fa-check' : 'fa-copy'} text-indigo-500 mr-1`} />
+                {os2CopyState === 'copied' ? '✓ コピーしました' : 'OS②プロンプトをコピー（外部AIで実行）'}
+              </button>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">AI出力を貼り付け</label>
+                <textarea rows={3} className="input-base cs text-xs resize-y" placeholder="AIの出力をここに貼り付け" value={os2Output} onChange={e => setOs2Output(e.target.value)} />
+              </div>
+              <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseOs2}>
+                <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+              </button>
+              {os2Parsed && (
+                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 flex flex-col gap-1 text-xs">
+                  <p className={`font-bold ${judgmentColor(os2Parsed.judgment)}`}>OS②判定：{os2Parsed.judgment}</p>
+                  {os2Parsed.nextAction && <p className="text-slate-600">次アクション：{os2Parsed.nextAction}</p>}
+                  {os2Parsed.replyA && <p className="text-violet-700 text-[11px]"><span className="font-bold">案A</span> {os2Parsed.replyA}</p>}
+                  {os2Parsed.replyB && <p className="text-indigo-600 text-[11px]"><span className="font-bold">案B</span> {os2Parsed.replyB}</p>}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* いいね等 → S1-L表示 */}
+          {isMicroPositive && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">反応の補足（任意）</label>
+                <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="補足メモ（任意）" value={reactionNote} onChange={e => setReactionNote(e.target.value)} />
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 text-xs">
+                <p className="font-bold text-blue-700">
+                  {selectedReaction === 'フォロー返し' ? 'フォロー返しを記録' : `いいね連続：${newLikeStreak}回目`}
+                </p>
+                <p className="text-blue-600 mt-0.5">→ {s1CapJudgment()}</p>
+              </div>
+            </div>
+          )}
+
+          {/* 無反応 → 集計 */}
+          {isNoReaction && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-slate-500">反応の補足（任意）</label>
+                <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="補足メモ（任意）" value={reactionNote} onChange={e => setReactionNote(e.target.value)} />
+              </div>
+              <div className="bg-slate-100 border border-slate-200 rounded-lg p-2.5 text-xs">
+                <p className="font-bold text-slate-600">無反応連続：{newNoReactionStreak}回目</p>
+                <p className="text-slate-500 mt-0.5">→ {noReactionJudgment()}</p>
+              </div>
+            </div>
+          )}
+
+          {/* R5 → クローズ */}
+          {isR5 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex flex-col gap-2 text-xs">
+              <p className="font-bold text-red-700">⚠️ 公開拒絶（R5）を記録</p>
+              <p className="text-red-600">→ クローズ。OS③で検証してください</p>
+              <button
+                className="btn-danger text-xs py-2 w-full justify-center"
+                onClick={() => { handleSaveReaction(); setTimeout(() => onGoToTab3(), 300) }}
+              >
+                <i className="fa-solid fa-graduation-cap mr-1" />OS③案件検証へ →
+              </button>
+            </div>
+          )}
+
+          {!isR5 && (
+            <div className="flex gap-2">
+              <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { setRecordingReaction(false); setSelectedReaction(null); setReactionNote('') }}>
+                キャンセル
+              </button>
+              <button
+                className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center"
+                disabled={!selectedReaction}
+                style={{ background: selectedReaction ? '#4f46e5' : undefined }}
+                onClick={handleSaveReaction}
+              >
+                <i className="fa-solid fa-check" />記録する
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

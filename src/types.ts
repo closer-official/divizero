@@ -16,8 +16,14 @@ export interface Touch {
   actualSentText: string;
   editReason: string;
   messageValidity: TouchValidity;
+  status?: 'awaiting_reaction' | 'reacted';
   reactionType: TouchReaction;
   reactionNote: string;
+  os2ConversationLog?: string;
+  os2Judgment?: string;
+  os2NextAction?: string;
+  os2ReplyA?: string;
+  os2ReplyB?: string;
 }
 
 export interface Screening {
@@ -130,6 +136,8 @@ export interface PipelineItem {
   sentMessages: SentMessage[];
   replies: Reply[];
   touches?: Touch[];
+  likeReturnStreak?: number;
+  noReactionStreak?: number;
   isOpen: boolean;
   closedAt?: string | null;
   closedCaseId?: string | null;
