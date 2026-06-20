@@ -108,6 +108,46 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string }> }): string {
+  const touches = item.touches || [];
+  const lines: string[] = [
+    `【案件情報】`,
+    `アカウント名: ${item.accountName}`,
+    `チャネル: ${item.channel}`,
+    `トラック: ${item.track}`,
+    `仮説: ${item.hypothesis || '未設定'}`,
+    `現在ステップ: ${item.currentStep}`,
+    `接触開始: ${item.startDate || '-'}`,
+    '',
+    `【タッチ履歴（${touches.length}回）】`,
+  ];
+  touches.forEach((t, i) => {
+    lines.push('');
+    lines.push(`--- タッチ${i + 1} (${t.date.slice(0, 10)}) ---`);
+    lines.push(`投稿種別: ${t.targetPostType}`);
+    lines.push(`対象妥当性: ${t.targetValidity}`);
+    if (t.targetPostText) lines.push(`接触した投稿: ${t.targetPostText}`);
+    lines.push(`送った文章: ${t.actualSentText}`);
+    if (t.editReason) lines.push(`変えた理由: ${t.editReason}`);
+    lines.push(`文面妥当性: ${t.messageValidity}`);
+    if (t.judgmentReason) lines.push(`判定理由: ${t.judgmentReason}`);
+    if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`改善提案: ${t.improvementSuggestion}`);
+    lines.push(`反応: ${t.reactionType}`);
+    if (t.reactionNote) lines.push(`反応補足: ${t.reactionNote}`);
+    if (t.os2Judgment) lines.push(`OS②判定: ${t.os2Judgment}`);
+    if (t.os2NextAction) lines.push(`次アクション: ${t.os2NextAction}`);
+    if (t.os2ReplyA) lines.push(`OS②案A: ${t.os2ReplyA}`);
+    if (t.os2ReplyB) lines.push(`OS②案B: ${t.os2ReplyB}`);
+  });
+  if (item.judgment) {
+    lines.push('');
+    lines.push(`【最終OS②判定】`);
+    lines.push(`判定: ${item.judgment}`);
+    if (item.nextAction) lines.push(`次アクション: ${item.nextAction}`);
+  }
+  return lines.join('\n');
+}
+
 export function purgeOldTrash(d: AppData): void {
   if (!d.trash || d.trash.length === 0) return;
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;

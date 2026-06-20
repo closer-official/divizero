@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppData, Prompts, ClosedDeal } from '../../types'
 import type { Role } from '../../hooks/useAuth'
-import type { ToastAPI, ConfirmAPI } from '../../App'
+import type { ToastAPI, ConfirmAPI, PrefilledOS3 } from '../../App'
 import { closeTypeBadgeClass, uid, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -12,9 +12,11 @@ interface Props {
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
+  prefill?: PrefilledOS3 | null
+  onPrefillConsumed?: () => void
 }
 
-export default function Tab3({ data, saveData, prompts, role, toast, confirm }: Props) {
+export default function Tab3({ data, saveData, prompts, role, toast, confirm, prefill, onPrefillConsumed }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [name, setName] = useState('')
   const [track, setTrack] = useState<'FT' | 'NT' | 'SKIP'>('NT')
@@ -25,6 +27,19 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
   const [rule, setRule] = useState('無')
   const [convText, setConvText] = useState('')
   const [resultPaste, setResultPaste] = useState('')
+
+  useEffect(() => {
+    if (!prefill) return
+    setName(prefill.name)
+    setTrack(prefill.track)
+    setHypo(prefill.hypo)
+    setStartDate(prefill.startDate)
+    setResult(prefill.result)
+    setConvText(prefill.convText)
+    setSelectedId(null)
+    onPrefillConsumed?.()
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [prefill])
   function handleCopyPrompt() {
     if (!prompts.OS3) { toast.show('プロンプトを読み込み中です'); return }
     const full = prompts.OS3 + '\n' + convText
@@ -60,6 +75,27 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
       saveData(prev => ({ ...prev, closed: prev.closed.filter(x => x.id !== id) }))
       if (selectedId === id) setSelectedId(null)
       toast.show('削除しました')
+    })
+  }
+
+  function handleRestoreToPipeline(item: ClosedDeal) {
+    if (!item.pipelineId) {
+      toast.show('元のパイプライン案件が見つかりません（手動追加案件は戻せません）')
+      return
+    }
+    const pipelineItem = data.pipeline.find(p => p.id === item.pipelineId)
+    if (!pipelineItem) {
+      toast.show('パイプライン案件が既に削除されています')
+      return
+    }
+    confirm.show('確認', `「${item.accountName}」をOS②パイプラインに戻しますか？`, () => {
+      saveData(prev => ({
+        ...prev,
+        pipeline: prev.pipeline.map(p => p.id === item.pipelineId ? { ...p, isOpen: true, closedAt: null } : p),
+        closed: prev.closed.filter(c => c.id !== item.id),
+      }))
+      setSelectedId(null)
+      toast.show(`「${item.accountName}」をパイプラインに戻しました`)
     })
   }
 
@@ -178,7 +214,12 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
               {selectedItem.track && <span className="text-xs px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 shrink-0">{selectedItem.track}</span>}
               {selectedItem.closeDate && <span className="text-[11px] text-slate-400 shrink-0">{selectedItem.closeDate}</span>}
             </div>
-            <div className="flex items-center gap-1 shrink-0 ml-2">
+            <div className="flex items-center gap-1 shrink-0 ml-2 flex-wrap justify-end">
+              {selectedItem.pipelineId && (
+                <button className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded border border-indigo-200 hover:bg-indigo-100 transition" onClick={() => handleRestoreToPipeline(selectedItem)}>
+                  <i className="fa-solid fa-rotate-left mr-1" />OS②に戻す
+                </button>
+              )}
               {role === 'admin' && (
                 <button className="text-xs px-2 py-1 bg-rose-50 text-rose-500 rounded border border-rose-200 hover:bg-rose-100 transition" onClick={() => handleDelete(selectedItem.id)}>
                   <i className="fa-solid fa-trash" /> 削除

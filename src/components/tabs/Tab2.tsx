@@ -109,13 +109,15 @@ interface Props {
   toast: ToastAPI
   confirm: ConfirmAPI
   onGoToTab3: () => void
+  onCloseCase: (item: PipelineItem, result: string) => void
 }
 
-export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3 }: Props) {
+export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: Props) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('all')
   const [filterStep, setFilterStep] = useState('all')
   const [sort, setSort] = useState('newest')
+  const [currentPage, setCurrentPage] = useState(1)
 
   // ── Analysis modal state ──────────────────────────────────────
   const [modalNotif, setModalNotif] = useState<ActiveNotification | null>(null)
@@ -129,15 +131,96 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
-  let filtered = [...active]
+  // Sort oldest-first for pagination page assignment
+  const activeOldestFirst = [...active].sort((a, b) =>
+    (a.startDate || a.closedAt || '').localeCompare(b.startDate || b.closedAt || '')
+  )
+  let filtered = [...activeOldestFirst]
   if (filter === 'FT') filtered = filtered.filter(p => p.track === 'FT')
   else if (filter === 'NT') filtered = filtered.filter(p => p.track === 'NT')
   else if (filter === 'warn') filtered = filtered.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30)
   if (filterStep !== 'all') filtered = filtered.filter(p => p.currentStep === filterStep)
   if (sort === 'urgent') filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
-  else filtered.reverse()
+
+  // Pagination: page 1 = newest (remainder), page N = oldest 10
+  const N = filtered.length
+  const totalPages = Math.ceil(N / 10) || 1
+  const r = N % 10 || (N > 0 ? 10 : 0) // items on page 1
+
+  function getPageItems(page: number): PipelineItem[] {
+    if (N === 0) return []
+    let startIdx: number, endIdx: number
+    if (page === 1) {
+      startIdx = N - r; endIdx = N
+    } else {
+      endIdx = N - r - (page - 2) * 10
+      startIdx = Math.max(0, endIdx - 10)
+    }
+    return [...filtered].slice(startIdx, endIdx).reverse()
+  }
+
+  const pageItems = getPageItems(currentPage)
 
   const warnItems = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30)
+
+  function exportPageMD(page: number) {
+    const items = getPageItems(page)
+    const lines: string[] = [
+      `# OS② パイプライン - ページ${page} / 全${totalPages}ページ`,
+      `生成: ${new Date().toLocaleDateString('ja-JP')}`,
+      '',
+    ]
+    items.forEach((item, i) => {
+      lines.push(`## ${i + 1}. ${item.accountName}（${item.channel} / ${item.track}）`)
+      if (item.hypothesis) lines.push(`**仮説：** ${item.hypothesis}`)
+      lines.push(`**現在ステップ：** ${item.currentStep}`)
+      lines.push(`**接触開始：** ${item.startDate || '-'}`)
+      if (item.judgment) lines.push(`**最終OS②判定：** ${item.judgment}`)
+      if (item.nextAction) lines.push(`**次アクション：** ${item.nextAction}`)
+      lines.push('')
+      const touches = item.touches || []
+      if (touches.length > 0) {
+        lines.push(`### タッチ履歴（${touches.length}回）`)
+        touches.forEach((t, ti) => {
+          lines.push(`\n#### タッチ${ti + 1}（${t.date.slice(0, 10)}）`)
+          lines.push(`- 投稿種別: ${t.targetPostType}`)
+          lines.push(`- 対象妥当性: ${t.targetValidity}`)
+          if (t.targetPostText) lines.push(`- 接触した投稿: ${t.targetPostText}`)
+          lines.push(`- 送った文章: ${t.actualSentText}`)
+          if (t.editReason) lines.push(`- 変えた理由: ${t.editReason}`)
+          lines.push(`- 文面妥当性: ${t.messageValidity}`)
+          if (t.judgmentReason) lines.push(`- 判定理由: ${t.judgmentReason}`)
+          if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`- 改善提案: ${t.improvementSuggestion}`)
+          lines.push(`- 反応: ${t.reactionType}`)
+          if (t.reactionNote) lines.push(`- 反応補足: ${t.reactionNote}`)
+          if (t.os2Judgment) lines.push(`- OS②判定: ${t.os2Judgment}`)
+          if (t.os2NextAction) lines.push(`- 次アクション: ${t.os2NextAction}`)
+          if (t.os2ReplyA) lines.push(`- OS②案A: ${t.os2ReplyA}`)
+          if (t.os2ReplyB) lines.push(`- OS②案B: ${t.os2ReplyB}`)
+        })
+      }
+      lines.push('\n---\n')
+    })
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `os2_page${page}.md`; a.click()
+    URL.revokeObjectURL(url)
+    toast.show(`ページ${page}のMDをダウンロードしました`)
+  }
+
+  function openManualAnalysis(type: 'case_pattern' | 'touch_trend') {
+    const judgedCount = data.pipeline.flatMap(p => p.touches || []).filter(t => t.judgedAt).length
+    handleOpenModal({
+      type,
+      label: type === 'case_pattern' ? '失注パターン分析' : '文面傾向分析',
+      message: '手動実行',
+      icon: type === 'case_pattern' ? '📊' : '📝',
+      severity: 'info',
+      count: type === 'case_pattern' ? data.closed.length : judgedCount,
+      pendingAnalysisId: null,
+    })
+  }
 
   function toggleExpand(id: string) {
     setExpandedIds(prev => {
@@ -291,31 +374,70 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         </div>
       )}
 
-      <div className="flex gap-2 flex-wrap">
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => setFilter(e.target.value)}>
+      {/* Filter + analysis manual trigger */}
+      <div className="flex gap-2 flex-wrap items-center">
+        <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => { setFilter(e.target.value); setCurrentPage(1) }}>
           <option value="all">全て ({active.length})</option>
           <option value="FT">FT</option>
           <option value="NT">NT</option>
           <option value="warn">警告のみ</option>
         </select>
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 90 }} value={filterStep} onChange={e => setFilterStep(e.target.value)}>
+        <select className="input-base text-xs py-1.5" style={{ maxWidth: 90 }} value={filterStep} onChange={e => { setFilterStep(e.target.value); setCurrentPage(1) }}>
           <option value="all">全ステップ</option>
           {['S1','S2','S3','S4','S5'].map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={sort} onChange={e => setSort(e.target.value)}>
-          <option value="newest">登録順</option>
+          <option value="newest">新しい順</option>
           <option value="urgent">緊急度順</option>
         </select>
+        <div className="ml-auto flex gap-1 shrink-0">
+          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('case_pattern')} title="失注パターン分析">
+            <i className="fa-solid fa-chart-bar text-violet-500" /><span className="hidden sm:inline ml-1">失注分析</span>
+          </button>
+          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('touch_trend')} title="文面傾向分析">
+            <i className="fa-solid fa-pen-nib text-indigo-500" /><span className="hidden sm:inline ml-1">文面分析</span>
+          </button>
+        </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Pagination controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1 flex-wrap">
+          <span className="text-[10px] text-slate-400 mr-1">{N}件 / {totalPages}ページ</span>
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => (
+            <button
+              key={pg}
+              onClick={() => setCurrentPage(pg)}
+              className={`text-[11px] font-bold w-8 h-8 rounded-lg border transition ${
+                pg === currentPage
+                  ? 'bg-indigo-600 text-white border-indigo-600'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
+              }`}
+            >
+              {pg}
+            </button>
+          ))}
+          <button className="btn-sec text-[11px] py-1.5 px-2 ml-1" onClick={() => exportPageMD(currentPage)}>
+            <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
+          </button>
+        </div>
+      )}
+
+      {pageItems.length === 0 ? (
         <div className="card flex flex-col items-center justify-center py-16 text-slate-300 gap-2">
           <i className="fa-solid fa-chart-gantt text-4xl" />
           <p className="text-sm font-medium">案件がありません</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {filtered.map(p => (
+          {totalPages <= 1 && (
+            <div className="flex justify-end">
+              <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => exportPageMD(1)}>
+                <i className="fa-solid fa-file-arrow-down text-slate-400" /> MD出力
+              </button>
+            </div>
+          )}
+          {pageItems.map(p => (
             <CaseCard
               key={p.id}
               item={p}
@@ -328,6 +450,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               toast={toast}
               confirm={confirm}
               onGoToTab3={onGoToTab3}
+              onCloseCase={onCloseCase}
             />
           ))}
         </div>
@@ -428,9 +551,10 @@ interface CardProps {
   toast: ToastAPI
   confirm: ConfirmAPI
   onGoToTab3: () => void
+  onCloseCase: (item: PipelineItem, result: string) => void
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3 }: CardProps) {
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -652,7 +776,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         return d
       })
       toast.show(`「${item.accountName}」をクローズしました（${closeResult}）`)
-      setTimeout(() => onGoToTab3(), 500)
+      setTimeout(() => onCloseCase(item, closeResult), 300)
     })
   }
 

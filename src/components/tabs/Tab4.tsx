@@ -1,6 +1,7 @@
-import type { AppData } from '../../types'
+import { useState } from 'react'
+import type { AppData, TrashItem, PipelineItem, Target } from '../../types'
 import type { Role } from '../../hooks/useAuth'
-import type { ToastAPI } from '../../App'
+import type { ToastAPI, ConfirmAPI } from '../../App'
 import { closeTypeBadgeClass, daysSince } from '../../utils/helpers'
 
 interface Props {
@@ -8,9 +9,11 @@ interface Props {
   saveData: (updater: (prev: AppData) => AppData) => void
   role: Role
   toast: ToastAPI
+  confirm?: ConfirmAPI
 }
 
-export default function Tab4({ data, toast }: Props) {
+export default function Tab4({ data, saveData, toast, confirm, role: _role }: Props) {
+  const [trashOpen, setTrashOpen] = useState(false)
   const targets = data.targets || []
   const pipeline = data.pipeline || []
   const closed = data.closed || []
@@ -31,10 +34,10 @@ export default function Tab4({ data, toast }: Props) {
     return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null
   })()
 
-  // Funnel
+  // Funnel — each stage counted by its own IDs, not cumulative
   const funnelSteps = [
-    { label: 'OS⓪ 一次選別', count: screenings.length + targets.length + totalPipeline + totalClosed, color: 'bg-fuchsia-500' },
-    { label: 'OS① スクリーニング', count: targets.length + totalPipeline + totalClosed, color: 'bg-violet-500' },
+    { label: 'OS⓪ 一次選別（通過数）', count: screenings.length, color: 'bg-fuchsia-500' },
+    { label: 'OS① スクリーニング済み', count: targets.length, color: 'bg-violet-500' },
     { label: 'OS② パイプライン（累計）', count: pipeline.length, color: 'bg-indigo-500' },
     { label: 'OS② 進行中', count: totalPipeline, color: 'bg-blue-500' },
     { label: 'OS③ クローズ', count: totalClosed, color: 'bg-emerald-500' },
@@ -72,6 +75,32 @@ export default function Tab4({ data, toast }: Props) {
     if (convRate < 20) warns.push(`パイプライン転換率が${convRate}%（目標：20%以上）。OS①でSKIPを増やしすぎていないか確認。`)
     if (closeRate < 30 && totalClosed >= 5) warns.push(`受注率が${closeRate}%（目標：30%以上）。クローズタイプを分析して改善ポイントを探してください。`)
     if (ftRatio < 30 && totalPipeline > 5) warns.push(`FTトラックの割合が${ftRatio}%（目標：30%以上）。DM直行できるFT案件を積極的に発掘してください。`)
+  }
+
+  function handleRestoreFromTrash(item: TrashItem) {
+    saveData(prev => {
+      const { _trashId, _trashSource, _trashedAt, ...rest } = item
+      const updated = { ...prev, trash: (prev.trash || []).filter(t => t._trashId !== _trashId) }
+      if (_trashSource === 'OS②') {
+        updated.pipeline = [...(updated.pipeline || []), { ...rest, isOpen: true } as unknown as PipelineItem]
+      } else if (_trashSource === 'target') {
+        updated.targets = [...(updated.targets || []), rest as unknown as Target]
+      }
+      return updated
+    })
+    toast.show('ゴミ箱から復元しました')
+  }
+
+  function handlePurgeTrash(trashId: string) {
+    if (!confirm) {
+      saveData(prev => ({ ...prev, trash: (prev.trash || []).filter(t => t._trashId !== trashId) }))
+      toast.show('完全に削除しました')
+      return
+    }
+    confirm.show('完全削除確認', 'このデータを完全に削除しますか？元に戻せません。', () => {
+      saveData(prev => ({ ...prev, trash: (prev.trash || []).filter(t => t._trashId !== trashId) }))
+      toast.show('完全に削除しました')
+    })
   }
 
   function handleExportSentLog() {
@@ -224,6 +253,54 @@ export default function Tab4({ data, toast }: Props) {
           </div>
         </div>
       )}
+
+      {/* Trash */}
+      <div className="card overflow-hidden">
+        <button
+          className="w-full p-4 flex items-center gap-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition"
+          onClick={() => setTrashOpen(v => !v)}
+        >
+          <i className="fa-solid fa-trash text-rose-400" />
+          ゴミ箱
+          <span className="ml-1 text-xs font-bold bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full">{(data.trash || []).length}件</span>
+          <i className={`fa-solid fa-chevron-${trashOpen ? 'up' : 'down'} text-slate-300 text-xs ml-auto`} />
+        </button>
+        {trashOpen && (
+          <div className="border-t border-slate-100 p-4 flex flex-col gap-2">
+            {(data.trash || []).length === 0 ? (
+              <p className="text-xs text-slate-300 text-center py-4">ゴミ箱は空です</p>
+            ) : (
+              <>
+                <p className="text-[11px] text-slate-400 mb-1">ゴミ箱から削除して初めてデータが完全に消えます。</p>
+                {(data.trash || []).map(t => (
+                  <div key={t._trashId} className="flex items-center gap-2 text-xs bg-rose-50 border border-rose-100 rounded-lg p-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-slate-700 truncate">
+                        {(t as unknown as {accountName?: string}).accountName || (t as unknown as {handle?: string}).handle || t._trashId}
+                      </p>
+                      <p className="text-slate-400 text-[10px]">
+                        {t._trashSource} • {new Date(t._trashedAt).toLocaleDateString('ja-JP')}
+                      </p>
+                    </div>
+                    <button
+                      className="shrink-0 text-[11px] py-1 px-2 border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 transition"
+                      onClick={() => handleRestoreFromTrash(t)}
+                    >
+                      <i className="fa-solid fa-rotate-left mr-1" />戻す
+                    </button>
+                    <button
+                      className="shrink-0 text-[11px] py-1 px-2 border border-rose-200 text-rose-500 rounded-lg hover:bg-rose-100 transition"
+                      onClick={() => handlePurgeTrash(t._trashId)}
+                    >
+                      <i className="fa-solid fa-trash" />
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Sent log export */}
       <div className="card p-5 flex flex-col gap-3">

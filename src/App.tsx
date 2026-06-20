@@ -2,12 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
+import { buildTouchConvLog } from './utils/helpers'
 import Tab0 from './components/tabs/Tab0'
 import Tab1 from './components/tabs/Tab1'
 import Tab2 from './components/tabs/Tab2'
 import Tab3 from './components/tabs/Tab3'
 import Tab4 from './components/tabs/Tab4'
 import Tab5 from './components/tabs/Tab5'
+import type { PipelineItem } from './types'
 
 type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5'
 
@@ -18,6 +20,15 @@ export interface ToastAPI {
 export interface ConfirmAPI {
   show: (title: string, msg: string, cb: () => void) => void
 }
+export interface PrefilledOS3 {
+  name: string
+  track: 'FT' | 'NT' | 'SKIP'
+  hypo: string
+  startDate: string
+  convText: string
+  result: string
+  pipelineId?: string
+}
 
 export default function App() {
   const { role, showLogin, checking, login, logout } = useAuth()
@@ -27,6 +38,7 @@ export default function App() {
   const [loginPw, setLoginPw] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
+  const [prefilledOS3, setPrefilledOS3] = useState<PrefilledOS3 | null>(null)
 
   // Toast
   const [toastMsg, setToastMsg] = useState('')
@@ -68,6 +80,42 @@ export default function App() {
   }, [])
 
   const confirm: ConfirmAPI = { show: showConfirm }
+
+  // Pull-to-refresh (mobile)
+  useEffect(() => {
+    let startY = 0
+    let isPulling = false
+    const threshold = 80
+    function onTouchStart(e: TouchEvent) {
+      if (window.scrollY === 0) { startY = e.touches[0].clientY; isPulling = true }
+    }
+    function onTouchEnd(e: TouchEvent) {
+      if (!isPulling) return
+      if (e.changedTouches[0].clientY - startY > threshold) window.location.reload()
+      isPulling = false
+    }
+    window.addEventListener('touchstart', onTouchStart, { passive: true })
+    window.addEventListener('touchend', onTouchEnd)
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart)
+      window.removeEventListener('touchend', onTouchEnd)
+    }
+  }, [])
+
+  // OS②→OS③ 情報引き継ぎ
+  function handleCloseCase(item: PipelineItem, result: string) {
+    const convText = buildTouchConvLog(item)
+    setPrefilledOS3({
+      name: item.accountName,
+      track: item.track,
+      hypo: item.hypothesis || '',
+      startDate: item.startDate || '',
+      convText,
+      result,
+      pipelineId: item.id,
+    })
+    setActiveTab('tab3')
+  }
 
   // Login
   async function handleLogin() {
@@ -208,9 +256,9 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
         {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} />}
-        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} />}
-        {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} />}
-        {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} />}
+        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} />}
+        {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
+        {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
         {activeTab === 'tab5' && <Tab5 data={data} role={role} />}
       </main>
 
