@@ -1,11 +1,12 @@
 import { useState, useRef } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
-import type { AppData, Prompts, PipelineItem, Touch, Analysis } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
+import { buildOS2ConversationPrompt, parseOS2Output, type OS2ConversationResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import {
@@ -23,6 +24,20 @@ import {
   uid, todayStr,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
+
+// ── thread helpers ─────────────────────────────────────────────
+function advanceStep(step: Step): Step {
+  const map: Record<string, Step> = { S1: 'S2', S2: 'S3', S3: 'S4', S4: 'S5', S5: 'S5' }
+  return (map[step] ?? step) as Step
+}
+
+function readAgoLabel(timestamp: string): string {
+  const diffMs = Date.now() - new Date(timestamp).getTime()
+  const diffH = diffMs / (1000 * 60 * 60)
+  if (diffH < 1) return `既読${Math.floor(diffH * 60)}分`
+  if (diffH < 24) return `既読${Math.floor(diffH)}時間`
+  return `既読${Math.floor(diffH / 24)}日`
+}
 
 // ── badge helpers ──────────────────────────────────────────────
 function validityBadge(v: string) {
@@ -1115,10 +1130,20 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction | null>(null)
   const [reactionNote, setReactionNote] = useState('')
-  const [os2ConvLog, setOs2ConvLog] = useState('')
   const [os2Output, setOs2Output] = useState('')
-  const [os2Parsed, setOs2Parsed] = useState<{ judgment: string; nextAction: string; replyA: string; replyB: string } | null>(null)
+  const [os2Parsed, setOs2Parsed] = useState<OS2ConversationResult | null>(null)
   const [os2CopyState, setOs2CopyState] = useState<'idle' | 'copied'>('idle')
+  // thread state
+  const [replyText, setReplyText] = useState('')
+  const [initChannel, setInitChannel] = useState<'リプ' | 'DM'>('リプ')
+  const [threadOs2Output, setThreadOs2Output] = useState('')
+  const [threadOs2Parsed, setThreadOs2Parsed] = useState<OS2ConversationResult | null>(null)
+  const [threadOs2CopyState, setThreadOs2CopyState] = useState<'idle' | 'copied'>('idle')
+  const [draftText, setDraftText] = useState('')
+  const [draftChannel, setDraftChannel] = useState<'リプ' | 'DM'>('リプ')
+  const [addingReply, setAddingReply] = useState(false)
+  const [newReplyText, setNewReplyText] = useState('')
+  const [newReplyChannel, setNewReplyChannel] = useState<'リプ' | 'DM'>('リプ')
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1138,25 +1163,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
   function handleStartReaction() {
     setRecordingReaction(true)
-    setOs2ConvLog(`自分の送信（${touch.date.slice(0, 10)}）：\n${touch.actualSentText}\n\n相手の返信：\n`)
-  }
-
-  function handleCopyOs2Prompt() {
-    if (!prompts.OS2) return
-    copyText(prompts.OS2 + '\n' + os2ConvLog, () => {
-      setOs2CopyState('copied')
-      setTimeout(() => setOs2CopyState('idle'), 2000)
-    })
-  }
-
-  function handleParseOs2() {
-    const parsed = parseOS2(os2Output)
-    setOs2Parsed({
-      judgment: parsed.judgment || '',
-      nextAction: parsed.nextAction || '',
-      replyA: parsed.replyA || '',
-      replyB: parsed.replyB || '',
-    })
+    setInitChannel(pipelineItem.currentStep === 'S1' ? 'リプ' : 'DM')
   }
 
   function handleSaveReaction() {
@@ -1170,17 +1177,28 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     const pipelineUpdates: Partial<PipelineItem> = {}
 
     if (selectedReaction === 'テキスト返信') {
-      if (os2Parsed) {
-        touchUpdates.os2ConversationLog = os2ConvLog
-        touchUpdates.os2Judgment = os2Parsed.judgment
-        touchUpdates.os2NextAction = os2Parsed.nextAction
-        touchUpdates.os2ReplyA = os2Parsed.replyA
-        touchUpdates.os2ReplyB = os2Parsed.replyB
-        pipelineUpdates.judgment = os2Parsed.judgment || null
-        pipelineUpdates.nextAction = os2Parsed.nextAction || null
-        pipelineUpdates.replyA = os2Parsed.replyA || null
-        pipelineUpdates.replyB = os2Parsed.replyB || null
+      const selfTurn: ConversationTurn = {
+        id: uid(),
+        role: '自分',
+        text: touch.actualSentText,
+        timestamp: touch.date,
+        channel: initChannel,
+        sentStatus: 'sent',
+        sentAt: touch.date,
       }
+      const replyTurn: ConversationTurn = {
+        id: uid(),
+        role: '相手',
+        text: replyText,
+        timestamp: new Date().toISOString(),
+        channel: initChannel,
+        sentStatus: 'sent',
+      }
+      touchUpdates.threadStatus = 'active'
+      touchUpdates.conversationTurns = [selfTurn, replyTurn]
+      touchUpdates.repExchangeCount = initChannel === 'リプ' ? 1 : 0
+      touchUpdates.dmExchangeCount = initChannel === 'DM' ? 1 : 0
+      touchUpdates.reactionNote = replyText
       pipelineUpdates.likeReturnStreak = 0
       pipelineUpdates.noReactionStreak = 0
     } else if (['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction)) {
@@ -1200,9 +1218,91 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setRecordingReaction(false)
     setSelectedReaction(null)
     setReactionNote('')
-    setOs2ConvLog('')
     setOs2Output('')
     setOs2Parsed(null)
+  }
+
+  async function handleCopyThreadOs2Prompt() {
+    if (!prompts.OS2) return
+    const prompt = buildOS2ConversationPrompt(pipelineItem, touch, prompts.OS2)
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setThreadOs2CopyState('copied')
+      setTimeout(() => setThreadOs2CopyState('idle'), 2000)
+    } catch {
+      setThreadOs2CopyState('idle')
+    }
+  }
+
+  function handleParseThreadOs2() {
+    const parsed = parseOS2Output(threadOs2Output)
+    if (!parsed) return
+    setThreadOs2Parsed(parsed)
+  }
+
+  function handleAddSelfTurn() {
+    if (!draftText.trim()) return
+    const newTurn: ConversationTurn = {
+      id: uid(),
+      role: '自分',
+      text: draftText,
+      timestamp: new Date().toISOString(),
+      channel: draftChannel,
+      sentStatus: 'sent',
+      sentAt: new Date().toISOString(),
+      ...(threadOs2Parsed ? {
+        os2Judgment: threadOs2Parsed.judgment,
+        os2SuggestedA: threadOs2Parsed.suggestedA,
+        os2SuggestedB: threadOs2Parsed.suggestedB,
+        os2NextAction: threadOs2Parsed.nextAction,
+        os2Warning: threadOs2Parsed.warning,
+        os2RawOutput: threadOs2Parsed.rawOutput,
+      } : {}),
+    }
+    const isRep = draftChannel === 'リプ'
+    const updatedTurns = [...(touch.conversationTurns || []), newTurn]
+    const touchUpdates: Partial<Touch> = {
+      conversationTurns: updatedTurns,
+      repExchangeCount: isRep ? (touch.repExchangeCount || 0) + 1 : touch.repExchangeCount,
+      dmExchangeCount: !isRep ? (touch.dmExchangeCount || 0) + 1 : touch.dmExchangeCount,
+      status: 'awaiting_reaction',
+      ...(threadOs2Parsed ? {
+        os2Judgment: threadOs2Parsed.judgment,
+        os2NextAction: threadOs2Parsed.nextAction,
+      } : {}),
+    }
+    const pipelineUpdates: Partial<PipelineItem> = {}
+    if (threadOs2Parsed) {
+      pipelineUpdates.judgment = threadOs2Parsed.judgment || null
+      pipelineUpdates.nextAction = threadOs2Parsed.nextAction || null
+      if (threadOs2Parsed.judgment === '前進') {
+        pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
+      }
+    }
+    onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
+    setDraftText('')
+    setThreadOs2Output('')
+    setThreadOs2Parsed(null)
+    setDraftChannel(pipelineItem.currentStep === 'S1' ? 'リプ' : 'DM')
+  }
+
+  function handleAddReplyTurn() {
+    if (!newReplyText.trim()) return
+    const replyTurn: ConversationTurn = {
+      id: uid(),
+      role: '相手',
+      text: newReplyText,
+      timestamp: new Date().toISOString(),
+      channel: newReplyChannel,
+      sentStatus: 'sent',
+    }
+    const touchUpdates: Partial<Touch> = {
+      conversationTurns: [...(touch.conversationTurns || []), replyTurn],
+      status: 'awaiting_reaction',
+    }
+    onReactionSaved(touch.id, touchUpdates, {})
+    setNewReplyText('')
+    setAddingReply(false)
   }
 
   const dateStr = new Date(touch.date).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')
@@ -1247,7 +1347,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         {touch.reactionNote && <p className="text-[11px] text-slate-500 leading-relaxed">💬 {touch.reactionNote}</p>}
 
         {/* reaction status */}
-        {isAwaiting && !recordingReaction && (
+        {isAwaiting && !recordingReaction && touch.threadStatus !== 'active' && (
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
             <button className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2" onClick={handleStartReaction}>
@@ -1257,7 +1357,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         )}
 
         {/* os2 judgment result (reacted) */}
-        {!isAwaiting && touch.os2Judgment && (
+        {!isAwaiting && touch.os2Judgment && touch.threadStatus !== 'active' && (
           <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${touch.reactionType === 'テキスト返信' ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : 'bg-blue-50 text-blue-700'}`}>
             → {touch.os2Judgment}
           </div>
@@ -1328,46 +1428,262 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         )}
       </div>
 
+      {/* ── thread panel (active thread) ───── */}
+      {touch.threadStatus === 'active' && (() => {
+        const turns = touch.conversationTurns || []
+        const lastTurn = turns[turns.length - 1]
+        const showOS2Section = lastTurn?.role === '相手'
+        const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply
+        const repCount = touch.repExchangeCount || 0
+        const dmCount = touch.dmExchangeCount || 0
+
+        return (
+          <div className="border-t border-slate-100">
+            {/* header */}
+            <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
+              <i className="fa-solid fa-comments text-indigo-500 text-xs" />
+              <span className="text-[11px] font-bold text-indigo-700">会話スレッド</span>
+              <span className="text-[10px] text-indigo-400 ml-1">
+                {repCount > 0 && `リプ${repCount}往復`}
+                {repCount > 0 && dmCount > 0 && ' / '}
+                {dmCount > 0 && `DM${dmCount}往復`}
+              </span>
+            </div>
+
+            {/* chat bubbles */}
+            <div className="p-3 flex flex-col gap-2">
+              {turns.map((turn, i) => {
+                const isSelf = turn.role === '自分'
+                const isLastOpponent = !isSelf && i === turns.length - 1
+                const diffMs = isLastOpponent ? Date.now() - new Date(turn.timestamp).getTime() : 0
+                const diffH = diffMs / (1000 * 60 * 60)
+                const isR4 = diffH >= 48
+                const timeLabel = isLastOpponent ? readAgoLabel(turn.timestamp) : ''
+
+                return (
+                  <div key={turn.id} className={`flex flex-col gap-0.5 ${isSelf ? 'items-end' : 'items-start'}`}>
+                    <div className={`max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
+                      isSelf
+                        ? 'bg-indigo-600 text-white rounded-br-sm'
+                        : 'bg-slate-100 text-slate-800 rounded-bl-sm'
+                    }`}>
+                      {turn.text}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                      <span>{new Date(turn.timestamp).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')}</span>
+                      {isLastOpponent && timeLabel && (
+                        <span className={isR4 ? 'text-rose-500 font-bold' : ''}>
+                          ⏱ {timeLabel}
+                          {isR4 && ' 🚨 R4'}
+                        </span>
+                      )}
+                    </div>
+                    {/* OS²判定を自分ターンの下に表示 */}
+                    {isSelf && turn.os2Judgment && (
+                      <div className="text-[10px] text-indigo-500 max-w-[85%] text-right">
+                        → {turn.os2Judgment}
+                        {turn.os2Warning && <span className="text-rose-500 ml-1">｜NG: {turn.os2Warning}</span>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* OS② section (when last turn is 相手) */}
+            {showOS2Section && (
+              <div className="mx-3 mb-3 flex flex-col gap-2">
+                <button
+                  className={`btn-sec text-xs py-2 justify-center ${threadOs2CopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                  onClick={handleCopyThreadOs2Prompt}
+                >
+                  <i className={`fa-solid ${threadOs2CopyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1 text-indigo-500`} />
+                  {threadOs2CopyState === 'copied' ? '✓ コピーしました' : 'OS②プロンプトをコピー'}
+                </button>
+                <textarea
+                  rows={3}
+                  className="input-base cs text-xs resize-y"
+                  placeholder="AI出力をここに貼り付け（【判定】〜【今やってはいけないこと】まで）"
+                  value={threadOs2Output}
+                  onChange={e => setThreadOs2Output(e.target.value)}
+                />
+                <button
+                  className="btn-primary text-xs py-2 justify-center"
+                  style={{ background: '#4f46e5' }}
+                  onClick={handleParseThreadOs2}
+                  disabled={!threadOs2Output.trim()}
+                >
+                  <i className="fa-solid fa-bolt mr-1" />返信案を取り込む
+                </button>
+
+                {threadOs2Parsed && (
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex flex-col gap-1.5 text-xs">
+                      <p className={`font-bold ${
+                        threadOs2Parsed.judgment === '前進' ? 'text-violet-700' :
+                        threadOs2Parsed.judgment === 'クローズ' ? 'text-rose-600' :
+                        'text-slate-600'
+                      }`}>OS②判定：{threadOs2Parsed.judgment}</p>
+                      {threadOs2Parsed.nextAction && <p className="text-slate-600">次アクション：{threadOs2Parsed.nextAction}</p>}
+                      {threadOs2Parsed.warning && <p className="text-rose-600 text-[11px]">NG: {threadOs2Parsed.warning}</p>}
+                    </div>
+
+                    {/* 返信案A/B */}
+                    {(threadOs2Parsed.suggestedA || threadOs2Parsed.suggestedB) && (
+                      <div className="flex flex-col gap-1.5">
+                        {threadOs2Parsed.suggestedA && (
+                          <div className="bg-violet-50 border border-violet-100 rounded-xl p-2.5 flex items-start gap-2">
+                            <span className="text-[10px] font-bold text-violet-600 shrink-0 mt-0.5">案A</span>
+                            <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{threadOs2Parsed.suggestedA}</p>
+                            <button
+                              className="shrink-0 text-[10px] font-bold text-violet-600 border border-violet-300 rounded-lg px-2 py-1 hover:bg-violet-100 transition min-h-[28px]"
+                              onClick={() => { setDraftText(threadOs2Parsed.suggestedA); setDraftChannel('リプ') }}
+                            >使う</button>
+                          </div>
+                        )}
+                        {threadOs2Parsed.suggestedB && (
+                          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2">
+                            <span className="text-[10px] font-bold text-indigo-600 shrink-0 mt-0.5">案B</span>
+                            <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{threadOs2Parsed.suggestedB}</p>
+                            <button
+                              className="shrink-0 text-[10px] font-bold text-indigo-600 border border-indigo-300 rounded-lg px-2 py-1 hover:bg-indigo-100 transition min-h-[28px]"
+                              onClick={() => { setDraftText(threadOs2Parsed.suggestedB); setDraftChannel('DM') }}
+                            >使う</button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 下書き */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] text-slate-500 font-medium">下書き</label>
+                        <div className="flex gap-1 ml-auto">
+                          {(['リプ', 'DM'] as const).map(ch => (
+                            <button
+                              key={ch}
+                              type="button"
+                              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition ${draftChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-500'}`}
+                              onClick={() => setDraftChannel(ch)}
+                            >
+                              {ch}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <textarea
+                        rows={3}
+                        className="input-base cs text-xs resize-y"
+                        placeholder="「使う」で入力、または手入力"
+                        value={draftText}
+                        onChange={e => setDraftText(e.target.value)}
+                      />
+                      <button
+                        className="btn-primary text-xs py-2.5 justify-center"
+                        onClick={handleAddSelfTurn}
+                        disabled={!draftText.trim()}
+                      >
+                        <i className="fa-solid fa-paper-plane mr-1" />送信完了として追加
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 相手の返信を追加 */}
+            {showAddReplyBtn && (
+              <div className="mx-3 mb-3">
+                <button
+                  className="w-full py-2.5 text-xs font-semibold text-indigo-600 border border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition"
+                  onClick={() => { setAddingReply(true); setNewReplyChannel(pipelineItem.currentStep === 'S1' ? 'リプ' : 'DM') }}
+                >
+                  <i className="fa-solid fa-plus mr-1" />相手の返信を追加
+                </button>
+              </div>
+            )}
+
+            {addingReply && (
+              <div className="mx-3 mb-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] text-slate-500">相手の返信テキスト</label>
+                  <div className="flex gap-1 ml-auto">
+                    {(['リプ', 'DM'] as const).map(ch => (
+                      <button
+                        key={ch}
+                        type="button"
+                        className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition ${newReplyChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-500'}`}
+                        onClick={() => setNewReplyChannel(ch)}
+                      >
+                        {ch}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <textarea
+                  rows={3}
+                  className="input-base cs text-xs resize-y"
+                  placeholder="相手が返信してきたテキスト"
+                  value={newReplyText}
+                  onChange={e => setNewReplyText(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <button className="btn-sec text-xs py-2 flex-1" onClick={() => { setAddingReply(false); setNewReplyText('') }}>
+                    キャンセル
+                  </button>
+                  <button
+                    className="btn-primary text-xs py-2 flex-1 justify-center"
+                    style={{ background: '#4f46e5' }}
+                    disabled={!newReplyText.trim()}
+                    onClick={handleAddReplyTurn}
+                  >
+                    <i className="fa-solid fa-check mr-1" />追加する
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── reaction recording flow ───────── */}
-      {recordingReaction && (
+      {recordingReaction && touch.threadStatus !== 'active' && (
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
             {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction === r} onClick={() => { setSelectedReaction(r); setOs2Parsed(null) }} />)}
           </div>
 
-          {/* テキスト返信 → OS②展開 */}
+          {/* テキスト返信 → スレッド初期化 */}
           {isTextReply && (
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-500">反応の補足（相手の返信テキスト）</label>
-                <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手が返信してきたテキスト" value={reactionNote} onChange={e => setReactionNote(e.target.value)} />
+                <label className="text-xs text-slate-500">相手の返信テキスト</label>
+                <textarea
+                  rows={3}
+                  className="input-base cs text-xs resize-y"
+                  placeholder="相手が返信してきたテキストを入力してください"
+                  value={replyText}
+                  onChange={e => setReplyText(e.target.value)}
+                />
               </div>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-500">会話ログ（OS②に流す）</label>
-                <textarea rows={4} className="input-base cs text-xs resize-y" value={os2ConvLog} onChange={e => setOs2ConvLog(e.target.value)} />
-              </div>
-              <button
-                className={`btn-sec text-xs py-2 justify-center ${os2CopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                onClick={handleCopyOs2Prompt}
-              >
-                <i className={`fa-solid ${os2CopyState === 'copied' ? 'fa-check' : 'fa-copy'} text-indigo-500 mr-1`} />
-                {os2CopyState === 'copied' ? '✓ コピーしました' : 'OS②プロンプトをコピー（外部AIで実行）'}
-              </button>
-              <div className="flex flex-col gap-1">
-                <label className="text-xs text-slate-500">AI出力を貼り付け</label>
-                <textarea rows={3} className="input-base cs text-xs resize-y" placeholder="AIの出力をここに貼り付け" value={os2Output} onChange={e => setOs2Output(e.target.value)} />
-              </div>
-              <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseOs2}>
-                <i className="fa-solid fa-bolt mr-1" />判定を取り込む
-              </button>
-              {os2Parsed && (
-                <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-2.5 flex flex-col gap-1 text-xs">
-                  <p className={`font-bold ${judgmentColor(os2Parsed.judgment)}`}>OS②判定：{os2Parsed.judgment}</p>
-                  {os2Parsed.nextAction && <p className="text-slate-600">次アクション：{os2Parsed.nextAction}</p>}
-                  {os2Parsed.replyA && <p className="text-violet-700 text-[11px]"><span className="font-bold">案A</span> {os2Parsed.replyA}</p>}
-                  {os2Parsed.replyB && <p className="text-indigo-600 text-[11px]"><span className="font-bold">案B</span> {os2Parsed.replyB}</p>}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-500 shrink-0">チャンネル</label>
+                <div className="flex gap-1">
+                  {(['リプ', 'DM'] as const).map(ch => (
+                    <button
+                      key={ch}
+                      type="button"
+                      className={`text-[11px] px-3 py-1 rounded-full border font-medium transition ${initChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-600'}`}
+                      onClick={() => setInitChannel(ch)}
+                    >
+                      {ch}
+                    </button>
+                  ))}
                 </div>
+              </div>
+              {!replyText.trim() && (
+                <p className="text-[10px] text-slate-400">返信テキストを入力すると会話スレッドが開始されます</p>
               )}
             </div>
           )}

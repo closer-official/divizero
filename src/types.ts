@@ -6,6 +6,22 @@ export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・�
 export type TouchValidity = '◯' | '△' | '✕' | '未評価' | '未判定';
 export type TouchReaction = 'テキスト返信' | 'いいね返り' | 'フォロー返し' | 'スタンプ・絵文字' | '無反応' | '公開拒絶（R5）' | '未記録';
 
+export interface ConversationTurn {
+  id: string;
+  role: '自分' | '相手';
+  text: string;
+  timestamp: string;
+  channel: 'リプ' | 'DM';
+  os2Judgment?: string;
+  os2SuggestedA?: string;
+  os2SuggestedB?: string;
+  os2NextAction?: string;
+  os2Warning?: string;
+  os2RawOutput?: string;
+  sentStatus: 'draft' | 'sent' | 'skipped';
+  sentAt?: string;
+}
+
 export interface Touch {
   id: string;
   date: string;
@@ -30,6 +46,10 @@ export interface Touch {
   improvementSuggestion?: string;
   improvedText?: string;
   judgedAt?: string;
+  threadStatus?: 'inactive' | 'active' | 'closed';
+  conversationTurns?: ConversationTurn[];
+  repExchangeCount?: number;
+  dmExchangeCount?: number;
 }
 
 export interface Screening {

@@ -58,6 +58,20 @@ export function buildCaseMd(item: PipelineItem): string {
       md += `\n**OS②判定：** ${touch.os2Judgment}\n`
       md += `**次アクション：** ${touch.os2NextAction || '—'}\n`
     }
+    // 会話スレッドをMDに追加
+    if (touch.threadStatus === 'active' && touch.conversationTurns?.length) {
+      md += `\n#### 会話スレッド\n\n`
+      touch.conversationTurns.forEach(turn => {
+        const prefix = turn.role === '自分' ? '▶ 自分' : '◀ 相手'
+        md += `**${prefix}**（${dateStr(turn.timestamp)}）\n${turn.text}\n\n`
+        if (turn.os2Judgment) {
+          md += `　OS②判定：${turn.os2Judgment} / 次アクション：${turn.os2NextAction || '—'}\n`
+          if (turn.os2SuggestedA) md += `　返信案A：${turn.os2SuggestedA}\n`
+          if (turn.os2SuggestedB) md += `　返信案B：${turn.os2SuggestedB}\n`
+          md += `\n`
+        }
+      })
+    }
     md += `\n---\n\n`
   })
 
