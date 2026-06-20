@@ -7,9 +7,8 @@ import Tab1 from './components/tabs/Tab1'
 import Tab2 from './components/tabs/Tab2'
 import Tab3 from './components/tabs/Tab3'
 import Tab4 from './components/tabs/Tab4'
-import LogsTab from './components/tabs/LogsTab'
 
-type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'logs'
+type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4'
 
 export interface ToastAPI {
   show: (msg: string, duration?: number) => void
@@ -177,7 +176,6 @@ export default function App() {
             { id: 'tab2' as TabId, icon: 'fa-chart-gantt', label: 'OS② パイプライン', badgeColor: 'bg-indigo-100 text-indigo-700', count: openPipeline.length, warn: warnCount },
             { id: 'tab3' as TabId, icon: 'fa-graduation-cap', label: 'OS③ 案件検証', badgeColor: 'bg-emerald-100 text-emerald-700', count: data.closed.length },
             { id: 'tab4' as TabId, icon: 'fa-chart-pie', label: '集計ダッシュボード', badgeColor: '', count: null },
-            { id: 'logs' as TabId, icon: 'fa-paper-plane', label: '送信完了履歴', badgeColor: 'bg-blue-100 text-blue-700', count: (data.logs || []).length },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -211,7 +209,6 @@ export default function App() {
         {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} />}
         {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} />}
-        {activeTab === 'logs' && <LogsTab data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
       </main>
 
       {/* Toast */}

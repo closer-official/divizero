@@ -2,6 +2,24 @@ export type Channel = 'twitter' | 'instagram' | 'threads';
 export type Track = 'FT' | 'NT' | 'SKIP';
 export type Step = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 
+export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・嬉しい報告' | '愚痴・本音' | 'ネタ' | 'ストーリー' | 'その他';
+export type TouchValidity = '◯' | '△' | '✕' | '未評価';
+export type TouchReaction = 'テキスト返信' | 'いいね返り' | 'フォロー返し' | 'スタンプ・絵文字' | '無反応' | '公開拒絶（R5）' | '未記録';
+
+export interface Touch {
+  id: string;
+  date: string;
+  targetPostText: string;
+  targetPostType: TouchPostType;
+  targetValidity: TouchValidity;
+  aiSuggestedText: string;
+  actualSentText: string;
+  editReason: string;
+  messageValidity: TouchValidity;
+  reactionType: TouchReaction;
+  reactionNote: string;
+}
+
 export interface Screening {
   id: string;
   createdAt: string;
@@ -111,6 +129,7 @@ export interface PipelineItem {
   history: HistoryEntry[];
   sentMessages: SentMessage[];
   replies: Reply[];
+  touches?: Touch[];
   isOpen: boolean;
   closedAt?: string | null;
   closedCaseId?: string | null;
