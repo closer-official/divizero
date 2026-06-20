@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import MdPreviewModal from '../MdPreviewModal'
 import type { AppData, TrashItem, PipelineItem, Target } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -14,6 +15,7 @@ interface Props {
 
 export default function Tab4({ data, saveData, toast, confirm, role: _role }: Props) {
   const [trashOpen, setTrashOpen] = useState(false)
+  const [mdPreview, setMdPreview] = useState<{ content: string; filename: string } | null>(null)
   const targets = data.targets || []
   const pipeline = data.pipeline || []
   const closed = data.closed || []
@@ -116,12 +118,7 @@ export default function Tab4({ data, saveData, toast, confirm, role: _role }: Pr
       `## ${m.accountName}（${m.channel}）${m.date} ${m.label}\n**元のAI案：**\n${m.original}\n\n**実際に送った文章：**\n${m.actual || m.original}\n\n${m.reason ? `**編集理由：** ${m.reason}\n` : ''}`
     ).join('\n---\n\n')
     const md = `# 送信文章ログ\n生成：${new Date().toLocaleDateString('ja-JP')}\n\n---\n\n${lines}`
-    const blob = new Blob([md], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = 'sent_log.md'; a.click()
-    URL.revokeObjectURL(url)
-    toast.show('送信ログをダウンロードしました')
+    setMdPreview({ content: md, filename: 'sent_log.md' })
   }
 
   return (
@@ -310,10 +307,18 @@ export default function Tab4({ data, saveData, toast, confirm, role: _role }: Pr
         </div>
         <div className="flex gap-2 items-center flex-wrap">
           <button className="btn-primary text-xs" onClick={handleExportSentLog}>
-            <i className="fa-solid fa-file-arrow-down" />MDをDL
+            <i className="fa-solid fa-file-lines" />MDをプレビュー
           </button>
         </div>
       </div>
+
+      {mdPreview && (
+        <MdPreviewModal
+          content={mdPreview.content}
+          filename={mdPreview.filename}
+          onClose={() => setMdPreview(null)}
+        />
+      )}
     </div>
   )
 }

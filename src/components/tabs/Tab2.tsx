@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import MdPreviewModal from '../MdPreviewModal'
 import type { AppData, Prompts, PipelineItem, Touch, Analysis } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
@@ -119,6 +120,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [sort, setSort] = useState('newest')
   const [currentPage, setCurrentPage] = useState(1)
 
+  // ── MD preview modal state ────────────────────────────────────
+  const [mdPreview, setMdPreview] = useState<{ content: string; filename: string } | null>(null)
+
   // ── Analysis modal state ──────────────────────────────────────
   const [modalNotif, setModalNotif] = useState<ActiveNotification | null>(null)
   const [modalCopyState, setModalCopyState] = useState<'idle' | 'copied'>('idle')
@@ -201,12 +205,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       }
       lines.push('\n---\n')
     })
-    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = `os2_page${page}.md`; a.click()
-    URL.revokeObjectURL(url)
-    toast.show(`ページ${page}のMDをダウンロードしました`)
+    setMdPreview({ content: lines.join('\n'), filename: `os2_page${page}.md` })
   }
 
   function openManualAnalysis(type: 'case_pattern' | 'touch_trend') {
@@ -534,6 +533,15 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── MD Preview Modal ──────────────────────────────────── */}
+      {mdPreview && (
+        <MdPreviewModal
+          content={mdPreview.content}
+          filename={mdPreview.filename}
+          onClose={() => setMdPreview(null)}
+        />
       )}
     </div>
   )

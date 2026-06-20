@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
 import { buildTouchConvLog } from './utils/helpers'
+import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
 import Tab0 from './components/tabs/Tab0'
 import Tab1 from './components/tabs/Tab1'
@@ -129,6 +130,9 @@ export default function App() {
     setLoginBusy(false)
   }
 
+  // Notification bell
+  const notifCount = !loading && !checking ? getActiveNotifications(data).length : 0
+
   // Active pipeline warning
   const openPipeline = (data.pipeline || []).filter(p => p.isOpen)
   const warnCount = openPipeline.filter(p => {
@@ -202,6 +206,19 @@ export default function App() {
             {BUILD_LABEL}
           </span>
           <div className="flex items-center gap-2" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+            {/* Notification bell */}
+            <button
+              className="relative btn-sec text-xs py-2 px-2.5"
+              onClick={() => setActiveTab('tab2')}
+              title="通知"
+            >
+              <i className="fa-solid fa-bell text-slate-500" />
+              {notifCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[16px] h-4 bg-rose-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center px-1">
+                  {notifCount}
+                </span>
+              )}
+            </button>
             {role && (
               <span className={role === 'admin' ? 'role-badge-admin' : 'role-badge-viewer'}>
                 {role === 'admin' ? '管理者' : '閲覧のみ'}
