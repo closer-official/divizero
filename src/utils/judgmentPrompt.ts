@@ -4,6 +4,7 @@ export interface JudgmentResult {
   editEvaluation: string
   editComment: string
   improvementSuggestion: string
+  improvedText: string
 }
 
 export async function buildJudgmentPrompt(params: {
@@ -47,5 +48,6 @@ export function parseJudgmentOutput(raw: string): JudgmentResult | null {
     editEvaluation: pick('編集評価'),
     editComment: pick('編集コメント'),
     improvementSuggestion: pick('改善提案'),
+    improvedText: pick('改善案'),
   }
 }

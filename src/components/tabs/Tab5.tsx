@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import MdPreviewModal from '../MdPreviewModal'
+import { buildAnalysisReportMd, analysisReportMdFilename } from '../../utils/mdExport'
 import type { AppData, Analysis } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 
@@ -119,16 +121,30 @@ function Block({ label, value }: { label: string; value: string }) {
 }
 
 export default function Tab5({ data, role: _role }: Props) {
+  const [mdPreview, setMdPreview] = useState<{ content: string; filename: string } | null>(null)
+
   const analyses = [...(data.analyses || [])].sort((a, b) => b.triggeredAt.localeCompare(a.triggeredAt))
   const completed = analyses.filter(a => a.status === 'completed')
   const caseActions = completed.filter(a => a.type === 'case_pattern' && a.actionItem).map(a => a.actionItem!)
   const touchActions = completed.filter(a => a.type === 'touch_trend' && a.actionItem).map(a => a.actionItem!)
 
+  function handleExportReport() {
+    const content = buildAnalysisReportMd(data)
+    setMdPreview({ content, filename: analysisReportMdFilename() })
+  }
+
   return (
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
-      <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 text-xs text-violet-900">
-        <span className="font-bold">📊 分析履歴：</span>
-        失注パターン・文面傾向の分析PDCA軌跡。「今すぐ直すべき1点」の時系列が改善の軸。
+      <div className="flex items-center gap-3">
+        <div className="flex-1 bg-violet-50 border border-violet-200 rounded-xl p-3 text-xs text-violet-900">
+          <span className="font-bold">📊 分析履歴：</span>
+          失注パターン・文面傾向の分析PDCA軌跡。「今すぐ直すべき1点」の時系列が改善の軸。
+        </div>
+        {completed.length > 0 && (
+          <button className="btn-sec text-xs shrink-0" onClick={handleExportReport}>
+            <i className="fa-solid fa-file-lines text-violet-500" />レポートをMD出力
+          </button>
+        )}
       </div>
 
       {/* PDCA Timeline */}
@@ -172,6 +188,14 @@ export default function Tab5({ data, role: _role }: Props) {
             <AnalysisCard key={a.id} a={a} defaultOpen={i === 0} />
           ))}
         </div>
+      )}
+
+      {mdPreview && (
+        <MdPreviewModal
+          content={mdPreview.content}
+          filename={mdPreview.filename}
+          onClose={() => setMdPreview(null)}
+        />
       )}
     </div>
   )

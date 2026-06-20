@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
+import { buildSummaryMd, summaryMdFilename } from '../../utils/mdExport'
 import type { AppData, TrashItem, PipelineItem, Target } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -114,11 +115,17 @@ export default function Tab4({ data, saveData, toast, confirm, role: _role }: Pr
       })
     })
     if (sentMsgs.length === 0) { toast.show('送信ログがありません'); return }
+
     const lines = sentMsgs.map(m =>
       `## ${m.accountName}（${m.channel}）${m.date} ${m.label}\n**元のAI案：**\n${m.original}\n\n**実際に送った文章：**\n${m.actual || m.original}\n\n${m.reason ? `**編集理由：** ${m.reason}\n` : ''}`
     ).join('\n---\n\n')
     const md = `# 送信文章ログ\n生成：${new Date().toLocaleDateString('ja-JP')}\n\n---\n\n${lines}`
     setMdPreview({ content: md, filename: 'sent_log.md' })
+  }
+
+  function handleExportSummary() {
+    const content = buildSummaryMd(data)
+    setMdPreview({ content, filename: summaryMdFilename() })
   }
 
   return (
@@ -299,16 +306,26 @@ export default function Tab4({ data, saveData, toast, confirm, role: _role }: Pr
         )}
       </div>
 
-      {/* Sent log export */}
-      <div className="card p-5 flex flex-col gap-3">
-        <div>
-          <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2"><i className="fa-solid fa-file-arrow-down text-violet-500" />送信文章ログ エクスポート</h3>
-          <p className="text-xs text-slate-400 mt-1">送信した文章・元のAI案・編集理由をMDでまとめてDL。Claudeに渡して出力ルール改善の参考にできます。</p>
-        </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          <button className="btn-primary text-xs" onClick={handleExportSentLog}>
-            <i className="fa-solid fa-file-lines" />MDをプレビュー
-          </button>
+      {/* Export section */}
+      <div className="card p-5 flex flex-col gap-4">
+        <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+          <i className="fa-solid fa-file-arrow-down text-violet-500" />MDエクスポート
+        </h3>
+        <div className="flex flex-col gap-3">
+          <div>
+            <p className="text-xs font-semibold text-slate-700 mb-0.5">全案件サマリ</p>
+            <p className="text-xs text-slate-400 mb-2">進行中・クローズ済みの一覧を1ファイルにまとめて出力。</p>
+            <button className="btn-primary text-xs" onClick={handleExportSummary}>
+              <i className="fa-solid fa-file-lines" />全案件をプレビュー
+            </button>
+          </div>
+          <div className="border-t border-slate-100 pt-3">
+            <p className="text-xs font-semibold text-slate-700 mb-0.5">送信文章ログ</p>
+            <p className="text-xs text-slate-400 mb-2">送信した文章・元のAI案・編集理由をMDでまとめて出力。</p>
+            <button className="btn-sec text-xs" onClick={handleExportSentLog}>
+              <i className="fa-solid fa-file-lines" />送信ログをプレビュー
+            </button>
+          </div>
         </div>
       </div>
 

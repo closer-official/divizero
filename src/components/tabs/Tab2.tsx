@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
+import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
 import type { AppData, Prompts, PipelineItem, Touch, Analysis } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
@@ -166,6 +167,12 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const pageItems = getPageItems(currentPage)
 
   const warnItems = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30)
+
+  function handleExportCaseMd(item: PipelineItem) {
+    const content = buildCaseMd(item)
+    const filename = caseMdFilename(item)
+    setMdPreview({ content, filename })
+  }
 
   function exportPageMD(page: number) {
     const items = getPageItems(page)
@@ -450,6 +457,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               confirm={confirm}
               onGoToTab3={onGoToTab3}
               onCloseCase={onCloseCase}
+              onExportMd={handleExportCaseMd}
             />
           ))}
         </div>
@@ -560,9 +568,10 @@ interface CardProps {
   confirm: ConfirmAPI
   onGoToTab3: () => void
   onCloseCase: (item: PipelineItem, result: string) => void
+  onExportMd: (item: PipelineItem) => void
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: CardProps) {
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onExportMd }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const addFormRef = useRef<HTMLDivElement>(null)
@@ -592,6 +601,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tJudgmentCopyState, setTJudgmentCopyState] = useState<'idle' | 'copied'>('idle')
   const [tJudgmentReason, setTJudgmentReason] = useState('')
   const [tImprovementSuggestion, setTImprovementSuggestion] = useState('')
+  const [tImprovedText, setTImprovedText] = useState('')
   const [tEditEvaluation, setTEditEvaluation] = useState('')
   const [tEditComment, setTEditComment] = useState('')
   const [tJudgedAt, setTJudgedAt] = useState<string | undefined>(undefined)
@@ -621,7 +631,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTPostText(''); setTPostType('通常投稿'); setTValidity('未評価')
     setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
     setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
-    setTImprovementSuggestion(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
+    setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
     setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
   }
 
@@ -695,6 +705,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTEditEvaluation(parsed.editEvaluation)
     setTEditComment(parsed.editComment)
     setTImprovementSuggestion(parsed.improvementSuggestion)
+    setTImprovedText(parsed.improvedText)
     setTJudgedAt(new Date().toISOString())
   }
 
@@ -712,6 +723,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       editEvaluation: tEditEvaluation,
       editComment: tEditComment,
       improvementSuggestion: tImprovementSuggestion,
+      improvedText: tImprovedText,
       judgedAt: tJudgedAt,
     }
     saveData(prev => ({
@@ -826,6 +838,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <i className="fa-solid fa-arrow-up-right-from-square" />
                 </a>
               )}
+              <button className="btn-sec text-[11px] py-1 px-2" onClick={() => onExportMd(item)} title="MDでエクスポート">
+                <i className="fa-solid fa-file-lines text-violet-500" />
+              </button>
               {role === 'admin' && (
                 <button className="btn-danger text-[11px] py-1 px-2" onClick={handleDelete}>
                   <i className="fa-solid fa-trash" />
@@ -1032,6 +1047,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                       <p className="text-slate-400">判定理由：<span className="text-slate-700 font-medium">{tJudgmentReason}</span></p>
                       {tImprovementSuggestion && tImprovementSuggestion !== 'なし' && (
                         <p className="text-amber-600">改善提案：{tImprovementSuggestion}</p>
+                      )}
+                      {tImprovedText && tImprovedText !== 'なし' && (
+                        <p className="text-indigo-600">改善案：{tImprovedText}</p>
                       )}
                     </div>
                   )}
@@ -1274,6 +1292,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
               <div>
                 <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-0.5">改善提案</p>
                 <p className="text-amber-700 text-[11px]">{touch.improvementSuggestion}</p>
+              </div>
+            )}
+            {touch.improvedText && touch.improvedText !== 'なし' && (
+              <div>
+                <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-0.5">改善案</p>
+                <p className="text-indigo-700 text-[11px] whitespace-pre-wrap">{touch.improvedText}</p>
               </div>
             )}
             {touch.editEvaluation && (

@@ -28,6 +28,7 @@ export interface Touch {
   editEvaluation?: string;
   editComment?: string;
   improvementSuggestion?: string;
+  improvedText?: string;
   judgedAt?: string;
 }
 
