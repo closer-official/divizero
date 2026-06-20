@@ -3,6 +3,7 @@ import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
 import { buildTouchConvLog } from './utils/helpers'
+import { BUILD_LABEL } from './buildInfo'
 import Tab0 from './components/tabs/Tab0'
 import Tab1 from './components/tabs/Tab1'
 import Tab2 from './components/tabs/Tab2'
@@ -198,7 +199,7 @@ export default function App() {
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between gap-4">
           <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
-            React版
+            {BUILD_LABEL}
           </span>
           <div className="flex items-center gap-2" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
             {role && (
