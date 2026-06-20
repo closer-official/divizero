@@ -2,7 +2,6 @@ import { useState } from 'react'
 import type { AppData, Prompts, ClosedDeal } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
-import { parseOS3 } from '../../utils/parser'
 import { closeTypeBadgeClass, uid, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -13,13 +12,6 @@ interface Props {
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
-}
-
-const WON_TYPE_DESC: Record<string, string> = {
-  'W-A': 'W-A：顕在課題直行型 — 相手がすでに課題を認識しており、直接提案が刺さった成約',
-  'W-B': 'W-B：関係構築相談化型 — 関係を深めた後、相手から相談が来て成約',
-  'W-C': 'W-C：相手起点型 — 相手からの声がけ・問い合わせで成約',
-  'W-D': 'W-D：その他パターンでの成約',
 }
 
 export default function Tab3({ data, saveData, prompts, role, toast, confirm }: Props) {
@@ -33,8 +25,6 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
   const [rule, setRule] = useState('無')
   const [convText, setConvText] = useState('')
   const [resultPaste, setResultPaste] = useState('')
-  const [expandedRaw, setExpandedRaw] = useState<string | null>(null)
-
   function handleCopyPrompt() {
     if (!prompts.OS3) { toast.show('プロンプトを読み込み中です'); return }
     const full = prompts.OS3 + '\n' + convText
@@ -44,10 +34,6 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
   function handleSubmit() {
     const text = resultPaste.trim()
     if (!name) { toast.show('アカウント名を入力してください', 2000); return }
-    let parsed: Partial<ClosedDeal> = {}
-    if (text) {
-      parsed = parseOS3(text)
-    }
     const entry: ClosedDeal = {
       id: uid(),
       createdAt: new Date().toISOString(),
@@ -60,7 +46,6 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
       ruleFired: rule === '有',
       rawOutput: text,
       aiOutput: text,
-      ...parsed,
     }
     saveData(prev => ({ ...prev, closed: [...prev.closed, entry] }))
     setName(''); setHypo(''); setStartDate(''); setEndDate(todayStr()); setConvText(''); setResultPaste('')
@@ -170,13 +155,11 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
                     className={`border-b border-slate-100 p-3 hover:bg-slate-50 cursor-pointer transition flex items-center gap-3 ${selectedId === c.id ? 'bg-emerald-50 border-l-2 border-l-emerald-500' : ''}`}
                     onClick={() => setSelectedId(selectedId === c.id ? null : c.id)}
                   >
-                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${closeTypeBadgeClass(c.closeType)}`}>{c.closeType || '?'}</span>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm text-slate-800 truncate">{c.accountName}</p>
-                      <p className="text-[11px] text-slate-400 truncate">{c.maxLearning || ''}</p>
+                      <p className="text-[11px] text-slate-400">{c.closeDate || ''}</p>
                     </div>
-                    <span className={`text-xs font-semibold ${c.result === '受注' ? 'text-emerald-600' : 'text-slate-500'}`}>{c.result}</span>
-                    <span className="text-[10px] text-slate-300 whitespace-nowrap">{c.learningValue != null ? c.learningValue + 'pt' : ''}</span>
+                    <span className={`text-xs font-semibold shrink-0 ${c.result === '受注' ? 'text-emerald-600' : 'text-slate-500'}`}>{c.result}</span>
                   </div>
                 ))
               )}
@@ -189,10 +172,11 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
       {selectedItem && (
         <div className="card p-5 flex flex-col gap-4">
           <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${closeTypeBadgeClass(selectedItem.closeType)} shrink-0`}>{selectedItem.closeType || '?'}</span>
+            <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
               <h3 className="font-bold text-slate-900 text-base truncate">{selectedItem.accountName}</h3>
               <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600 shrink-0">{selectedItem.result}</span>
+              {selectedItem.track && <span className="text-xs px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 shrink-0">{selectedItem.track}</span>}
+              {selectedItem.closeDate && <span className="text-[11px] text-slate-400 shrink-0">{selectedItem.closeDate}</span>}
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2">
               {role === 'admin' && (
@@ -204,53 +188,16 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm }: 
             </div>
           </div>
 
-          {selectedItem.result === '受注' && (
-            <div className="won-banner">
-              <p className="text-2xl mb-1">🎉</p>
-              <p className="font-bold text-emerald-800 text-base">成約おめでとうございます！</p>
-              <div className="mt-2 text-sm text-emerald-700">{WON_TYPE_DESC[selectedItem.closeType || ''] || `成約パターン：${selectedItem.closeType || '未分類'}`}</div>
-            </div>
+          {selectedItem.hypothesis && (
+            <p className="text-xs text-slate-500"><span className="font-medium text-slate-600">事前仮説：</span>{selectedItem.hypothesis}</p>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-xs">
-            <div className="bg-slate-50 rounded-xl p-3.5 flex flex-col gap-2.5">
-              <h4 className="font-bold text-slate-600 text-[10px] uppercase tracking-wider border-b border-slate-200 pb-1">案件概要</h4>
-              <div><span className="text-slate-400">トラック：</span><span className="font-bold">{selectedItem.track}</span></div>
-              <div><span className="text-slate-400">事前仮説：</span><span className="text-slate-700">{selectedItem.hypothesis || '-'}</span></div>
-              <div><span className="text-slate-400">仮説結果：</span><span className="font-bold">{selectedItem.hypothesisResult || '-'}</span></div>
-              <div><span className="text-slate-400">学習価値：</span><span className="font-bold">{selectedItem.learningValue != null ? selectedItem.learningValue + ' / 100' : '-'}</span></div>
+          {selectedItem.rawOutput ? (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-700 whitespace-pre-wrap leading-relaxed overflow-y-auto cs" style={{ maxHeight: 600 }}>
+              {selectedItem.rawOutput}
             </div>
-            <div className="bg-slate-50 rounded-xl p-3.5 flex flex-col gap-2.5">
-              <h4 className="font-bold text-slate-600 text-[10px] uppercase tracking-wider border-b border-slate-200 pb-1">相手視点分析</h4>
-              <div><span className="text-slate-400">最初の認識：</span><span className="text-slate-700">{selectedItem.roleStart || '-'}</span></div>
-              <div><span className="text-slate-400">最後の認識：</span><span className="text-slate-700">{selectedItem.roleEnd || '-'}</span></div>
-              <div><span className="text-slate-400">変化地点：</span><span className="text-slate-700">{selectedItem.roleChange || '-'}</span></div>
-              <div><span className="text-slate-400">欲しかったもの：</span><span className="font-bold text-slate-700">{selectedItem.wanted || '-'}</span></div>
-            </div>
-            <div className="bg-emerald-50 rounded-xl p-3.5 flex flex-col gap-2.5">
-              <h4 className="font-bold text-emerald-700 text-[10px] uppercase tracking-wider border-b border-emerald-200 pb-1">学びと再アプローチ</h4>
-              <div><span className="text-emerald-700">失注/受注理由：</span><p className="text-slate-700 mt-0.5">{selectedItem.conclusionReason || '-'}</p></div>
-              <div><span className="text-emerald-700">最大の学び：</span><p className="text-slate-700 mt-0.5">{selectedItem.maxLearning || '-'}</p></div>
-              <div><span className="text-emerald-700">再アプローチ：</span><span className="font-bold">{selectedItem.reapproachRating || '-'}</span></div>
-            </div>
-          </div>
-
-          {/* Raw output accordion */}
-          {selectedItem.rawOutput && (
-            <div>
-              <button
-                className="text-xs text-slate-400 hover:text-indigo-500 flex items-center gap-1 transition"
-                onClick={() => setExpandedRaw(expandedRaw === selectedItem.id ? null : selectedItem.id)}
-              >
-                <i className={`fa-solid fa-chevron-${expandedRaw === selectedItem.id ? 'up' : 'down'} text-[9px]`} />
-                詳細 {expandedRaw === selectedItem.id ? '▲' : '▼'}
-              </button>
-              {expandedRaw === selectedItem.id && (
-                <div className="mt-2 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-600 whitespace-pre-wrap max-h-96 overflow-y-auto cs">
-                  {selectedItem.rawOutput}
-                </div>
-              )}
-            </div>
+          ) : (
+            <p className="text-xs text-slate-300 text-center py-8">AI出力なし</p>
           )}
         </div>
       )}
