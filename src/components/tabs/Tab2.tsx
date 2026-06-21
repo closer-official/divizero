@@ -1451,6 +1451,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [os2CpCopyState, setOs2CpCopyState] = useState<'idle' | 'copied'>('idle')
   const [showOs2Cp, setShowOs2Cp] = useState(false)
   const [draftText, setDraftText] = useState('')
+  const [draftEditReason, setDraftEditReason] = useState('')
   const [draftChannel, setDraftChannel] = useState<'リプ' | 'DM'>('リプ')
   const [addingReply, setAddingReply] = useState(false)
   const [newReplyText, setNewReplyText] = useState('')
@@ -1576,6 +1577,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       id: uid(),
       role: '自分',
       text: draftText,
+      editReason: draftEditReason || undefined,
       timestamp: new Date().toISOString(),
       channel: draftChannel,
       sentStatus: 'sent',
@@ -1617,6 +1619,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     }
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setDraftText('')
+    setDraftEditReason('')
     setDmOutput('')
     setDmParsed(null)
     setOs2CpOutput('')
@@ -1817,7 +1820,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                         </span>
                       )}
                     </div>
-                    {/* OS²判定を自分ターンの下に表示 */}
+                    {/* 変えた理由・OS²判定を自分ターンの下に表示 */}
+                    {isSelf && turn.editReason && (
+                      <div className="text-[10px] text-slate-400 max-w-[85%] text-right">
+                        変更理由：{turn.editReason}
+                      </div>
+                    )}
                     {isSelf && turn.os2Judgment && (
                       <div className="text-[10px] text-indigo-500 max-w-[85%] text-right">
                         → {turn.os2Judgment}
@@ -1972,10 +1980,10 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                   </div>
                 )}
 
-                {/* 下書き */}
-                <div className="flex flex-col gap-1.5 mt-1">
+                {/* 実際に送った文章 + 変えた理由 */}
+                <div className="flex flex-col gap-2 mt-1 pt-2 border-t border-slate-100">
                   <div className="flex items-center gap-2">
-                    <label className="text-[11px] text-slate-500 font-medium">下書き</label>
+                    <label className="text-[11px] text-slate-600 font-bold">実際に送った文章</label>
                     <div className="flex gap-1 ml-auto">
                       {(['リプ', 'DM'] as const).map(ch => (
                         <button
@@ -1996,6 +2004,16 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     value={draftText}
                     onChange={e => setDraftText(e.target.value)}
                   />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] text-slate-500">変えた理由（任意）</label>
+                    <textarea
+                      rows={2}
+                      className="input-base cs text-xs resize-y"
+                      placeholder="AI提案から変えた場合、理由を記録"
+                      value={draftEditReason}
+                      onChange={e => setDraftEditReason(e.target.value)}
+                    />
+                  </div>
                   <button
                     className="btn-primary text-xs py-2.5 justify-center"
                     onClick={handleAddSelfTurn}

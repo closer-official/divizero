@@ -14,6 +14,7 @@ export interface ConversationTurn {
   channel: 'リプ' | 'DM';
   sentStatus: 'draft' | 'sent' | 'skipped';
   sentAt?: string;
+  editReason?: string;
   // DM文生成OS結果（自分ターンのみ）
   dmConversationState?: string;  // '質問あり' | 'クローズ型' | '深掘り余地あり'
   dmSuggestedA?: string;

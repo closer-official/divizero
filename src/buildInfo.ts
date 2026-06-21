@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 OCR複数ブロック一括取り込み対応";
+export const BUILD_LABEL = "06/21 DM下書きにAI提案文・実際に送った文章・変えた理由を追加";
