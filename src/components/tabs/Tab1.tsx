@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { AppData, Prompts, Target } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -28,6 +28,10 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm }: 
   const [resultText, setResultText] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
+
+  useEffect(() => {
+    setSelectedId(null)
+  }, [page])
 
   function setModeAndSave(m: Mode) {
     setMode(m)

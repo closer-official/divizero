@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
 import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step } from '../../types'
@@ -24,6 +24,7 @@ import {
   trackBadgeClass, stepsBarData, daysSince,
   uid, todayStr,
 } from '../../utils/helpers'
+import { StepSelector } from '../StepSelector'
 import { copyText } from '../../utils/clipboard'
 
 // ── thread helpers ─────────────────────────────────────────────
@@ -178,6 +179,24 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   // Emergency alert detail view
   const [emergencyDetail, setEmergencyDetail] = useState<string | null>(null)
 
+  const pendingExpandId = useRef<string | null>(null)
+
+  // #14 scroll to top on mount (bell click → tab switch)
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [])
+
+  // #12 expand pending card after page/filter change
+  useEffect(() => {
+    if (!pendingExpandId.current) return
+    const id = pendingExpandId.current
+    pendingExpandId.current = null
+    setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
+    requestAnimationFrame(() => {
+      document.getElementById(`case-card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+  }, [currentPage, filter, filterStep])
+
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
@@ -283,6 +302,30 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
   function expandId(id: string) {
     setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
+  }
+
+  // #12 warn banner click: navigate to page containing item, then expand
+  function handleWarnItemClick(itemId: string) {
+    const allSorted = sort === 'urgent'
+      ? [...activeOldestFirst].sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
+      : activeOldestFirst
+    const Nall = allSorted.length
+    const rr = Nall % 10 || (Nall > 0 ? 10 : 0)
+    const idx = allSorted.findIndex(it => it.id === itemId)
+    if (idx === -1) { expandId(itemId); return }
+    const targetPage = idx >= Nall - rr ? 1 : Math.floor((Nall - rr - 1 - idx) / 10) + 2
+    const willChange = targetPage !== currentPage || filter !== 'all' || filterStep !== 'all'
+    if (willChange) {
+      pendingExpandId.current = itemId
+      setFilter('all')
+      setFilterStep('all')
+      setCurrentPage(targetPage)
+    } else {
+      expandId(itemId)
+      requestAnimationFrame(() => {
+        document.getElementById(`case-card-${itemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
   }
 
   // ── Analysis modal handlers ───────────────────────────────────
@@ -414,7 +457,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               <div
                 key={p.id}
                 className={`border rounded-xl p-3 text-xs flex items-center gap-2 cursor-pointer ${d30 ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
-                onClick={() => expandId(p.id)}
+                onClick={() => handleWarnItemClick(p.id)}
               >
                 <i className="fa-solid fa-triangle-exclamation" />
                 <span className="font-bold">{p.accountName}</span>：
@@ -871,13 +914,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     : null
 
   return (
-    <div className="card overflow-hidden">
+    <div id={`case-card-${item.id}`} className="card overflow-hidden">
       {/* ── collapsed header ─────────────────── */}
       <div className="p-4 cursor-pointer select-none active:bg-slate-50" onClick={onToggle}>
         <div className="flex items-center gap-2">
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.track)}`}>{item.track}</span>
           <p className="font-semibold text-sm text-slate-800 flex-1 min-w-0 truncate">{item.accountName}</p>
-          <span className="text-xs font-bold text-indigo-600 shrink-0">{item.currentStep}</span>
+          <StepSelector item={item} saveData={saveData} toast={toast} />
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />

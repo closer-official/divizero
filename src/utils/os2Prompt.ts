@@ -47,6 +47,10 @@ export function buildOS2ConversationPrompt(
 
   const inputBlock = [
     `【案件名】${item.accountName}（${item.url}）`,
+    `【チャネル】${item.channel}`,
+    `【トラック】${item.track}`,
+    `【事前仮説】${item.hypothesis ?? '未設定'}`,
+    `【接触開始日】${item.startDate ?? '不明'}`,
     `【現在ステップ】${item.currentStep}`,
     `【往復回数】リプ往復：${repCount}回　DM往復：${dmCount}回`,
     `【S1接触数】${touchCount}回`,

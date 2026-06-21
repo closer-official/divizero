@@ -107,7 +107,7 @@ export default function App() {
   // OS②→OS③ 情報引き継ぎ
   function handleCloseCase(item: PipelineItem, result: string) {
     const convText = buildTouchConvLog(item)
-    setPrefilledOS3({
+    const prefill = {
       name: item.accountName,
       track: item.track,
       hypo: item.hypothesis || '',
@@ -115,8 +115,12 @@ export default function App() {
       convText,
       result,
       pipelineId: item.id,
-    })
-    setActiveTab('tab3')
+    }
+    toast.show(`「${item.accountName}」をクローズしました。OS③（案件検証）に引き継ぎます…`, 2500)
+    setTimeout(() => {
+      setPrefilledOS3(prefill)
+      setActiveTab('tab3')
+    }, 2500)
   }
 
   // Login

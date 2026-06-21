@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildSummaryMd, summaryMdFilename } from '../../utils/mdExport'
-import type { AppData, TrashItem, PipelineItem, Target } from '../../types'
+import type { AppData, TrashItem, PipelineItem, Target, Screening } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { closeTypeBadgeClass, daysSince } from '../../utils/helpers'
@@ -81,17 +81,24 @@ export default function Tab4({ data, saveData, toast, confirm, role: _role }: Pr
   }
 
   function handleRestoreFromTrash(item: TrashItem) {
+    const source = item._trashSource
     saveData(prev => {
-      const { _trashId, _trashSource, _trashedAt, ...rest } = item
+      const { _trashId, _trashSource: _src, _trashedAt, ...rest } = item
       const updated = { ...prev, trash: (prev.trash || []).filter(t => t._trashId !== _trashId) }
-      if (_trashSource === 'OS②') {
+      if (source === 'OS②') {
         updated.pipeline = [...(updated.pipeline || []), { ...rest, isOpen: true } as unknown as PipelineItem]
-      } else if (_trashSource === 'target') {
+      } else if (source === 'OS①') {
         updated.targets = [...(updated.targets || []), rest as unknown as Target]
+      } else if (source === 'OS⓪') {
+        updated.screenings = [...(updated.screenings || []), rest as unknown as Screening]
       }
       return updated
     })
-    toast.show('ゴミ箱から復元しました')
+    const label = source === 'OS②' ? 'パイプライン案件'
+      : source === 'OS①' ? 'スクリーニング対象'
+      : source === 'OS⓪' ? '一次選別リスト'
+      : 'データ'
+    toast.show(`${label}を復元しました`)
   }
 
   function handlePurgeTrash(trashId: string) {
