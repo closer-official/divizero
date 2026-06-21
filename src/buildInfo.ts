@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 自動入力本文";
+export const BUILD_LABEL = "06/21 fix: prompts 404 / 使うボタンクリップボード";
