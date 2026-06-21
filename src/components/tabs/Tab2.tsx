@@ -1851,14 +1851,54 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
           </div>
         </div>
 
-        {touch.targetPostText && (
-          <p className="text-[11px] text-slate-500 line-clamp-1 leading-relaxed">📝 {touch.targetPostText}</p>
-        )}
-        {touch.targetPostRawText && (
-          <p className="text-[11px] text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-100">{touch.targetPostRawText}</p>
-        )}
-        <p className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3 leading-relaxed">{touch.actualSentText}</p>
-        {touch.reactionNote && <p className="text-[11px] text-slate-500 leading-relaxed">💬 {touch.reactionNote}</p>}
+        {/* 会話フロー表示 */}
+        {(() => {
+          const isDMTouch = touch.targetPostText === '（DM）' || touch.touchMode === 'conversation'
+          const postDisplay = touch.targetPostRawText || touch.targetPostText
+          return (
+            <div className="flex flex-col gap-2">
+              {/* 相手の投稿（リプタッチのみ） */}
+              {!isDMTouch && postDisplay && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">相手の投稿</span>
+                  <div className="border-l-[3px] border-slate-200 pl-2.5">
+                    <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap line-clamp-3">
+                      {postDisplay}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* 矢印 */}
+              {!isDMTouch && postDisplay && (
+                <div className="flex items-center gap-1.5 pl-1 text-slate-300">
+                  <i className="fa-solid fa-arrow-turn-down text-[9px]" />
+                  <span className="text-[9px] font-medium">コメント</span>
+                </div>
+              )}
+
+              {/* 自分のコメント / DM */}
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[9px] font-bold text-indigo-400 tracking-widest uppercase">
+                  {isDMTouch ? '自分のDM' : '自分のコメント'}
+                </span>
+                <div className="border-l-[3px] border-indigo-300 pl-2.5">
+                  <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-wrap line-clamp-3">{touch.actualSentText}</p>
+                </div>
+              </div>
+
+              {/* 相手の返信 */}
+              {touch.reactionNote && (
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase">相手の返信</span>
+                  <div className="border-l-[3px] border-slate-200 pl-2.5">
+                    <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">{touch.reactionNote}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* reaction status */}
         {isAwaiting && !recordingReaction && touch.threadStatus !== 'active' && (
@@ -1939,6 +1979,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         {/* detail accordion */}
         {detailOpen && (
           <div className="mt-1 p-2.5 bg-slate-50 rounded-lg border border-slate-100 flex flex-col gap-2 text-xs">
+            {touch.targetPostRawText && (
+              <div>
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">投稿原文（全文）</p>
+                <p className="text-slate-600 whitespace-pre-wrap text-[11px] leading-relaxed">{touch.targetPostRawText}</p>
+              </div>
+            )}
             {touch.aiSuggestedText && (
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">AI提案文</p>
