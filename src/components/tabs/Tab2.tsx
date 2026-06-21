@@ -679,6 +679,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
 
   // touch add form
+  const [tIsDM, setTIsDM] = useState(false)
   const [tPostText, setTPostText] = useState('')
   const [tPostRawText, setTPostRawText] = useState('')
   const [tPostType, setTPostType] = useState<TouchPostType>('通常投稿')
@@ -747,6 +748,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
     setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
+    setTIsDM(false)
   }
 
   function startAddTouch() {
@@ -757,7 +759,20 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   async function handleCopyPrompt() {
     setAutoFillError(null)
     try {
-      const prompt = await buildTouchPrompt(item, touches)
+      let prompt: string
+      if (tIsDM) {
+        if (!prompts.DM) { setAutoFillError('DMプロンプトの読み込みに失敗しました。'); return }
+        const dummyTouch: Touch = {
+          id: '', date: new Date().toISOString(),
+          targetPostText: '', targetPostType: '通常投稿', targetValidity: '未評価',
+          aiSuggestedText: '', actualSentText: '', editReason: '',
+          messageValidity: '未判定', reactionType: '未記録', reactionNote: '',
+          threadEntry: 's3_direct', conversationTurns: [],
+        }
+        prompt = buildDMPrompt(item, dummyTouch, prompts.DM)
+      } else {
+        prompt = await buildTouchPrompt(item, touches)
+      }
       await navigator.clipboard.writeText(prompt)
       setCopyBtnState('copied')
       setTimeout(() => setCopyBtnState('idle'), 2000)
@@ -769,6 +784,17 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function handleAutoFill() {
     setAutoFillError(null)
     setAutoFillWarning(null)
+    if (tIsDM) {
+      const parsed = parseDMOutput(aiOutput)
+      if (!parsed) {
+        setAutoFillError('AI出力の形式が認識できませんでした。===DM_START=== から ===DM_END=== までを含めて貼り付けてください。')
+        return
+      }
+      setSuggestionA(parsed.suggestedA)
+      setSuggestionB(parsed.suggestedB)
+      setTAiText(`A: ${parsed.suggestedA}\nB: ${parsed.suggestedB}`)
+      return
+    }
     const parsed = parseTouchOutput(aiOutput)
     if (!parsed) {
       setAutoFillError('AI出力の形式が認識できませんでした。===TOUCH_START=== から ===TOUCH_END=== までを含めて貼り付けてください。')
@@ -826,21 +852,42 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
   function handleAddTouch() {
     if (!tSentText.trim()) { toast.show('実際に送った文章は必須です', 2000); return }
-    const touch: Touch = {
-      id: uid(), date: new Date().toISOString(),
-      targetPostText: tPostText, targetPostRawText: tPostRawText || undefined, targetPostType: tPostType, targetValidity: tValidity,
-      aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-      messageValidity: tMsgValidity,
-      status: 'awaiting_reaction',
-      reactionType: '未記録',
-      reactionNote: '',
-      judgmentReason: tJudgmentReason,
-      editEvaluation: tEditEvaluation,
-      editComment: tEditComment,
-      improvementSuggestion: tImprovementSuggestion,
-      improvedText: tImprovedText,
-      judgedAt: tJudgedAt,
-    }
+    const now = new Date().toISOString()
+    const touch: Touch = tIsDM
+      ? {
+          id: uid(), date: now,
+          targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
+          aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
+          messageValidity: '未判定',
+          status: 'reacted',
+          reactionType: '未記録',
+          reactionNote: '',
+          touchMode: 'conversation',
+          threadEntry: 's3_direct',
+          threadStatus: 'active',
+          conversationTurns: [{
+            id: uid(), role: '自分', text: tSentText,
+            timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+          } as ConversationTurn],
+          dmExchangeCount: 0,
+          repExchangeCount: 0,
+        }
+      : {
+          id: uid(), date: now,
+          targetPostText: tPostText, targetPostRawText: tPostRawText || undefined,
+          targetPostType: tPostType, targetValidity: tValidity,
+          aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
+          messageValidity: tMsgValidity,
+          status: 'awaiting_reaction',
+          reactionType: '未記録',
+          reactionNote: '',
+          judgmentReason: tJudgmentReason,
+          editEvaluation: tEditEvaluation,
+          editComment: tEditComment,
+          improvementSuggestion: tImprovementSuggestion,
+          improvedText: tImprovedText,
+          judgedAt: tJudgedAt,
+        }
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
@@ -850,7 +897,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }))
     resetForm()
     setAddingTouch(false)
-    toast.show('タッチを記録しました（反応待ち）')
+    toast.show(tIsDM ? 'DM送信を記録しました' : 'タッチを記録しました（反応待ち）')
   }
 
   function handleDeleteTouch(touchId: string) {
@@ -1288,19 +1335,34 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             </div>
           ) : (
             <div ref={addFormRef} className="mx-4 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-4">
-              <p className="font-bold text-sm text-slate-800">タッチを追加</p>
+              {/* タイトル + DM/リプ トグル */}
+              <div className="flex items-center gap-3">
+                <p className="font-bold text-sm text-slate-800 flex-1">タッチを追加</p>
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1">
+                  <button
+                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${!tIsDM ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { setTIsDM(false); resetForm() }}
+                  >リプ</button>
+                  <button
+                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${tIsDM ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { setTIsDM(true); resetForm() }}
+                  >DM</button>
+                </div>
+              </div>
 
               {/* ① AI generation section */}
-              <div className="bg-white border border-indigo-100 rounded-xl p-3 flex flex-col gap-2">
+              <div className={`bg-white border rounded-xl p-3 flex flex-col gap-2 ${tIsDM ? 'border-indigo-200' : 'border-indigo-100'}`}>
                 <p className="text-xs font-bold text-indigo-700">① AIで生成</p>
                 <button
                   className={`btn-sec text-xs py-2 justify-center ${copyBtnState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                   onClick={handleCopyPrompt}
                 >
                   <i className={`fa-solid ${copyBtnState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
-                  {copyBtnState === 'copied' ? '✓ コピーしました' : 'プロンプトをコピー'}
+                  {copyBtnState === 'copied' ? '✓ コピーしました' : tIsDM ? 'DM文生成プロンプトをコピー' : 'プロンプトをコピー'}
                 </button>
-                <p className="text-[10px] text-slate-400 text-center">↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行</p>
+                <p className="text-[10px] text-slate-400 text-center">
+                  {tIsDM ? '↓ ChatGPT等に貼り付けて実行' : '↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行'}
+                </p>
 
                 <p className="text-xs font-bold text-indigo-700 mt-1">② AI出力を貼り付け</p>
                 <textarea
@@ -1364,39 +1426,44 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
               {/* form fields */}
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
-                  <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
-                </div>
+                {/* 投稿関連フィールド（リプモードのみ） */}
+                {!tIsDM && (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
+                      <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
+                    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
-                  <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
-                </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
+                      <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
+                    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">投稿種別</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {POST_TYPES.map(t => <Chip key={t} label={t} selected={tPostType === t} onClick={() => setTPostType(t)} />)}
-                  </div>
-                </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">投稿種別</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {POST_TYPES.map(t => <Chip key={t} label={t} selected={tPostType === t} onClick={() => setTPostType(t)} />)}
+                      </div>
+                    </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">対象妥当性</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tValidity === v} onClick={() => setTValidity(v)} />)}
-                  </div>
-                  <p className="text-[10px] text-slate-400">◯=課題/通常/達成　△=グレー　✕=愚痴/ネタへの営業</p>
-                </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">対象妥当性</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tValidity === v} onClick={() => setTValidity(v)} />)}
+                      </div>
+                      <p className="text-[10px] text-slate-400">◯=課題/通常/達成　△=グレー　✕=愚痴/ネタへの営業</p>
+                    </div>
+                  </>
+                )}
 
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-slate-500">AIの提案文（任意）</label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder="AIが提案した文章" value={tAiText} onChange={e => setTAiText(e.target.value)} />
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tIsDM ? 'AIが提案したDM文' : 'AIが提案した文章'} value={tAiText} onChange={e => setTAiText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">実際に送った文章 <span className="text-rose-500">*</span></label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder="実際に送ったコメント・DM文" value={tSentText} onChange={e => setTSentText(e.target.value)} />
+                  <label className="text-xs font-semibold text-slate-700">{tIsDM ? '実際に送ったDM文' : '実際に送った文章'} <span className="text-rose-500">*</span></label>
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tIsDM ? '実際に送ったDMの文章' : '実際に送ったコメント・DM文'} value={tSentText} onChange={e => setTSentText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -1404,56 +1471,58 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="AIの提案から変更した理由" value={tEditReason} onChange={e => setTEditReason(e.target.value)} />
                 </div>
 
-                {/* ── 文面再判定セクション ─────────────────────── */}
-                <div className="flex flex-col gap-2 pt-1">
-                  <button
-                    className={`btn-sec text-xs py-2 justify-center ${!tSentText.trim() ? 'opacity-40 pointer-events-none' : ''} ${tJudgmentCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                    disabled={!tSentText.trim()}
-                    onClick={handleCopyJudgmentPrompt}
-                  >
-                    <i className={`fa-solid ${tJudgmentCopyState === 'copied' ? 'fa-check' : 'fa-magnifying-glass'} mr-1`} />
-                    {tJudgmentCopyState === 'copied' ? '✓ コピーしました' : 'AIに文面を判定してもらう'}
-                  </button>
+                {/* 文面再判定セクション（リプモードのみ） */}
+                {!tIsDM && (
+                  <div className="flex flex-col gap-2 pt-1">
+                    <button
+                      className={`btn-sec text-xs py-2 justify-center ${!tSentText.trim() ? 'opacity-40 pointer-events-none' : ''} ${tJudgmentCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                      disabled={!tSentText.trim()}
+                      onClick={handleCopyJudgmentPrompt}
+                    >
+                      <i className={`fa-solid ${tJudgmentCopyState === 'copied' ? 'fa-check' : 'fa-magnifying-glass'} mr-1`} />
+                      {tJudgmentCopyState === 'copied' ? '✓ コピーしました' : 'AIに文面を判定してもらう'}
+                    </button>
 
-                  {tJudgmentExpanded && (
-                    <div className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3">
-                      <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
-                      <textarea
-                        rows={3}
-                        className="input-base cs text-xs resize-y"
-                        placeholder="AIの判定出力をここに貼り付け（===JUDGMENT_START=== から ===JUDGMENT_END=== まで）"
-                        value={tJudgmentOutput}
-                        onChange={e => { setTJudgmentOutput(e.target.value); setTJudgmentError(null) }}
-                      />
-                      <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseJudgment}>
-                        <i className="fa-solid fa-bolt mr-1" />判定を取り込む
-                      </button>
-                      {tJudgmentError && (
-                        <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{tJudgmentError}</p>
-                      )}
+                    {tJudgmentExpanded && (
+                      <div className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3">
+                        <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
+                        <textarea
+                          rows={3}
+                          className="input-base cs text-xs resize-y"
+                          placeholder="AIの判定出力をここに貼り付け（===JUDGMENT_START=== から ===JUDGMENT_END=== まで）"
+                          value={tJudgmentOutput}
+                          onChange={e => { setTJudgmentOutput(e.target.value); setTJudgmentError(null) }}
+                        />
+                        <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseJudgment}>
+                          <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                        </button>
+                        {tJudgmentError && (
+                          <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{tJudgmentError}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {tJudgmentReason && (
+                      <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 flex flex-col gap-1 text-[11px]">
+                        <p className="text-slate-400">判定理由：<span className="text-slate-700 font-medium">{tJudgmentReason}</span></p>
+                        {tImprovementSuggestion && tImprovementSuggestion !== 'なし' && (
+                          <p className="text-amber-600">改善提案：{tImprovementSuggestion}</p>
+                        )}
+                        {tImprovedText && tImprovedText !== 'なし' && (
+                          <p className="text-indigo-600">改善案：{tImprovedText}</p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs text-slate-500">文面妥当性</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {MSG_VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
+                      </div>
+                      {tJudgedAt && <p className="text-[10px] text-emerald-600">✓ AI判定済み（手動変更も可）</p>}
                     </div>
-                  )}
-
-                  {tJudgmentReason && (
-                    <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 flex flex-col gap-1 text-[11px]">
-                      <p className="text-slate-400">判定理由：<span className="text-slate-700 font-medium">{tJudgmentReason}</span></p>
-                      {tImprovementSuggestion && tImprovementSuggestion !== 'なし' && (
-                        <p className="text-amber-600">改善提案：{tImprovementSuggestion}</p>
-                      )}
-                      {tImprovedText && tImprovedText !== 'なし' && (
-                        <p className="text-indigo-600">改善案：{tImprovedText}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">文面妥当性</label>
-                  <div className="flex flex-wrap gap-1.5">
-                    {MSG_VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
                   </div>
-                  {tJudgedAt && <p className="text-[10px] text-emerald-600">✓ AI判定済み（手動変更も可）</p>}
-                </div>
+                )}
               </div>
 
               <div className="flex gap-2 mt-1">
