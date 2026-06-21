@@ -64,7 +64,7 @@ export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Pr
 }
 
 export function parseTouchOutput(raw: string): ParsedTouch | null {
-  const block = raw.match(/===TOUCH_START===([\s\S]*?)===TOUCH_END===/)?.[1]
+  const block = raw.match(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/)?.[1]
   if (!block) return null
 
   const pick = (label: string): string => {

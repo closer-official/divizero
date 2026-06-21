@@ -49,7 +49,7 @@ export function buildDMPrompt(
 }
 
 export function parseDMOutput(raw: string): DMGenerationResult | null {
-  const block = raw.match(/===DM_START===([\s\S]*?)===DM_END===/)?.[1]
+  const block = raw.match(/={1,3}DM_START={1,3}([\s\S]*?)={1,3}DM_END={1,3}/)?.[1]
   if (!block) return null
 
   const pick = (label: string): string => {

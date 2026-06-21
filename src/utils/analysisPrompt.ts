@@ -44,7 +44,7 @@ export async function buildCaseAnalysisPrompt(data: AppData): Promise<string> {
 }
 
 export function parseCaseAnalysis(raw: string): Partial<Analysis> | null {
-  const block = raw.match(/===CASE_ANALYSIS_START===([\s\S]*?)===CASE_ANALYSIS_END===/)?.[1]
+  const block = raw.match(/={1,3}CASE_ANALYSIS_START={1,3}([\s\S]*?)={1,3}CASE_ANALYSIS_END={1,3}/)?.[1]
   if (!block) return null
   const pick = (label: string) =>
     block.match(new RegExp(`${label}\\s*[:：]\\s*(.+)`))?.[1]?.trim() ?? ''
@@ -115,7 +115,7 @@ export async function buildTouchAnalysisPrompt(data: AppData): Promise<string> {
 }
 
 export function parseTouchAnalysis(raw: string): Partial<Analysis> | null {
-  const block = raw.match(/===TOUCH_ANALYSIS_START===([\s\S]*?)===TOUCH_ANALYSIS_END===/)?.[1]
+  const block = raw.match(/={1,3}TOUCH_ANALYSIS_START={1,3}([\s\S]*?)={1,3}TOUCH_ANALYSIS_END={1,3}/)?.[1]
   if (!block) return null
   const pick = (label: string) =>
     block.match(new RegExp(`${label}\\s*[:：]\\s*(.+)`))?.[1]?.trim() ?? ''

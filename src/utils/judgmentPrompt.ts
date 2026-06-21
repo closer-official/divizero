@@ -28,7 +28,7 @@ export async function buildJudgmentPrompt(params: {
 }
 
 export function parseJudgmentOutput(raw: string): JudgmentResult | null {
-  const block = raw.match(/===JUDGMENT_START===([\s\S]*?)===JUDGMENT_END===/)?.[1]
+  const block = raw.match(/={1,3}JUDGMENT_START={1,3}([\s\S]*?)={1,3}JUDGMENT_END={1,3}/)?.[1]
   if (!block) return null
 
   const pick = (label: string): string => {
