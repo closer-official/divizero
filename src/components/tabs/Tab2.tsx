@@ -63,6 +63,10 @@ function advanceStep(step: Step): Step {
   return (map[step] ?? step) as Step
 }
 
+function stepToNum(s: string): number {
+  return ({ S1: 1, 'S1-L': 1, S2: 2, S3: 3, S4: 4, S5: 5 } as Record<string, number>)[s] ?? 0
+}
+
 function readAgoLabel(timestamp: string): string {
   const diffMs = Date.now() - new Date(timestamp).getTime()
   const diffH = diffMs / (1000 * 60 * 60)
@@ -1853,6 +1857,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       if (os2CpParsed.judgment === '前進') {
         pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
       }
+    }
+    // DM文生成OSがより高いステップを検出した場合は自動移行
+    if (dmParsed?.currentStep && stepToNum(dmParsed.currentStep) > stepToNum(pipelineItem.currentStep)) {
+      const nextStep = dmParsed.currentStep as Step
+      pipelineUpdates.currentStep = nextStep
+      pipelineUpdates.stepHistory = [...(pipelineItem.stepHistory || []), { step: nextStep, date: todayStr() }]
     }
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setDraftText('')

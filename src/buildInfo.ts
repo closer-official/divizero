@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 タッチ分割修正・S3リプ往復警告UI追加";
+export const BUILD_LABEL = "06/21 DM文生成ステップ自動移行・S4移行シグナル検出";
