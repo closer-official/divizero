@@ -2211,13 +2211,13 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
           {!isR5 && (
             <div className="flex gap-2">
-              <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { setRecordingReaction(false); setSelectedReaction(null); setReactionNote('') }}>
+              <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { setRecordingReaction(false); setSelectedReaction([]); setReactionNote('') }}>
                 キャンセル
               </button>
               <button
                 className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center"
-                disabled={!selectedReaction}
-                style={{ background: selectedReaction ? '#4f46e5' : undefined }}
+                disabled={selectedReaction.length === 0}
+                style={{ background: selectedReaction.length > 0 ? '#4f46e5' : undefined }}
                 onClick={handleSaveReaction}
               >
                 <i className="fa-solid fa-check" />記録する

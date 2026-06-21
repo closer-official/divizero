@@ -122,7 +122,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
