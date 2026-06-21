@@ -43,6 +43,9 @@ export interface Touch {
   status?: 'awaiting_reaction' | 'reacted';
   reactionType: TouchReaction | TouchReaction[];
   reactionNote: string;
+  reactionJudgment?: string;
+  reactionNextStep?: string;
+  reactionWarning?: string;
   os2ConversationLog?: string;
   os2Judgment?: string;
   os2NextAction?: string;
@@ -288,4 +291,5 @@ export type Prompts = {
   IG_OCR?: string;
   DM?: string;
   LOG_OCR?: string;
+  S1_ACTION?: string;
 };

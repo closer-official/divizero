@@ -9,6 +9,7 @@ import { parseOS2 } from '../../utils/parser'
 import { buildDMPrompt, parseDMOutput, type DMGenerationResult } from '../../utils/dmPrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
+import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import {
   getActiveNotifications, setDismissedUntil, createPendingAnalysis,
@@ -207,7 +208,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   let filtered = [...activeOldestFirst]
   if (filter === 'FT') filtered = filtered.filter(p => p.track === 'FT')
   else if (filter === 'NT') filtered = filtered.filter(p => p.track === 'NT')
-  else if (filter === 'warn') filtered = filtered.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30)
+  else if (filter === 'warn') filtered = filtered.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
   if (filterStep !== 'all') filtered = filtered.filter(p => p.currentStep === filterStep)
   if (sort === 'urgent') filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
 
@@ -230,7 +231,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
   const pageItems = getPageItems(currentPage)
 
-  const warnItems = active.filter(p => daysSince(p.lastContactDate) >= 7 || daysSince(p.startDate) >= 30)
+  const warnItems = active.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
 
   function handleExportCaseMd(item: PipelineItem) {
     const content = buildCaseMd(item)
@@ -1507,6 +1508,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [addingReply, setAddingReply] = useState(false)
   const [newReplyText, setNewReplyText] = useState('')
   const [newReplyChannel, setNewReplyChannel] = useState<'リプ' | 'DM'>('リプ')
+  // S1行動判定
+  const [s1ActionOutput, setS1ActionOutput] = useState('')
+  const [s1ActionParsed, setS1ActionParsed] = useState<S1ActionResult | null>(null)
+  const [s1ActionCopyState, setS1ActionCopyState] = useState<'idle' | 'copied'>('idle')
+  const [s1ActionError, setS1ActionError] = useState<string | null>(null)
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1583,6 +1589,31 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setReactionNote('')
     setDmOutput('')
     setDmParsed(null)
+  }
+
+  function handleCopyS1ActionPrompt() {
+    if (!prompts.S1_ACTION) return
+    const prompt = buildS1ActionPrompt(pipelineItem, touch, prompts.S1_ACTION)
+    copyText(prompt, () => {
+      setS1ActionCopyState('copied')
+      setTimeout(() => setS1ActionCopyState('idle'), 2000)
+    })
+  }
+
+  function handleParseS1Action() {
+    setS1ActionError(null)
+    const parsed = parseS1ActionOutput(s1ActionOutput)
+    if (!parsed) {
+      setS1ActionError('AI出力の形式が認識できませんでした。===S1ACTION_START=== から ===S1ACTION_END=== まで含めて貼り付けてください。')
+      return
+    }
+    setS1ActionParsed(parsed)
+    onReactionSaved(touch.id, {
+      reactionJudgment: parsed.judgment,
+      reactionNextStep: parsed.nextStep,
+      reactionWarning: parsed.warning,
+    }, {})
+    setS1ActionOutput('')
   }
 
   async function handleCopyDMPrompt() {
@@ -1758,6 +1789,65 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             → {touch.os2Judgment}
           </div>
         )}
+
+        {/* S1行動判定セクション */}
+        {!isAwaiting && touch.threadStatus !== 'active' && (() => {
+          const saved = touch.reactionJudgment
+          const result = s1ActionParsed || (saved ? { judgment: saved, nextStep: touch.reactionNextStep || '', warning: touch.reactionWarning || '', reason: '' } : null)
+          const judgmentColor = (j: string) => {
+            if (j === '公開リプ継続') return 'bg-violet-50 border-violet-200 text-violet-800'
+            if (j === 'DM移行') return 'bg-indigo-50 border-indigo-200 text-indigo-800'
+            if (j === '次投稿再接触') return 'bg-blue-50 border-blue-200 text-blue-800'
+            if (j === '休眠') return 'bg-slate-50 border-slate-200 text-slate-600'
+            if (j === 'クローズ') return 'bg-rose-50 border-rose-200 text-rose-700'
+            return 'bg-slate-50 border-slate-200 text-slate-700'
+          }
+          return (
+            <div className="mt-1 flex flex-col gap-1.5">
+              {result ? (
+                <div className={`rounded-xl border px-3 py-2 text-xs flex flex-col gap-1 ${judgmentColor(result.judgment)}`}>
+                  <p className="font-bold">→ {result.judgment}</p>
+                  {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
+                  {result.warning && result.warning !== 'なし' && (
+                    <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    className={`w-full py-2 text-xs font-semibold rounded-xl border-2 border-dashed transition ${s1ActionCopyState === 'copied' ? 'border-emerald-300 text-emerald-700 bg-emerald-50' : 'border-amber-300 text-amber-700 hover:bg-amber-50'}`}
+                    onClick={handleCopyS1ActionPrompt}
+                  >
+                    <i className={`fa-solid ${s1ActionCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                    {s1ActionCopyState === 'copied' ? '✓ コピーしました' : '📋 行動判定プロンプトをコピー（次のアクションをAIに判定させる）'}
+                  </button>
+                  {s1ActionCopyState === 'copied' && (
+                    <div className="flex flex-col gap-1">
+                      <textarea
+                        rows={3}
+                        className="input-base cs text-xs resize-y"
+                        placeholder="AI出力をここに貼り付け（===S1ACTION_START=== 〜 ===S1ACTION_END===）"
+                        value={s1ActionOutput}
+                        onChange={e => { setS1ActionOutput(e.target.value); setS1ActionError(null) }}
+                      />
+                      {s1ActionError && (
+                        <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">{s1ActionError}</p>
+                      )}
+                      <button
+                        className="btn-primary text-xs py-2 justify-center"
+                        style={{ background: '#d97706' }}
+                        disabled={!s1ActionOutput.trim()}
+                        onClick={handleParseS1Action}
+                      >
+                        <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })()}
 
         {/* detail accordion */}
         {detailOpen && (
