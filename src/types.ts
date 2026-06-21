@@ -40,7 +40,7 @@ export interface Touch {
   editReason: string;
   messageValidity: TouchValidity;
   status?: 'awaiting_reaction' | 'reacted';
-  reactionType: TouchReaction;
+  reactionType: TouchReaction | TouchReaction[];
   reactionNote: string;
   os2ConversationLog?: string;
   os2Judgment?: string;

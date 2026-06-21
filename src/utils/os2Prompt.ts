@@ -1,4 +1,5 @@
 import type { PipelineItem, Touch } from '../types'
+import { hasReaction } from './helpers'
 
 export interface OS2ConversationResult {
   judgment: string
@@ -33,8 +34,8 @@ export function buildOS2ConversationPrompt(
   const reactionQuality = hasQuestion ? '質問あり' : '受け答えのみ'
 
   const touchCount = (item.touches || []).length
-  const likeReturnCount = (item.touches || []).filter(t => t.reactionType === 'いいね返り').length
-  const followReturned = (item.touches || []).some(t => t.reactionType === 'フォロー返し')
+  const likeReturnCount = (item.touches || []).filter(t => hasReaction(t.reactionType, 'いいね返り')).length
+  const followReturned = (item.touches || []).some(t => hasReaction(t.reactionType, 'フォロー返し'))
 
   const conversationLog = turns.map(turn => {
     const selfIdx = selfTurns.indexOf(turn)

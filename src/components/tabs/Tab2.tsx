@@ -22,7 +22,7 @@ import {
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
   trackBadgeClass, stepsBarData, daysSince,
-  uid, todayStr,
+  uid, todayStr, hasReaction, toReactionArr, reactionDisplay,
 } from '../../utils/helpers'
 import { StepSelector } from '../StepSelector'
 import { copyText } from '../../utils/clipboard'
@@ -266,7 +266,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           lines.push(`- 文面妥当性: ${t.messageValidity}`)
           if (t.judgmentReason) lines.push(`- 判定理由: ${t.judgmentReason}`)
           if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`- 改善提案: ${t.improvementSuggestion}`)
-          lines.push(`- 反応: ${t.reactionType}`)
+          lines.push(`- 反応: ${reactionDisplay(t.reactionType)}`)
           if (t.reactionNote) lines.push(`- 反応補足: ${t.reactionNote}`)
           if (t.os2Judgment) lines.push(`- OS②判定: ${t.os2Judgment}`)
           if (t.os2NextAction) lines.push(`- 次アクション: ${t.os2NextAction}`)
@@ -720,8 +720,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
   const touches = item.touches || []
   const s1Count = touches.length
-  const likeReturnCount = touches.filter(t => t.reactionType === 'いいね返り').length
-  const followReturned = touches.some(t => t.reactionType === 'フォロー返し')
+  const likeReturnCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
+  const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
   const lastTouchedAt = touches.length > 0
     ? touches.reduce((l, t) => t.date > l ? t.date : l, touches[0].date)
     : item.lastContactDate || null
@@ -1481,7 +1481,7 @@ interface TouchItemProps {
 function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3 }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
-  const [selectedReaction, setSelectedReaction] = useState<TouchReaction | null>(null)
+  const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
   const [reactionNote, setReactionNote] = useState('')
   // thread state
   const [replyText, setReplyText] = useState('')
@@ -1504,7 +1504,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
   const newLikeStreak = (pipelineItem.likeReturnStreak || 0) + 1
   const newNoReactionStreak = (pipelineItem.noReactionStreak || 0) + 1
-  const touchesWithFollow = (pipelineItem.touches || []).some(t => t.reactionType === 'フォロー返し') || selectedReaction === 'フォロー返し'
+  const touchesWithFollow = (pipelineItem.touches || []).some(t => hasReaction(t.reactionType, 'フォロー返し')) || selectedReaction.includes('フォロー返し')
 
   function s1CapJudgment(): string {
     if (newLikeStreak < 3) return `前進（新規投稿待ち → 別の具体点でS1再生成）`
@@ -1522,7 +1522,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   }
 
   function handleSaveReaction() {
-    if (!selectedReaction) return
+    if (selectedReaction.length === 0) return
 
     const touchUpdates: Partial<Touch> = {
       status: 'reacted',
@@ -1531,7 +1531,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     }
     const pipelineUpdates: Partial<PipelineItem> = {}
 
-    if (selectedReaction === 'テキスト返信') {
+    if (selectedReaction.includes('テキスト返信')) {
       const selfTurn: ConversationTurn = {
         id: uid(),
         role: '自分',
@@ -1556,22 +1556,22 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       touchUpdates.reactionNote = replyText
       pipelineUpdates.likeReturnStreak = 0
       pipelineUpdates.noReactionStreak = 0
-    } else if (['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction)) {
+    } else if (selectedReaction.some(r => ['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(r))) {
       touchUpdates.os2Judgment = s1CapJudgment()
       pipelineUpdates.likeReturnStreak = newLikeStreak
       pipelineUpdates.noReactionStreak = 0
-    } else if (selectedReaction === '無反応') {
+    } else if (selectedReaction.includes('無反応')) {
       touchUpdates.os2Judgment = noReactionJudgment()
       pipelineUpdates.noReactionStreak = newNoReactionStreak
       pipelineUpdates.likeReturnStreak = 0
-    } else if (selectedReaction === '公開拒絶（R5）') {
+    } else if (selectedReaction.includes('公開拒絶（R5）')) {
       touchUpdates.os2Judgment = 'クローズ'
       pipelineUpdates.judgment = 'クローズ'
     }
 
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setRecordingReaction(false)
-    setSelectedReaction(null)
+    setSelectedReaction([])
     setReactionNote('')
     setDmOutput('')
     setDmParsed(null)
@@ -1691,10 +1691,10 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   }
 
   const dateStr = new Date(touch.date).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')
-  const isMicroPositive = ['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(selectedReaction || '')
-  const isNoReaction = selectedReaction === '無反応'
-  const isR5 = selectedReaction === '公開拒絶（R5）'
-  const isTextReply = selectedReaction === 'テキスト返信'
+  const isMicroPositive = selectedReaction.some(r => ['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(r))
+  const isNoReaction = selectedReaction.includes('無反応')
+  const isR5 = selectedReaction.includes('公開拒絶（R5）')
+  const isTextReply = selectedReaction.includes('テキスト返信')
 
   // messageValidity display: treat '未評価' as '未判定' for backward compat
   const displayMsgValidity = (!touch.messageValidity || touch.messageValidity === '未評価') ? '未判定' : touch.messageValidity
@@ -1710,9 +1710,9 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
           )}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(touch.targetValidity)}`}>対象{touch.targetValidity}</span>
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${validityBadge(displayMsgValidity)}`}>文{displayMsgValidity}</span>
-          {!isAwaiting && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${reactionBadge(touch.reactionType)}`}>{touch.reactionType}</span>
-          )}
+          {!isAwaiting && toReactionArr(touch.reactionType).map((r, i) => (
+            <span key={i} className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${reactionBadge(r)}`}>{r}</span>
+          ))}
           <div className="ml-auto flex items-center gap-1 shrink-0">
             <button className="text-[10px] text-slate-400 hover:text-indigo-500 px-1.5 py-0.5 rounded transition" onClick={() => setDetailOpen(v => !v)}>
               詳細{detailOpen ? '▲' : '▼'}
@@ -1743,7 +1743,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
         {/* os2 judgment result (reacted) */}
         {!isAwaiting && touch.os2Judgment && touch.threadStatus !== 'active' && (
-          <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${touch.reactionType === 'テキスト返信' ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : 'bg-blue-50 text-blue-700'}`}>
+          <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${hasReaction(touch.reactionType, 'テキスト返信') ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : 'bg-blue-50 text-blue-700'}`}>
             → {touch.os2Judgment}
           </div>
         )}
@@ -2128,7 +2128,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
-            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction === r} onClick={() => { setSelectedReaction(r); setDmParsed(null) }} />)}
+            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction.includes(r)} onClick={() => { setSelectedReaction(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]); setDmParsed(null) }} />)}
           </div>
 
           {/* テキスト返信 → スレッド初期化 */}
@@ -2174,7 +2174,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
               </div>
               <div className="bg-blue-50 border border-blue-100 rounded-lg p-2.5 text-xs">
                 <p className="font-bold text-blue-700">
-                  {selectedReaction === 'フォロー返し' ? 'フォロー返しを記録' : `いいね連続：${newLikeStreak}回目`}
+                  {selectedReaction.includes('フォロー返し') ? 'フォロー返しを記録' : `いいね連続：${newLikeStreak}回目`}
                 </p>
                 <p className="text-blue-600 mt-0.5">→ {s1CapJudgment()}</p>
               </div>

@@ -1,4 +1,5 @@
 import type { AppData, PipelineItem, Analysis } from '../types'
+import { hasReaction, reactionDisplay } from './helpers'
 
 function dateStr(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -17,8 +18,8 @@ function todayFilename(): string {
 // ── 1. 案件別MD ────────────────────────────────────────────────
 export function buildCaseMd(item: PipelineItem): string {
   const touches = item.touches || []
-  const likeReturnCount = touches.filter(t => t.reactionType === 'いいね返り').length
-  const followReturned = touches.some(t => t.reactionType === 'フォロー返し')
+  const likeReturnCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
+  const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
 
   let md = `# ${item.accountName}（${item.url}）| ${item.channel} | ${item.track}\n\n`
   md += `**案件ID：** ${item.id}\n`
@@ -78,7 +79,7 @@ export function buildCaseMd(item: PipelineItem): string {
       if (touch.improvedText && touch.improvedText !== 'なし') {
         md += `**改善案：** ${touch.improvedText}\n`
       }
-      md += `\n**相手の反応：** ${touch.reactionType}\n`
+      md += `\n**相手の反応：** ${reactionDisplay(touch.reactionType)}\n`
       if (touch.reactionNote) md += `**反応の補足：** ${touch.reactionNote}\n`
       if (touch.os2Judgment) {
         md += `\n**OS②判定：** ${touch.os2Judgment}\n`
@@ -138,7 +139,7 @@ export function buildSummaryMd(data: AppData): string {
     md += `|----------|---------|---------|---------|---------|---------|----------|\n`
     active.forEach(p => {
       const touches = p.touches || []
-      const likeCount = touches.filter(t => t.reactionType === 'いいね返り').length
+      const likeCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
       const lastTouch = touches.length > 0
         ? dateStr(touches.reduce((l, t) => t.date > l ? t.date : l, touches[0].date))
         : dateStr(p.lastContactDate)

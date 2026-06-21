@@ -1,4 +1,5 @@
 import type { PipelineItem, Touch } from '../types'
+import { hasReaction, reactionDisplay } from './helpers'
 
 export interface ParsedTouch {
   targetPostText: string
@@ -22,7 +23,7 @@ function formatTouchHistory(touches: Touch[]): string {
     .slice(0, 5)
     .map(t => {
       const date = formatDate(t.date)
-      const reaction = t.status === 'awaiting_reaction' ? '反応待ち' : t.reactionType
+      const reaction = t.status === 'awaiting_reaction' ? '反応待ち' : reactionDisplay(t.reactionType)
       return `${date}／${t.targetPostType}／送った文: ${t.actualSentText}／反応: ${reaction}`
     })
     .join('\n')
@@ -39,8 +40,8 @@ export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Pr
   const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
 
   const recentTouches = [...touches].reverse()
-  const likeReturnCount = touches.filter(t => t.reactionType === 'いいね返り').length
-  const followReturned = touches.some(t => t.reactionType === 'フォロー返し')
+  const likeReturnCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
+  const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
   const lastTouchedAt = touches.length > 0
     ? touches.reduce((l, t) => t.date > l ? t.date : l, touches[0].date)
     : null

@@ -1,4 +1,18 @@
-import type { AppData, ExcludedAccount, TrashItem } from '../types';
+import type { AppData, ExcludedAccount, TrashItem, TouchReaction } from '../types';
+
+export function toReactionArr(r: TouchReaction | TouchReaction[] | string | undefined): TouchReaction[] {
+  if (!r) return []
+  return Array.isArray(r) ? r : [r as TouchReaction]
+}
+
+export function hasReaction(r: TouchReaction | TouchReaction[] | string | undefined, reaction: TouchReaction): boolean {
+  return toReactionArr(r).includes(reaction)
+}
+
+export function reactionDisplay(r: TouchReaction | TouchReaction[] | string | undefined): string {
+  const arr = toReactionArr(r)
+  return arr.length === 0 ? '未記録' : arr.join('・')
+}
 
 export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -132,7 +146,7 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     lines.push(`文面妥当性: ${t.messageValidity}`);
     if (t.judgmentReason) lines.push(`判定理由: ${t.judgmentReason}`);
     if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`改善提案: ${t.improvementSuggestion}`);
-    lines.push(`反応: ${t.reactionType}`);
+    lines.push(`反応: ${reactionDisplay(t.reactionType)}`);
     if (t.reactionNote) lines.push(`反応補足: ${t.reactionNote}`);
     if (t.os2Judgment) lines.push(`OS②判定: ${t.os2Judgment}`);
     if (t.os2NextAction) lines.push(`次アクション: ${t.os2NextAction}`);
