@@ -4,6 +4,7 @@ import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI, PrefilledOS3 } from '../../App'
 import { closeTypeBadgeClass, uid, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
+import { parseOS3 } from '../../utils/parser'
 
 interface Props {
   data: AppData
@@ -49,6 +50,7 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
   function handleSubmit() {
     const text = resultPaste.trim()
     if (!name) { toast.show('アカウント名を入力してください', 2000); return }
+    const parsed = text ? parseOS3(text) : null
     const entry: ClosedDeal = {
       id: uid(),
       createdAt: new Date().toISOString(),
@@ -61,10 +63,12 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
       ruleFired: rule === '有',
       rawOutput: text,
       aiOutput: text,
+      ...(parsed ?? {}),
     }
     saveData(prev => ({ ...prev, closed: [...prev.closed, entry] }))
     setName(''); setHypo(''); setStartDate(''); setEndDate(todayStr()); setConvText(''); setResultPaste('')
-    toast.show(`「${name}」の案件検証を記録しました`)
+    const typeLabel = parsed?.closeType ? `（${parsed.closeType}）` : ''
+    toast.show(`「${name}」の案件検証を記録しました${typeLabel}`)
     setSelectedId(entry.id)
   }
 

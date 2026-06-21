@@ -55,13 +55,17 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       const ngs = parseOS0NG(text, mode)
       ngs.forEach(ng => addToExcluded(d, ng.handle, ng.displayName, ng.channel, 'OS⓪NG', ng.skipCode))
       const excluded = d.excluded || []
-      const items = allPassing.filter(item => !excluded.some(e => normalizeHandle(e.handle) === normalizeHandle(item.handle)))
+      const existingScreenings = d.screenings || []
+      const items = allPassing.filter(item =>
+        !excluded.some(e => normalizeHandle(e.handle) === normalizeHandle(item.handle)) &&
+        !existingScreenings.some(s => normalizeHandle(s.handle) === normalizeHandle(item.handle))
+      )
       const skippedCount = allPassing.length - items.length
       d.screenings = [...d.screenings, ...(items as typeof d.screenings)]
       const ngsCount = ngs.length
       let msg = `${items.length}件の通過アカウントをリストに追加しました`
       if (ngsCount > 0) msg += `（NG${ngsCount}件を除外リストに保存）`
-      if (skippedCount > 0) msg += `（除外済み${skippedCount}件はスキップ）`
+      if (skippedCount > 0) msg += `（${skippedCount}件はスキップ）`
       setTimeout(() => toast.show(msg, 3500), 0)
       return d
     })

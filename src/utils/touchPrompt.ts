@@ -71,6 +71,11 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
     return m ? m[1].trim() : ''
   }
 
+  const pickUntil = (label: string, stopLabel: string): string => {
+    const m = block.match(new RegExp(`${label}\\s*[:：]\\s*([\\s\\S]+?)(?=\\n${stopLabel}|$)`))
+    return m ? m[1].trim() : ''
+  }
+
   const normalizePostType = (s: string): string => {
     const map: Record<string, string> = {
       '課題ツイート': '課題ツイート', '課題': '課題ツイート',
@@ -95,9 +100,9 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
     targetPostType: normalizePostType(pick('投稿種別')),
     targetValidity: normalizeValidity(pick('対象妥当性')),
     gateJudgment: pick('ゲート判定'),
-    suggestedTextA: pick('提案文A'),
+    suggestedTextA: pickUntil('提案文A', '仮判定A'),
     provisionalJudgmentA: pick('仮判定A').trim(),
-    suggestedTextB: pick('提案文B'),
+    suggestedTextB: pickUntil('提案文B', '仮判定B'),
     provisionalJudgmentB: pick('仮判定B').trim(),
     nextAim: pick('次の狙い'),
   }
