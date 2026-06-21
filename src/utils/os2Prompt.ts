@@ -66,6 +66,30 @@ export function buildOS2ConversationPrompt(
   return template + '\n\n' + inputBlock
 }
 
+export interface OS2CheckpointResult {
+  judgment: string
+  nextAction: string
+  deadline: string
+  warning: string
+  rawOutput: string
+}
+
+export function parseOS2CheckpointOutput(raw: string): OS2CheckpointResult | null {
+  const pick = (label: string): string => {
+    const m = raw.match(new RegExp(`【${label}】([\\s\\S]*?)(?=【|$)`))
+    return m ? m[1].trim() : ''
+  }
+  const judgment = pick('判定')
+  if (!judgment) return null
+  return {
+    judgment,
+    nextAction: pick('次アクション'),
+    deadline: pick('実行期限'),
+    warning: pick('今やってはいけないこと'),
+    rawOutput: raw,
+  }
+}
+
 export function parseOS2Output(raw: string): OS2ConversationResult | null {
   const pick = (label: string): string => {
     const m = raw.match(new RegExp(`【${label}】([\\s\\S]*?)(?=【|$)`))

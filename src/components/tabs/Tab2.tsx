@@ -6,7 +6,8 @@ import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
-import { buildOS2ConversationPrompt, parseOS2Output, type OS2ConversationResult } from '../../utils/os2Prompt'
+import { buildDMPrompt, parseDMOutput, type DMGenerationResult } from '../../utils/dmPrompt'
+import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import {
@@ -625,6 +626,22 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   // close
   const [closeResult, setCloseResult] = useState('断り')
 
+  // DM会話開始
+  const [dmStartOpen, setDmStartOpen] = useState(false)
+  const [dmEntryType, setDmEntryType] = useState<'s3_direct' | 'log_restore'>('s3_direct')
+  // S3直行フォーム
+  const [dmSelfText, setDmSelfText] = useState('')
+  const [dmSelfDate, setDmSelfDate] = useState(todayStr())
+  const [dmReplyText, setDmReplyText] = useState('')
+  const [dmReplyDate, setDmReplyDate] = useState(todayStr())
+  // ログ復元フォーム
+  const [logRestoreStep, setLogRestoreStep] = useState<Step>('S3')
+  const [logTurns, setLogTurns] = useState<Array<{role: '自分'|'相手'; text: string; date: string; channel: 'リプ'|'DM'}>>([])
+  const [logTurnRole, setLogTurnRole] = useState<'自分'|'相手'>('自分')
+  const [logTurnText, setLogTurnText] = useState('')
+  const [logTurnDate, setLogTurnDate] = useState(todayStr())
+  const [logTurnChannel, setLogTurnChannel] = useState<'リプ'|'DM'>('DM')
+
   const touches = item.touches || []
   const s1Count = touches.length
   const likeReturnCount = touches.filter(t => t.reactionType === 'いいね返り').length
@@ -917,14 +934,222 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           </div>
 
           {/* add touch */}
-          {!addingTouch ? (
-            <div className="px-4 pb-4">
+          {!addingTouch && !dmStartOpen ? (
+            <div className="px-4 pb-4 flex flex-col gap-2">
               <button
                 className="w-full py-3 text-sm font-semibold text-indigo-600 border-2 border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition min-h-[44px]"
                 onClick={startAddTouch}
               >
                 <i className="fa-solid fa-plus mr-1" />タッチを追加
               </button>
+              <button
+                className="w-full py-2.5 text-sm font-semibold text-violet-600 border-2 border-dashed border-violet-200 rounded-xl hover:bg-violet-50 transition min-h-[40px]"
+                onClick={() => setDmStartOpen(true)}
+              >
+                <i className="fa-solid fa-comments mr-1" />💬 DM会話を開始
+              </button>
+            </div>
+          ) : dmStartOpen ? (
+            <div className="mx-4 mb-4 p-4 bg-violet-50 rounded-xl border border-violet-200 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="font-bold text-sm text-violet-800">💬 DM会話を開始</p>
+                <button className="text-slate-400 hover:text-slate-600 text-sm" onClick={() => setDmStartOpen(false)}>✕</button>
+              </div>
+
+              {/* エントリー種別 */}
+              <div className="flex gap-2">
+                {([['s3_direct', 'IGストーリー返信起点（S3直行）'], ['log_restore', '会話ログを復元']] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`flex-1 py-2 text-xs font-medium rounded-xl border transition ${dmEntryType === v ? 'bg-violet-600 border-violet-600 text-white' : 'bg-white border-violet-200 text-violet-700'}`}
+                    onClick={() => setDmEntryType(v)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {dmEntryType === 's3_direct' && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] text-slate-500">自分が送ったストーリー返信</label>
+                    <textarea rows={2} className="input-base cs text-xs resize-y" value={dmSelfText} onChange={e => setDmSelfText(e.target.value)} placeholder="自分が送ったテキスト" />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="text-[11px] text-slate-500">送信日</label>
+                      <input type="date" className="input-base cs text-xs" value={dmSelfDate} onChange={e => setDmSelfDate(e.target.value)} />
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] text-slate-500">相手の最初の返信</label>
+                    <textarea rows={2} className="input-base cs text-xs resize-y" value={dmReplyText} onChange={e => setDmReplyText(e.target.value)} placeholder="相手のテキスト" />
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <label className="text-[11px] text-slate-500">受信日</label>
+                      <input type="date" className="input-base cs text-xs" value={dmReplyDate} onChange={e => setDmReplyDate(e.target.value)} />
+                    </div>
+                  </div>
+                  <button
+                    className="btn-primary text-xs py-2.5 justify-center"
+                    style={{ background: '#7c3aed' }}
+                    disabled={!dmSelfText.trim() || !dmReplyText.trim()}
+                    onClick={() => {
+                      const selfTurn: ConversationTurn = {
+                        id: uid(), role: '自分', text: dmSelfText,
+                        timestamp: new Date(dmSelfDate).toISOString(),
+                        channel: 'DM', sentStatus: 'sent', sentAt: new Date(dmSelfDate).toISOString(),
+                      }
+                      const replyTurn: ConversationTurn = {
+                        id: uid(), role: '相手', text: dmReplyText,
+                        timestamp: new Date(dmReplyDate).toISOString(),
+                        channel: 'DM', sentStatus: 'sent',
+                      }
+                      const newTouch: Touch = {
+                        id: uid(),
+                        date: new Date(dmSelfDate).toISOString(),
+                        touchMode: 'conversation',
+                        threadEntry: 's3_direct',
+                        threadStatus: 'active',
+                        conversationTurns: [selfTurn, replyTurn],
+                        repExchangeCount: 0,
+                        dmExchangeCount: 1,
+                        targetPostText: '（ストーリー返信起点・投稿なし）',
+                        targetPostType: 'ストーリー',
+                        targetValidity: '◯',
+                        aiSuggestedText: '',
+                        actualSentText: dmSelfText,
+                        editReason: '',
+                        messageValidity: '未判定',
+                        reactionType: 'テキスト返信',
+                        reactionNote: '',
+                        status: 'awaiting_reaction',
+                      }
+                      saveData((prev: AppData) => ({
+                        ...prev,
+                        pipeline: prev.pipeline.map(p =>
+                          p.id !== item.id ? p : {
+                            ...p,
+                            currentStep: 'S3' as Step,
+                            touches: [...(p.touches || []), newTouch],
+                          }
+                        ),
+                      }))
+                      setDmStartOpen(false)
+                      setDmSelfText(''); setDmReplyText('')
+                      setDmSelfDate(todayStr()); setDmReplyDate(todayStr())
+                    }}
+                  >
+                    <i className="fa-solid fa-comments mr-1" />スレッドを作成（ステップをS3に進める）
+                  </button>
+                </div>
+              )}
+
+              {dmEntryType === 'log_restore' && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-slate-500">現在のステップ</label>
+                    <select className="input-base cs text-xs py-1.5 flex-1" value={logRestoreStep} onChange={e => setLogRestoreStep(e.target.value as Step)}>
+                      {(['S2','S3','S4','S5'] as Step[]).map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </div>
+
+                  {/* 追加済みターン一覧 */}
+                  {logTurns.length > 0 && (
+                    <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
+                      {logTurns.map((t, i) => (
+                        <div key={i} className={`text-[10px] px-2 py-1.5 rounded-lg ${t.role === '自分' ? 'bg-indigo-50 text-indigo-700 text-right' : 'bg-slate-100 text-slate-700'}`}>
+                          <span className="font-bold">{t.role}</span> {t.date} [{t.channel}] {t.text}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* ターン追加フォーム */}
+                  <div className="bg-white border border-violet-100 rounded-xl p-3 flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      {(['自分', '相手'] as const).map(r => (
+                        <button key={r} type="button"
+                          className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition ${logTurnRole === r ? 'bg-violet-600 border-violet-600 text-white' : 'bg-white border-violet-200 text-violet-700'}`}
+                          onClick={() => setLogTurnRole(r)}
+                        >{r}</button>
+                      ))}
+                      {(['リプ', 'DM'] as const).map(ch => (
+                        <button key={ch} type="button"
+                          className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition ${logTurnChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-200 text-indigo-700'}`}
+                          onClick={() => setLogTurnChannel(ch)}
+                        >{ch}</button>
+                      ))}
+                    </div>
+                    <input type="date" className="input-base cs text-xs" value={logTurnDate} onChange={e => setLogTurnDate(e.target.value)} />
+                    <textarea rows={2} className="input-base cs text-xs resize-y" value={logTurnText} onChange={e => setLogTurnText(e.target.value)} placeholder="テキスト" />
+                    <button
+                      className="btn-sec text-xs py-2 justify-center"
+                      disabled={!logTurnText.trim()}
+                      onClick={() => {
+                        setLogTurns(prev => [...prev, { role: logTurnRole, text: logTurnText, date: logTurnDate, channel: logTurnChannel }])
+                        setLogTurnText('')
+                      }}
+                    >
+                      <i className="fa-solid fa-plus mr-1" />このターンを追加
+                    </button>
+                  </div>
+
+                  <button
+                    className="btn-primary text-xs py-2.5 justify-center"
+                    style={{ background: '#7c3aed' }}
+                    disabled={logTurns.length < 2}
+                    onClick={() => {
+                      const turns: ConversationTurn[] = logTurns.map(t => ({
+                        id: uid(), role: t.role, text: t.text,
+                        timestamp: new Date(t.date).toISOString(),
+                        channel: t.channel as 'リプ' | 'DM',
+                        sentStatus: 'sent' as const,
+                      }))
+                      const repCount = Math.floor(logTurns.filter(t => t.channel === 'リプ').length / 2)
+                      const dmCount = Math.floor(logTurns.filter(t => t.channel === 'DM').length / 2)
+                      const firstSelfText = logTurns.find(t => t.role === '自分')?.text ?? ''
+                      const newTouch: Touch = {
+                        id: uid(),
+                        date: new Date(logTurns[0].date).toISOString(),
+                        touchMode: 'conversation',
+                        threadEntry: 'log_restore',
+                        threadStatus: 'active',
+                        conversationTurns: turns,
+                        repExchangeCount: repCount,
+                        dmExchangeCount: dmCount,
+                        targetPostText: '（ログ復元）',
+                        targetPostType: 'その他',
+                        targetValidity: '◯',
+                        aiSuggestedText: '',
+                        actualSentText: firstSelfText,
+                        editReason: '',
+                        messageValidity: '未判定',
+                        reactionType: 'テキスト返信',
+                        reactionNote: '',
+                        status: 'awaiting_reaction',
+                      }
+                      saveData((prev: AppData) => ({
+                        ...prev,
+                        pipeline: prev.pipeline.map(p =>
+                          p.id !== item.id ? p : {
+                            ...p,
+                            currentStep: logRestoreStep,
+                            touches: [...(p.touches || []), newTouch],
+                          }
+                        ),
+                      }))
+                      setDmStartOpen(false)
+                      setLogTurns([])
+                      setLogTurnText('')
+                    }}
+                  >
+                    <i className="fa-solid fa-check mr-1" />復元を確定
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div ref={addFormRef} className="mx-4 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-4">
@@ -1130,15 +1355,16 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction | null>(null)
   const [reactionNote, setReactionNote] = useState('')
-  const [os2Output, setOs2Output] = useState('')
-  const [os2Parsed, setOs2Parsed] = useState<OS2ConversationResult | null>(null)
-  const [os2CopyState, setOs2CopyState] = useState<'idle' | 'copied'>('idle')
   // thread state
   const [replyText, setReplyText] = useState('')
   const [initChannel, setInitChannel] = useState<'リプ' | 'DM'>('リプ')
-  const [threadOs2Output, setThreadOs2Output] = useState('')
-  const [threadOs2Parsed, setThreadOs2Parsed] = useState<OS2ConversationResult | null>(null)
-  const [threadOs2CopyState, setThreadOs2CopyState] = useState<'idle' | 'copied'>('idle')
+  const [dmOutput, setDmOutput] = useState('')
+  const [dmParsed, setDmParsed] = useState<DMGenerationResult | null>(null)
+  const [dmCopyState, setDmCopyState] = useState<'idle' | 'copied'>('idle')
+  const [os2CpOutput, setOs2CpOutput] = useState('')
+  const [os2CpParsed, setOs2CpParsed] = useState<OS2CheckpointResult | null>(null)
+  const [os2CpCopyState, setOs2CpCopyState] = useState<'idle' | 'copied'>('idle')
+  const [showOs2Cp, setShowOs2Cp] = useState(false)
   const [draftText, setDraftText] = useState('')
   const [draftChannel, setDraftChannel] = useState<'リプ' | 'DM'>('リプ')
   const [addingReply, setAddingReply] = useState(false)
@@ -1218,26 +1444,45 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setRecordingReaction(false)
     setSelectedReaction(null)
     setReactionNote('')
-    setOs2Output('')
-    setOs2Parsed(null)
+    setDmOutput('')
+    setDmParsed(null)
   }
 
-  async function handleCopyThreadOs2Prompt() {
+  async function handleCopyDMPrompt() {
+    if (!prompts.DM) return
+    const prompt = buildDMPrompt(pipelineItem, touch, prompts.DM)
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setDmCopyState('copied')
+      setTimeout(() => setDmCopyState('idle'), 2000)
+    } catch {
+      setDmCopyState('idle')
+    }
+  }
+
+  function handleParseDMOutput() {
+    const parsed = parseDMOutput(dmOutput)
+    if (!parsed) return
+    setDmParsed(parsed)
+    if (parsed.os2Recommended) setShowOs2Cp(true)
+  }
+
+  async function handleCopyOs2CpPrompt() {
     if (!prompts.OS2) return
     const prompt = buildOS2ConversationPrompt(pipelineItem, touch, prompts.OS2)
     try {
       await navigator.clipboard.writeText(prompt)
-      setThreadOs2CopyState('copied')
-      setTimeout(() => setThreadOs2CopyState('idle'), 2000)
+      setOs2CpCopyState('copied')
+      setTimeout(() => setOs2CpCopyState('idle'), 2000)
     } catch {
-      setThreadOs2CopyState('idle')
+      setOs2CpCopyState('idle')
     }
   }
 
-  function handleParseThreadOs2() {
-    const parsed = parseOS2Output(threadOs2Output)
+  function handleParseOs2Cp() {
+    const parsed = parseOS2CheckpointOutput(os2CpOutput)
     if (!parsed) return
-    setThreadOs2Parsed(parsed)
+    setOs2CpParsed(parsed)
   }
 
   function handleAddSelfTurn() {
@@ -1250,13 +1495,19 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       channel: draftChannel,
       sentStatus: 'sent',
       sentAt: new Date().toISOString(),
-      ...(threadOs2Parsed ? {
-        os2Judgment: threadOs2Parsed.judgment,
-        os2SuggestedA: threadOs2Parsed.suggestedA,
-        os2SuggestedB: threadOs2Parsed.suggestedB,
-        os2NextAction: threadOs2Parsed.nextAction,
-        os2Warning: threadOs2Parsed.warning,
-        os2RawOutput: threadOs2Parsed.rawOutput,
+      ...(dmParsed ? {
+        dmConversationState: dmParsed.conversationState,
+        dmSuggestedA: dmParsed.suggestedA,
+        dmSuggestedB: dmParsed.suggestedB,
+        dmNextAim: dmParsed.nextAim,
+        dmOs2Recommended: dmParsed.os2Recommended,
+        dmRawOutput: dmParsed.rawOutput,
+      } : {}),
+      ...(os2CpParsed ? {
+        os2Judgment: os2CpParsed.judgment,
+        os2NextAction: os2CpParsed.nextAction,
+        os2Warning: os2CpParsed.warning,
+        os2RawOutput: os2CpParsed.rawOutput,
       } : {}),
     }
     const isRep = draftChannel === 'リプ'
@@ -1266,23 +1517,26 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       repExchangeCount: isRep ? (touch.repExchangeCount || 0) + 1 : touch.repExchangeCount,
       dmExchangeCount: !isRep ? (touch.dmExchangeCount || 0) + 1 : touch.dmExchangeCount,
       status: 'awaiting_reaction',
-      ...(threadOs2Parsed ? {
-        os2Judgment: threadOs2Parsed.judgment,
-        os2NextAction: threadOs2Parsed.nextAction,
+      ...(os2CpParsed ? {
+        os2Judgment: os2CpParsed.judgment,
+        os2NextAction: os2CpParsed.nextAction,
       } : {}),
     }
     const pipelineUpdates: Partial<PipelineItem> = {}
-    if (threadOs2Parsed) {
-      pipelineUpdates.judgment = threadOs2Parsed.judgment || null
-      pipelineUpdates.nextAction = threadOs2Parsed.nextAction || null
-      if (threadOs2Parsed.judgment === '前進') {
+    if (os2CpParsed) {
+      pipelineUpdates.judgment = os2CpParsed.judgment || null
+      pipelineUpdates.nextAction = os2CpParsed.nextAction || null
+      if (os2CpParsed.judgment === '前進') {
         pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
       }
     }
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setDraftText('')
-    setThreadOs2Output('')
-    setThreadOs2Parsed(null)
+    setDmOutput('')
+    setDmParsed(null)
+    setOs2CpOutput('')
+    setOs2CpParsed(null)
+    setShowOs2Cp(false)
     setDraftChannel(pipelineItem.currentStep === 'S1' ? 'リプ' : 'DM')
   }
 
@@ -1490,104 +1744,181 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
               })}
             </div>
 
-            {/* OS② section (when last turn is 相手) */}
+            {/* DM文生成OSセクション（最終ターンが相手のとき常に表示） */}
             {showOS2Section && (
               <div className="mx-3 mb-3 flex flex-col gap-2">
+                {/* DM文生成 */}
                 <button
-                  className={`btn-sec text-xs py-2 justify-center ${threadOs2CopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                  onClick={handleCopyThreadOs2Prompt}
+                  className={`w-full py-2.5 text-sm font-bold rounded-xl border-2 transition ${
+                    dmCopyState === 'copied'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                      : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                  onClick={handleCopyDMPrompt}
                 >
-                  <i className={`fa-solid ${threadOs2CopyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1 text-indigo-500`} />
-                  {threadOs2CopyState === 'copied' ? '✓ コピーしました' : 'OS②プロンプトをコピー'}
+                  <i className={`fa-solid ${dmCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1.5`} />
+                  {dmCopyState === 'copied' ? '✓ コピーしました' : '📋 DM文生成プロンプトをコピー'}
                 </button>
+                <p className="text-[10px] text-slate-400 text-center">↓ Claude/ChatGPT等で実行 → 出力を貼る</p>
                 <textarea
                   rows={3}
                   className="input-base cs text-xs resize-y"
-                  placeholder="AI出力をここに貼り付け（【判定】〜【今やってはいけないこと】まで）"
-                  value={threadOs2Output}
-                  onChange={e => setThreadOs2Output(e.target.value)}
+                  placeholder="AI出力をここに貼り付け（===DM_START=== 〜 ===DM_END===）"
+                  value={dmOutput}
+                  onChange={e => setDmOutput(e.target.value)}
                 />
                 <button
                   className="btn-primary text-xs py-2 justify-center"
                   style={{ background: '#4f46e5' }}
-                  onClick={handleParseThreadOs2}
-                  disabled={!threadOs2Output.trim()}
+                  onClick={handleParseDMOutput}
+                  disabled={!dmOutput.trim()}
                 >
-                  <i className="fa-solid fa-bolt mr-1" />返信案を取り込む
+                  <i className="fa-solid fa-bolt mr-1" />取り込む
                 </button>
 
-                {threadOs2Parsed && (
+                {dmParsed && (
                   <div className="flex flex-col gap-2">
-                    <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex flex-col gap-1.5 text-xs">
-                      <p className={`font-bold ${
-                        threadOs2Parsed.judgment === '前進' ? 'text-violet-700' :
-                        threadOs2Parsed.judgment === 'クローズ' ? 'text-rose-600' :
-                        'text-slate-600'
-                      }`}>OS②判定：{threadOs2Parsed.judgment}</p>
-                      {threadOs2Parsed.nextAction && <p className="text-slate-600">次アクション：{threadOs2Parsed.nextAction}</p>}
-                      {threadOs2Parsed.warning && <p className="text-rose-600 text-[11px]">NG: {threadOs2Parsed.warning}</p>}
+                    {/* 会話状態バッジ */}
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-slate-400 shrink-0">会話状態</span>
+                      <span className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
+                        dmParsed.conversationState === '質問あり' ? 'bg-emerald-100 text-emerald-700' :
+                        dmParsed.conversationState === 'クローズ型' ? 'bg-rose-100 text-rose-700' :
+                        'bg-amber-100 text-amber-700'
+                      }`}>{dmParsed.conversationState}</span>
                     </div>
 
-                    {/* 返信案A/B */}
-                    {(threadOs2Parsed.suggestedA || threadOs2Parsed.suggestedB) && (
+                    {/* 提案文A/B */}
+                    {(dmParsed.suggestedA || dmParsed.suggestedB) && (
                       <div className="flex flex-col gap-1.5">
-                        {threadOs2Parsed.suggestedA && (
+                        {dmParsed.suggestedA && (
                           <div className="bg-violet-50 border border-violet-100 rounded-xl p-2.5 flex items-start gap-2">
-                            <span className="text-[10px] font-bold text-violet-600 shrink-0 mt-0.5">案A</span>
-                            <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{threadOs2Parsed.suggestedA}</p>
+                            <span className="text-[10px] font-bold text-violet-600 shrink-0 mt-0.5">A</span>
+                            <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{dmParsed.suggestedA}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-violet-600 border border-violet-300 rounded-lg px-2 py-1 hover:bg-violet-100 transition min-h-[28px]"
-                              onClick={() => { setDraftText(threadOs2Parsed.suggestedA); setDraftChannel('リプ') }}
+                              onClick={() => setDraftText(dmParsed.suggestedA)}
                             >使う</button>
                           </div>
                         )}
-                        {threadOs2Parsed.suggestedB && (
+                        {dmParsed.suggestedB && (
                           <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2">
-                            <span className="text-[10px] font-bold text-indigo-600 shrink-0 mt-0.5">案B</span>
-                            <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{threadOs2Parsed.suggestedB}</p>
+                            <span className="text-[10px] font-bold text-indigo-600 shrink-0 mt-0.5">B</span>
+                            <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{dmParsed.suggestedB}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-indigo-600 border border-indigo-300 rounded-lg px-2 py-1 hover:bg-indigo-100 transition min-h-[28px]"
-                              onClick={() => { setDraftText(threadOs2Parsed.suggestedB); setDraftChannel('DM') }}
+                              onClick={() => setDraftText(dmParsed.suggestedB)}
                             >使う</button>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* 下書き */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[11px] text-slate-500 font-medium">下書き</label>
-                        <div className="flex gap-1 ml-auto">
-                          {(['リプ', 'DM'] as const).map(ch => (
-                            <button
-                              key={ch}
-                              type="button"
-                              className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition ${draftChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-500'}`}
-                              onClick={() => setDraftChannel(ch)}
-                            >
-                              {ch}
-                            </button>
-                          ))}
+                    {/* 次の狙い */}
+                    {dmParsed.nextAim && (
+                      <p className="text-[11px] text-slate-500 px-1">
+                        <span className="font-bold text-slate-600">次の狙い：</span>{dmParsed.nextAim}
+                      </p>
+                    )}
+
+                    {/* OS²推奨バナー */}
+                    {dmParsed.os2Recommended && !showOs2Cp && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
+                        <i className="fa-solid fa-triangle-exclamation text-amber-500 text-sm mt-0.5 shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-amber-700">⚠ OS②判定を推奨</p>
+                          {dmParsed.os2Reason && <p className="text-[11px] text-amber-600 mt-0.5">{dmParsed.os2Reason}</p>}
                         </div>
+                        <button
+                          className="shrink-0 text-[10px] font-bold text-amber-700 border border-amber-300 rounded-lg px-2.5 py-1.5 hover:bg-amber-100 transition min-h-[28px]"
+                          onClick={() => setShowOs2Cp(true)}
+                        >
+                          判定する
+                        </button>
                       </div>
-                      <textarea
-                        rows={3}
-                        className="input-base cs text-xs resize-y"
-                        placeholder="「使う」で入力、または手入力"
-                        value={draftText}
-                        onChange={e => setDraftText(e.target.value)}
-                      />
-                      <button
-                        className="btn-primary text-xs py-2.5 justify-center"
-                        onClick={handleAddSelfTurn}
-                        disabled={!draftText.trim()}
-                      >
-                        <i className="fa-solid fa-paper-plane mr-1" />送信完了として追加
-                      </button>
-                    </div>
+                    )}
                   </div>
                 )}
+
+                {/* OS²チェックポイント（推奨時または手動展開時） */}
+                {showOs2Cp && (
+                  <div className="border border-indigo-100 rounded-xl p-3 flex flex-col gap-2 bg-slate-50">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-bold text-indigo-700 flex-1">🔍 OS②チェックポイント</p>
+                      <button
+                        className="text-[10px] text-slate-400 hover:text-slate-600"
+                        onClick={() => { setShowOs2Cp(false); setOs2CpOutput(''); setOs2CpParsed(null) }}
+                      >閉じる</button>
+                    </div>
+                    <button
+                      className={`btn-sec text-xs py-2 justify-center ${os2CpCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                      onClick={handleCopyOs2CpPrompt}
+                    >
+                      <i className={`fa-solid ${os2CpCopyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1 text-indigo-500`} />
+                      {os2CpCopyState === 'copied' ? '✓ コピーしました' : 'OS②プロンプトをコピー'}
+                    </button>
+                    <textarea
+                      rows={3}
+                      className="input-base cs text-xs resize-y"
+                      placeholder="OS②出力を貼り付け（【判定】〜【今やってはいけないこと】まで）"
+                      value={os2CpOutput}
+                      onChange={e => setOs2CpOutput(e.target.value)}
+                    />
+                    <button
+                      className="btn-primary text-xs py-2 justify-center"
+                      style={{ background: '#4f46e5' }}
+                      onClick={handleParseOs2Cp}
+                      disabled={!os2CpOutput.trim()}
+                    >
+                      <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                    </button>
+                    {os2CpParsed && (
+                      <div className="bg-white border border-indigo-100 rounded-lg p-3 flex flex-col gap-1 text-xs">
+                        <p className={`font-bold ${
+                          os2CpParsed.judgment === '前進' ? 'text-violet-700' :
+                          os2CpParsed.judgment === 'クローズ' ? 'text-rose-600' :
+                          os2CpParsed.judgment === '休眠' ? 'text-slate-500' :
+                          'text-amber-600'
+                        }`}>判定：{os2CpParsed.judgment}</p>
+                        {os2CpParsed.nextAction && <p className="text-slate-600">次アクション：{os2CpParsed.nextAction}</p>}
+                        {os2CpParsed.warning && <p className="text-rose-600 text-[11px]">NG: {os2CpParsed.warning}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 下書き */}
+                <div className="flex flex-col gap-1.5 mt-1">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-slate-500 font-medium">下書き</label>
+                    <div className="flex gap-1 ml-auto">
+                      {(['リプ', 'DM'] as const).map(ch => (
+                        <button
+                          key={ch}
+                          type="button"
+                          className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition ${draftChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-200 text-slate-500'}`}
+                          onClick={() => setDraftChannel(ch)}
+                        >
+                          {ch}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <textarea
+                    rows={3}
+                    className="input-base cs text-xs resize-y"
+                    placeholder="「使う」で入力、または手入力"
+                    value={draftText}
+                    onChange={e => setDraftText(e.target.value)}
+                  />
+                  <button
+                    className="btn-primary text-xs py-2.5 justify-center"
+                    onClick={handleAddSelfTurn}
+                    disabled={!draftText.trim()}
+                  >
+                    <i className="fa-solid fa-paper-plane mr-1" />✈ 送信完了として追加
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1651,7 +1982,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
-            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction === r} onClick={() => { setSelectedReaction(r); setOs2Parsed(null) }} />)}
+            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction === r} onClick={() => { setSelectedReaction(r); setDmParsed(null) }} />)}
           </div>
 
           {/* テキスト返信 → スレッド初期化 */}

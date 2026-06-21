@@ -12,14 +12,20 @@ export interface ConversationTurn {
   text: string;
   timestamp: string;
   channel: 'リプ' | 'DM';
+  sentStatus: 'draft' | 'sent' | 'skipped';
+  sentAt?: string;
+  // DM文生成OS結果（自分ターンのみ）
+  dmConversationState?: string;  // '質問あり' | 'クローズ型' | '深掘り余地あり'
+  dmSuggestedA?: string;
+  dmSuggestedB?: string;
+  dmNextAim?: string;
+  dmOs2Recommended?: boolean;
+  dmRawOutput?: string;
+  // OS²チェックポイント結果（自分ターンのみ・踏んだ場合のみ）
   os2Judgment?: string;
-  os2SuggestedA?: string;
-  os2SuggestedB?: string;
   os2NextAction?: string;
   os2Warning?: string;
   os2RawOutput?: string;
-  sentStatus: 'draft' | 'sent' | 'skipped';
-  sentAt?: string;
 }
 
 export interface Touch {
@@ -45,6 +51,8 @@ export interface Touch {
   editComment?: string;
   improvementSuggestion?: string;
   improvedText?: string;
+  touchMode?: 'post' | 'conversation';
+  threadEntry?: 's1l_promotion' | 's3_direct' | 'log_restore';
   judgedAt?: string;
   threadStatus?: 'inactive' | 'active' | 'closed';
   conversationTurns?: ConversationTurn[];
@@ -276,4 +284,5 @@ export type Prompts = {
   OS2?: string;
   OS3?: string;
   IG_OCR?: string;
+  DM?: string;
 };

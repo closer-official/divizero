@@ -29,50 +29,75 @@ export function buildCaseMd(item: PipelineItem): string {
   md += `---\n\n## タッチ履歴\n\n`
 
   touches.forEach((touch, i) => {
-    md += `### タッチ${i + 1} — ${dateStr(touch.date)}\n\n`
-    md += `**接触した投稿：** ${touch.targetPostText || '—'}\n`
-    md += `**投稿種別：** ${touch.targetPostType}　**対象妥当性：** ${touch.targetValidity}\n\n`
-    if (touch.aiSuggestedText) {
-      md += `**AI提案文：** ${touch.aiSuggestedText}\n`
-    }
-    if (touch.os2ReplyA) {
-      md += `**AI提案文A：** ${touch.os2ReplyA}\n`
-      if (touch.os2ReplyB) md += `**AI提案文B：** ${touch.os2ReplyB}\n`
-    }
-    md += `\n**実際に送った文章：** ${touch.actualSentText || '—'}\n`
-    md += `**変えた理由：** ${touch.editReason || '（なし）'}\n\n`
-    md += `**文面妥当性：** ${touch.messageValidity}`
-    if (touch.judgedAt) md += `（${dateStr(touch.judgedAt)}判定）`
-    md += `\n`
-    if (touch.judgmentReason) md += `**判定理由：** ${touch.judgmentReason}\n`
-    if (touch.editEvaluation) md += `**編集評価：** ${touch.editEvaluation}　${touch.editComment || ''}\n`
-    if (touch.improvementSuggestion && touch.improvementSuggestion !== 'なし') {
-      md += `**改善提案：** ${touch.improvementSuggestion}\n`
-    }
-    if (touch.improvedText && touch.improvedText !== 'なし') {
-      md += `**改善案：** ${touch.improvedText}\n`
-    }
-    md += `\n**相手の反応：** ${touch.reactionType}\n`
-    if (touch.reactionNote) md += `**反応の補足：** ${touch.reactionNote}\n`
-    if (touch.os2Judgment) {
-      md += `\n**OS②判定：** ${touch.os2Judgment}\n`
-      md += `**次アクション：** ${touch.os2NextAction || '—'}\n`
-    }
-    // 会話スレッドをMDに追加
-    if (touch.threadStatus === 'active' && touch.conversationTurns?.length) {
-      md += `\n#### 会話スレッド\n\n`
-      touch.conversationTurns.forEach(turn => {
+    if (touch.touchMode === 'conversation') {
+      // 会話スレッドモード
+      const entryLabel: Record<string, string> = {
+        s1l_promotion: 'S1-L昇格',
+        s3_direct: 'S3直行（IGストーリー）',
+        log_restore: 'ログ復元',
+      }
+      const entryName = touch.threadEntry ? entryLabel[touch.threadEntry] ?? touch.threadEntry : ''
+      md += `### 会話スレッド${i + 1}${entryName ? ` — ${entryName}` : ''}\n\n`
+      ;(touch.conversationTurns ?? []).forEach(turn => {
         const prefix = turn.role === '自分' ? '▶ 自分' : '◀ 相手'
         md += `**${prefix}**（${dateStr(turn.timestamp)}）\n${turn.text}\n\n`
-        if (turn.os2Judgment) {
-          md += `　OS②判定：${turn.os2Judgment} / 次アクション：${turn.os2NextAction || '—'}\n`
-          if (turn.os2SuggestedA) md += `　返信案A：${turn.os2SuggestedA}\n`
-          if (turn.os2SuggestedB) md += `　返信案B：${turn.os2SuggestedB}\n`
-          md += `\n`
+        if (turn.dmSuggestedA) {
+          md += `　DM提案A：${turn.dmSuggestedA}\n`
+          md += `　DM提案B：${turn.dmSuggestedB}\n`
+          md += `　次の狙い：${turn.dmNextAim}\n`
+          if (turn.dmOs2Recommended) md += `　⚠ OS²起動推奨あり\n`
         }
+        if (turn.os2Judgment) {
+          md += `　OS②判定：${turn.os2Judgment} ／ 次アクション：${turn.os2NextAction || '—'}\n`
+        }
+        md += '\n'
       })
+      md += `---\n\n`
+    } else {
+      // 既存の新規投稿タッチモード
+      md += `### タッチ${i + 1} — ${dateStr(touch.date)}\n\n`
+      md += `**接触した投稿：** ${touch.targetPostText || '—'}\n`
+      md += `**投稿種別：** ${touch.targetPostType}　**対象妥当性：** ${touch.targetValidity}\n\n`
+      if (touch.aiSuggestedText) {
+        md += `**AI提案文：** ${touch.aiSuggestedText}\n`
+      }
+      if (touch.os2ReplyA) {
+        md += `**AI提案文A：** ${touch.os2ReplyA}\n`
+        if (touch.os2ReplyB) md += `**AI提案文B：** ${touch.os2ReplyB}\n`
+      }
+      md += `\n**実際に送った文章：** ${touch.actualSentText || '—'}\n`
+      md += `**変えた理由：** ${touch.editReason || '（なし）'}\n\n`
+      md += `**文面妥当性：** ${touch.messageValidity}`
+      if (touch.judgedAt) md += `（${dateStr(touch.judgedAt)}判定）`
+      md += `\n`
+      if (touch.judgmentReason) md += `**判定理由：** ${touch.judgmentReason}\n`
+      if (touch.editEvaluation) md += `**編集評価：** ${touch.editEvaluation}　${touch.editComment || ''}\n`
+      if (touch.improvementSuggestion && touch.improvementSuggestion !== 'なし') {
+        md += `**改善提案：** ${touch.improvementSuggestion}\n`
+      }
+      if (touch.improvedText && touch.improvedText !== 'なし') {
+        md += `**改善案：** ${touch.improvedText}\n`
+      }
+      md += `\n**相手の反応：** ${touch.reactionType}\n`
+      if (touch.reactionNote) md += `**反応の補足：** ${touch.reactionNote}\n`
+      if (touch.os2Judgment) {
+        md += `\n**OS②判定：** ${touch.os2Judgment}\n`
+        md += `**次アクション：** ${touch.os2NextAction || '—'}\n`
+      }
+      // 会話スレッドをMDに追加
+      if (touch.threadStatus === 'active' && touch.conversationTurns?.length) {
+        md += `\n#### 会話スレッド\n\n`
+        touch.conversationTurns.forEach(turn => {
+          const prefix = turn.role === '自分' ? '▶ 自分' : '◀ 相手'
+          md += `**${prefix}**（${dateStr(turn.timestamp)}）\n${turn.text}\n\n`
+          if (turn.os2Judgment) {
+            md += `　OS②判定：${turn.os2Judgment} / 次アクション：${turn.os2NextAction || '—'}\n`
+            md += `\n`
+          }
+        })
+      }
+      md += `\n---\n\n`
     }
-    md += `\n---\n\n`
   })
 
   // OS②判定履歴テーブル
