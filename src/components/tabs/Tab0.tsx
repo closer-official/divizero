@@ -33,12 +33,22 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     const prompt = prompts.OS0
     if (!prompt) { toast.show('プロンプトを読み込み中です'); return }
     const excluded = data.excluded || []
-    let excludedSection = ''
-    if (excluded.length > 0) {
-      const handles = excluded.map(e => e.handle).filter(Boolean).join(', ')
-      excludedSection = `\n\n【除外済みアカウント（再判定不要）】\n以下のアカウントは過去に接触済み・SKIP・除外済みです。▼判定一覧に含まれていた場合は無条件で✕（除外済み）としてください：\n${handles}`
+    const handles = excluded.map(e => e.handle).filter(Boolean).join('\n')
+    let full: string
+    const splitMarker = '\n\n【除外済みアカウント'
+    const splitPoint = prompt.indexOf(splitMarker)
+    if (splitPoint !== -1) {
+      // v2: 入力データを除外セクションの前に挿入し、ハンドルを末尾に追記
+      const beforeExcluded = prompt.slice(0, splitPoint)
+      const excludedPart = prompt.slice(splitPoint)
+      full = beforeExcluded + (input ? '\n' + input : '') + excludedPart + (handles ? '\n' + handles : '')
+    } else {
+      // 旧バージョン: セクションごと末尾に追記
+      const excludedSection = handles
+        ? `\n\n【除外済みアカウント（再判定不要）】\n以下のアカウントは過去に接触済み・SKIP・除外済みです。▼判定一覧に含まれていた場合は無条件で✕（除外済み）としてください：\n${handles}`
+        : ''
+      full = prompt + excludedSection + (input ? '\n' + input : '')
     }
-    const full = prompt + excludedSection + (input ? '\n' + input : '')
     copyText(full, () => toast.show('OS⓪プロンプトをコピーしました。AIにそのまま貼り付けてください'))
   }
 

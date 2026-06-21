@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/22 OS0v2上書き・UT候補バッジ追加・OS精度検証アラート実装";
+export const BUILD_LABEL = "06/22 OS0_latest v2上書き・プロンプト組み立てロジック修正";
