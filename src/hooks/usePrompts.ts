@@ -13,6 +13,7 @@ export async function loadPrompts(): Promise<Prompts> {
     DM: '/prompts/OS_DM文生成_latest.md',
     LOG_OCR: '/prompts/OS_会話ログOCR_latest.md',
     S1_ACTION: '/prompts/OS_S1リアクション後行動判定_latest.md',
+    DM_JUDGE: '/prompts/OS_DM文面判定_latest.md',
   };
   const entries = await Promise.all(
     Object.entries(files).map(async ([key, path]) => {

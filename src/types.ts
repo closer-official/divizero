@@ -27,6 +27,11 @@ export interface ConversationTurn {
   os2NextAction?: string;
   os2Warning?: string;
   os2RawOutput?: string;
+  // DM文面判定結果（自分ターンのみ）
+  dmMsgJudgment?: string;          // ◯ / △ / ✕
+  dmMsgJudgmentReason?: string;
+  dmMsgImprovementSuggestion?: string;
+  dmMsgImprovedText?: string;
 }
 
 export interface Touch {
@@ -294,4 +299,5 @@ export type Prompts = {
   DM?: string;
   LOG_OCR?: string;
   S1_ACTION?: string;
+  DM_JUDGE?: string;
 };

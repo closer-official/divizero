@@ -10,6 +10,7 @@ import { buildDMPrompt, parseDMOutput, type DMGenerationResult } from '../../uti
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
+import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import {
   getActiveNotifications, setDismissedUntil, createPendingAnalysis,
@@ -1619,6 +1620,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [s1ActionError, setS1ActionError] = useState<string | null>(null)
   const [s1ReplyACopyState, setS1ReplyACopyState] = useState<'idle' | 'copied'>('idle')
   const [s1ReplyBCopyState, setS1ReplyBCopyState] = useState<'idle' | 'copied'>('idle')
+  // DM文面判定
+  const [dmJudgTurnId, setDmJudgTurnId] = useState<string | null>(null)
+  const [dmJudgOutput, setDmJudgOutput] = useState('')
+  const [dmJudgCopyState, setDmJudgCopyState] = useState<'idle' | 'copied'>('idle')
+  const [dmJudgError, setDmJudgError] = useState<string | null>(null)
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1773,6 +1779,40 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       reactionReplyA: undefined,
       reactionReplyB: undefined,
     }, {})
+  }
+
+  function handleCopyDMJudgPrompt(turnId: string) {
+    if (!prompts.DM_JUDGE) return
+    const turns = touch.conversationTurns || []
+    const turnIndex = turns.findIndex(t => t.id === turnId)
+    if (turnIndex < 0) return
+    const prompt = buildDMJudgmentPrompt(pipelineItem, touch, turnIndex, prompts.DM_JUDGE)
+    copyText(prompt, () => {
+      setDmJudgCopyState('copied')
+      setDmJudgTurnId(turnId)
+      setTimeout(() => setDmJudgCopyState('idle'), 2000)
+    })
+  }
+
+  function handleParseDMJudg() {
+    setDmJudgError(null)
+    const parsed = parseDMJudgmentOutput(dmJudgOutput)
+    if (!parsed) {
+      setDmJudgError('AI出力の形式が認識できませんでした。===DM_JUDGMENT_START=== 〜 ===DM_JUDGMENT_END=== を含めて貼り付けてください。')
+      return
+    }
+    if (!dmJudgTurnId) return
+    const turns = touch.conversationTurns || []
+    const updatedTurns = turns.map(t => t.id === dmJudgTurnId ? {
+      ...t,
+      dmMsgJudgment: parsed.judgment,
+      dmMsgJudgmentReason: parsed.reason,
+      dmMsgImprovementSuggestion: parsed.improvementSuggestion,
+      dmMsgImprovedText: parsed.improvedText,
+    } : t)
+    onReactionSaved(touch.id, { conversationTurns: updatedTurns }, {})
+    setDmJudgOutput('')
+    setDmJudgTurnId(null)
   }
 
   async function handleCopyDMPrompt() {
@@ -2230,6 +2270,72 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                       <div className="text-[10px] text-indigo-500 max-w-[85%] text-right">
                         → {turn.os2Judgment}
                         {turn.os2Warning && <span className="text-rose-500 ml-1">｜NG: {turn.os2Warning}</span>}
+                      </div>
+                    )}
+                    {/* DM文面判定 */}
+                    {isSelf && !!touch.threadEntry && (
+                      <div className="w-full flex flex-col gap-1 items-end">
+                        {turn.dmMsgJudgment ? (
+                          <>
+                            <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              turn.dmMsgJudgment === '◯' ? 'bg-emerald-100 text-emerald-700' :
+                              turn.dmMsgJudgment === '△' ? 'bg-amber-100 text-amber-700' :
+                              'bg-rose-100 text-rose-700'
+                            }`}>
+                              文{turn.dmMsgJudgment}
+                            </div>
+                            {turn.dmMsgJudgmentReason && (
+                              <p className="text-[10px] text-slate-500 max-w-[85%] text-right">{turn.dmMsgJudgmentReason}</p>
+                            )}
+                            {turn.dmMsgImprovedText && turn.dmMsgImprovedText !== 'なし' && (
+                              <div className="max-w-[85%] bg-emerald-50 border border-emerald-100 rounded-xl px-2.5 py-2 text-[10px] text-emerald-800 text-right">
+                                <p className="font-bold mb-0.5">改善案</p>
+                                <p className="leading-relaxed whitespace-pre-wrap">{turn.dmMsgImprovedText}</p>
+                              </div>
+                            )}
+                          </>
+                        ) : dmJudgTurnId === turn.id ? (
+                          <div className="w-full flex flex-col gap-1.5 mt-1">
+                            <button
+                              className={`w-full text-xs py-1.5 px-3 rounded-lg font-semibold border transition ${dmJudgCopyState === 'copied' ? 'border-emerald-300 text-emerald-700 bg-emerald-50' : 'border-indigo-300 text-indigo-700 bg-white hover:bg-indigo-50'}`}
+                              onClick={() => handleCopyDMJudgPrompt(turn.id)}
+                            >
+                              <i className={`fa-solid ${dmJudgCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                              {dmJudgCopyState === 'copied' ? '✓ コピーしました' : '📋 文面判定プロンプトをコピー'}
+                            </button>
+                            <textarea
+                              rows={2}
+                              className="input-base cs text-xs resize-y"
+                              placeholder="AI出力を貼り付け（===DM_JUDGMENT_START=== 〜 ===DM_JUDGMENT_END===）"
+                              value={dmJudgOutput}
+                              onChange={e => { setDmJudgOutput(e.target.value); setDmJudgError(null) }}
+                            />
+                            {dmJudgError && <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">{dmJudgError}</p>}
+                            <div className="flex gap-1.5">
+                              <button
+                                className="btn-sec text-xs py-1.5 flex-1"
+                                onClick={() => { setDmJudgTurnId(null); setDmJudgOutput(''); setDmJudgError(null) }}
+                              >
+                                キャンセル
+                              </button>
+                              <button
+                                className="btn-primary text-xs py-1.5 flex-1 justify-center"
+                                style={{ background: '#4f46e5' }}
+                                disabled={!dmJudgOutput.trim()}
+                                onClick={handleParseDMJudg}
+                              >
+                                <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            className="text-[10px] text-slate-400 hover:text-indigo-600 border border-slate-200 hover:border-indigo-300 rounded-lg px-2 py-0.5 transition"
+                            onClick={() => { setDmJudgTurnId(turn.id); setDmJudgOutput(''); setDmJudgCopyState('idle'); setDmJudgError(null) }}
+                          >
+                            文章を判定する
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>

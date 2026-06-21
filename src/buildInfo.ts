@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 DM文生成ステップ自動移行・S4移行シグナル検出";
+export const BUILD_LABEL = "06/21 DM文面判定OS追加・送信後の文章評価機能";
