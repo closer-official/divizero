@@ -6,6 +6,8 @@ export interface S1ActionResult {
   reason: string
   nextStep: string
   warning: string
+  replyA?: string
+  replyB?: string
 }
 
 export function buildS1ActionPrompt(
@@ -48,10 +50,15 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
   const judgment = pick('判定')
   if (!judgment) return null
 
+  const replyA = pick('返信案A')
+  const replyB = pick('返信案B')
+
   return {
     judgment,
     reason: pick('理由'),
     nextStep: pick('推奨アクション'),
     warning: pick('警告'),
+    replyA: replyA && replyA !== 'なし' ? replyA : undefined,
+    replyB: replyB && replyB !== 'なし' ? replyB : undefined,
   }
 }

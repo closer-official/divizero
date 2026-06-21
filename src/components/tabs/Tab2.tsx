@@ -928,6 +928,17 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }))
   }
 
+  function handleAddNewTouch(touch: Touch) {
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => p.id === item.id
+        ? { ...p, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
+        : p
+      ),
+    }))
+    toast.show(touch.threadEntry === 's3_direct' ? 'DM送信を記録しました' : 'タッチを追加しました（反応待ち）')
+  }
+
   function handleDelete() {
     confirm.show('削除確認', `「${item.accountName}」をパイプラインから削除しますか？`, () => {
       saveData(prev => {
@@ -1057,6 +1068,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     onDelete={() => handleDeleteTouch(touch.id)}
                     onReactionSaved={handleReactionSaved}
                     onGoToTab3={onGoToTab3}
+                    onAddNewTouch={handleAddNewTouch}
                   />
                 ))}
               </div>
@@ -1569,9 +1581,10 @@ interface TouchItemProps {
   onDelete: () => void
   onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
   onGoToTab3: () => void
+  onAddNewTouch: (touch: Touch) => void
 }
 
-function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3 }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
@@ -1598,6 +1611,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [s1ActionCopyState, setS1ActionCopyState] = useState<'idle' | 'copied'>('idle')
   const [s1ActionInputOpen, setS1ActionInputOpen] = useState(false)
   const [s1ActionError, setS1ActionError] = useState<string | null>(null)
+  const [s1ReplyACopyState, setS1ReplyACopyState] = useState<'idle' | 'copied'>('idle')
+  const [s1ReplyBCopyState, setS1ReplyBCopyState] = useState<'idle' | 'copied'>('idle')
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1698,9 +1713,56 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       reactionJudgment: parsed.judgment,
       reactionNextStep: parsed.nextStep,
       reactionWarning: parsed.warning,
+      reactionReplyA: parsed.replyA,
+      reactionReplyB: parsed.replyB,
     }, {})
     setS1ActionOutput('')
     setS1ActionInputOpen(false)
+  }
+
+  function handleUseS1Reply(text: string, judgment: string, variant: 'A' | 'B') {
+    navigator.clipboard.writeText(text).catch(() => {})
+    if (variant === 'A') {
+      setS1ReplyACopyState('copied')
+      setTimeout(() => setS1ReplyACopyState('idle'), 2000)
+    } else {
+      setS1ReplyBCopyState('copied')
+      setTimeout(() => setS1ReplyBCopyState('idle'), 2000)
+    }
+    const isDM = judgment === 'DM移行'
+    const now = new Date().toISOString()
+    const newTouch: Touch = isDM
+      ? {
+          id: uid(), date: now,
+          targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
+          aiSuggestedText: '', actualSentText: text, editReason: '',
+          messageValidity: '未判定',
+          status: 'reacted',
+          reactionType: '未記録',
+          reactionNote: '',
+          touchMode: 'conversation',
+          threadEntry: 's3_direct',
+          threadStatus: 'active',
+          conversationTurns: [{
+            id: uid(), role: '自分', text,
+            timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+          } as ConversationTurn],
+          dmExchangeCount: 0,
+          repExchangeCount: 0,
+        }
+      : {
+          id: uid(), date: now,
+          targetPostText: touch.reactionNote ? touch.reactionNote.slice(0, 60) : '（相手の返信）',
+          targetPostRawText: touch.reactionNote || undefined,
+          targetPostType: '通常投稿',
+          targetValidity: '◯',
+          aiSuggestedText: '', actualSentText: text, editReason: '',
+          messageValidity: '未判定',
+          status: 'awaiting_reaction',
+          reactionType: '未記録',
+          reactionNote: '',
+        }
+    onAddNewTouch(newTouch)
   }
 
   async function handleCopyDMPrompt() {
@@ -1920,7 +1982,14 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         {/* S1行動判定セクション */}
         {!isAwaiting && !touch.threadEntry && (() => {
           const saved = touch.reactionJudgment
-          const result = s1ActionParsed || (saved ? { judgment: saved, nextStep: touch.reactionNextStep || '', warning: touch.reactionWarning || '', reason: '' } : null)
+          const result = s1ActionParsed || (saved ? {
+            judgment: saved,
+            nextStep: touch.reactionNextStep || '',
+            warning: touch.reactionWarning || '',
+            reason: '',
+            replyA: touch.reactionReplyA,
+            replyB: touch.reactionReplyB,
+          } : null)
           const judgmentColor = (j: string) => {
             if (j === '公開リプ継続') return 'bg-violet-50 border-violet-200 text-violet-800'
             if (j === 'DM移行') return 'bg-indigo-50 border-indigo-200 text-indigo-800'
@@ -1929,16 +1998,48 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             if (j === 'クローズ') return 'bg-rose-50 border-rose-200 text-rose-700'
             return 'bg-slate-50 border-slate-200 text-slate-700'
           }
+          const hasReplies = (result?.judgment === '公開リプ継続' || result?.judgment === 'DM移行') && (result?.replyA || result?.replyB)
           return (
             <div className="mt-1 flex flex-col gap-1.5">
               {result ? (
-                <div className={`rounded-xl border px-3 py-2 text-xs flex flex-col gap-1 ${judgmentColor(result.judgment)}`}>
-                  <p className="font-bold">→ {result.judgment}</p>
-                  {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
-                  {result.warning && result.warning !== 'なし' && (
-                    <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
+                <>
+                  <div className={`rounded-xl border px-3 py-2 text-xs flex flex-col gap-1 ${judgmentColor(result.judgment)}`}>
+                    <p className="font-bold">→ {result.judgment}</p>
+                    {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
+                    {result.warning && result.warning !== 'なし' && (
+                      <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
+                    )}
+                  </div>
+                  {hasReplies && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">送る文章</p>
+                      {result.replyA && (
+                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
+                          <p className="text-[10px] font-bold text-violet-500">案A</p>
+                          <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">{result.replyA}</p>
+                          <button
+                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyACopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
+                            onClick={() => handleUseS1Reply(result.replyA!, result.judgment, 'A')}
+                          >
+                            {s1ReplyACopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
+                          </button>
+                        </div>
+                      )}
+                      {result.replyB && (
+                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
+                          <p className="text-[10px] font-bold text-violet-500">案B</p>
+                          <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">{result.replyB}</p>
+                          <button
+                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyBCopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
+                            onClick={() => handleUseS1Reply(result.replyB!, result.judgment, 'B')}
+                          >
+                            {s1ReplyBCopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               ) : (
                 <div className="flex flex-col gap-1.5">
                   <button
