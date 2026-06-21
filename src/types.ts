@@ -254,7 +254,7 @@ export interface LogEntry {
 
 export interface Analysis {
   id: string;
-  type: 'case_pattern' | 'touch_trend' | 'emergency_alert';
+  type: 'case_pattern' | 'touch_trend' | 'emergency_alert' | 'os_accuracy_alert';
   triggeredAt: string;
   status: 'pending' | 'prompted' | 'completed';
   promptedAt?: string;
@@ -275,6 +275,10 @@ export interface Analysis {
   trendComment?: string;
   alertDetail?: string;
   rawOutput?: string;
+  // OS精度検証フィールド
+  falsePositiveRate?: string;
+  falseNegativeRate?: string;
+  osAccuracyVerdict?: string;
 }
 
 export interface AppData {

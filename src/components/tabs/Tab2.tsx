@@ -358,8 +358,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       await navigator.clipboard.writeText(prompt)
       setModalCopyState('copied')
       setTimeout(() => setModalCopyState('idle'), 2000)
-      // Create pending analysis record
-      const pending = createPendingAnalysis(data, modalNotif.type, modalNotif.count)
+      // os_accuracy_alert は touch_trend として記録
+      const recordType = modalNotif.type === 'os_accuracy_alert' ? 'touch_trend' : modalNotif.type
+      const pending = createPendingAnalysis(data, recordType, modalNotif.count)
       saveData(prev => ({ ...prev, analyses: [...(prev.analyses || []), pending] }))
     } catch {
       setModalParseError('プロンプトのコピーに失敗しました。')
@@ -376,16 +377,18 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       setModalParseError('AI出力の形式が認識できませんでした。開始タグから終了タグまで含めて貼り付けてください。')
       return
     }
+    // os_accuracy_alert は touch_trend として保存
+    const recordType = modalNotif.type === 'os_accuracy_alert' ? 'touch_trend' : modalNotif.type
     saveData(prev => {
       const analyses = [...(prev.analyses || [])]
-      const pendingIdx = [...analyses].reverse().findIndex(a => a.type === modalNotif.type && a.status !== 'completed')
+      const pendingIdx = [...analyses].reverse().findIndex(a => a.type === recordType && a.status !== 'completed')
       const now = new Date().toISOString()
       if (pendingIdx >= 0) {
         const realIdx = analyses.length - 1 - pendingIdx
         analyses[realIdx] = { ...analyses[realIdx], ...parsed, status: 'completed', completedAt: now }
       } else {
         analyses.push({
-          id: uid(), type: modalNotif.type, triggeredAt: now,
+          id: uid(), type: recordType, triggeredAt: now,
           status: 'completed', completedAt: now, targetCount: modalNotif.count,
           ...parsed,
         } as Analysis)
@@ -425,14 +428,24 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               className={`border rounded-xl p-3 flex flex-col gap-2 text-xs ${
                 notif.severity === 'critical'
                   ? 'bg-red-50 border-red-200'
-                  : 'bg-violet-50 border-violet-200'
+                  : notif.type === 'os_accuracy_alert'
+                    ? 'bg-amber-50 border-amber-200'
+                    : 'bg-violet-50 border-violet-200'
               }`}
             >
               <div className="flex items-start gap-2">
                 <span className="text-base shrink-0">{notif.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <p className={`font-bold ${notif.severity === 'critical' ? 'text-red-700' : 'text-violet-700'}`}>{notif.label}</p>
-                  <p className={`mt-0.5 ${notif.severity === 'critical' ? 'text-red-600' : 'text-violet-600'}`}>{notif.message}</p>
+                  <p className={`font-bold ${
+                    notif.severity === 'critical' ? 'text-red-700'
+                    : notif.type === 'os_accuracy_alert' ? 'text-amber-700'
+                    : 'text-violet-700'
+                  }`}>{notif.label}</p>
+                  <p className={`mt-0.5 ${
+                    notif.severity === 'critical' ? 'text-red-600'
+                    : notif.type === 'os_accuracy_alert' ? 'text-amber-700'
+                    : 'text-violet-600'
+                  }`}>{notif.message}</p>
                 </div>
               </div>
               <div className="flex gap-2 justify-end">
@@ -440,10 +453,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   <button className="btn-sec text-[11px] py-1 px-3" onClick={() => handleDismiss(notif.type)}>あとで</button>
                 )}
                 <button
-                  className={`text-[11px] py-1 px-3 rounded-lg font-semibold ${notif.severity === 'critical' ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-violet-600 text-white hover:bg-violet-700'} transition`}
+                  className={`text-[11px] py-1 px-3 rounded-lg font-semibold ${
+                    notif.severity === 'critical' ? 'bg-red-600 text-white hover:bg-red-700'
+                    : notif.type === 'os_accuracy_alert' ? 'bg-amber-500 text-white hover:bg-amber-600'
+                    : 'bg-violet-600 text-white hover:bg-violet-700'
+                  } transition`}
                   onClick={() => handleOpenModal(notif)}
                 >
-                  {notif.severity === 'critical' ? '確認する →' : '分析する →'}
+                  {notif.severity === 'critical' ? '確認する →' : '確認する →'}
                 </button>
               </div>
             </div>
@@ -562,9 +579,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       {modalNotif && (
         <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            <div className={`p-4 flex items-center gap-2 ${modalNotif.severity === 'critical' ? 'bg-red-50' : 'bg-violet-50'}`}>
+            <div className={`p-4 flex items-center gap-2 ${
+              modalNotif.severity === 'critical' ? 'bg-red-50'
+              : modalNotif.type === 'os_accuracy_alert' ? 'bg-amber-50'
+              : 'bg-violet-50'
+            }`}>
               <span className="text-lg">{modalNotif.icon}</span>
-              <p className={`font-bold text-sm flex-1 ${modalNotif.severity === 'critical' ? 'text-red-700' : 'text-violet-700'}`}>{modalNotif.label}</p>
+              <p className={`font-bold text-sm flex-1 ${
+                modalNotif.severity === 'critical' ? 'text-red-700'
+                : modalNotif.type === 'os_accuracy_alert' ? 'text-amber-700'
+                : 'text-violet-700'
+              }`}>{modalNotif.label}</p>
               <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setModalNotif(null); setEmergencyDetail(null) }}>
                 <i className="fa-solid fa-xmark" />
               </button>
@@ -586,9 +611,15 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 </>
               )}
 
-              {/* case_pattern / touch_trend: 分析フロー */}
+              {/* case_pattern / touch_trend / os_accuracy_alert: 分析フロー */}
               {modalNotif.type !== 'emergency_alert' && (
                 <>
+                  {modalNotif.type === 'os_accuracy_alert' && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+                      <p className="font-bold text-amber-700 mb-0.5">⚠️ OS精度アラートが発生しています</p>
+                      <p>このプロンプトを分析AIに貼り付け、「疑義対象OS」欄に注目してください。出力されたOSファイル名をもとに、該当OSのMDファイルを提示してルール見直しの意見を求めてください。</p>
+                    </div>
+                  )}
                   <div className="flex flex-col gap-1 text-xs text-slate-500">
                     <span>対象件数：{modalNotif.count}件</span>
                   </div>

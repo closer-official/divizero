@@ -207,9 +207,15 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
               ) : (
                 screenings.map(item => {
                   const profileUrl = buildProfileUrl(item.handle, item.channel)
-                  const verdictBadge = item.verdict === '◯【提携】'
-                    ? <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700">提携</span>
-                    : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">通過</span>
+                  const isTeikei = item.verdict.includes('提携')
+                  const isUT = item.verdict.includes('UT候補')
+                  const verdictBadge = (
+                    <div className="flex gap-1 shrink-0">
+                      {isTeikei && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700">提携</span>}
+                      {isUT && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">UT</span>}
+                      {!isTeikei && !isUT && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">通過</span>}
+                    </div>
+                  )
                   return (
                     <div key={item.id} className="border-b border-slate-100 py-3 px-4 hover:bg-slate-50 transition flex items-center gap-2">
                       {verdictBadge}

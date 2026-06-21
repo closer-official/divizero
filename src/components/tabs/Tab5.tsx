@@ -13,6 +13,7 @@ const TYPE_LABELS: Record<string, string> = {
   case_pattern: '📊 失注パターン分析',
   touch_trend: '📝 文面傾向分析',
   emergency_alert: '🔴 対象選び警告',
+  os_accuracy_alert: '⚠️ OS精度アラート',
 }
 const STATUS_LABELS: Record<string, string> = {
   pending: '未実施',
@@ -89,6 +90,16 @@ function AnalysisCard({ a, defaultOpen }: { a: Analysis; defaultOpen?: boolean }
 
           {a.type === 'emergency_alert' && a.alertDetail && (
             <pre className="text-[11px] text-slate-700 bg-slate-50 rounded-lg p-3 whitespace-pre-wrap leading-relaxed border border-slate-200">{a.alertDetail}</pre>
+          )}
+
+          {a.type === 'os_accuracy_alert' && (
+            <div className="flex flex-col gap-2">
+              {a.falsePositiveRate && <Row label="偽陽性（文面◯→無反応）" value={a.falsePositiveRate} />}
+              {a.falseNegativeRate && <Row label="偽陰性（文面✕→返信）" value={a.falseNegativeRate} />}
+              {a.osAccuracyVerdict && <Row label="OS精度判定" value={a.osAccuracyVerdict} />}
+              {a.trendComment && <Block label="傾向コメント" value={a.trendComment} />}
+              {a.nextFocusPoint && <Row label="次回注目ポイント" value={a.nextFocusPoint} />}
+            </div>
           )}
 
           {a.rawOutput && (

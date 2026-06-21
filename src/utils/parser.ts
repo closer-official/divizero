@@ -146,12 +146,14 @@ export function parseOS0(text: string, channel: string) {
     if (passingHandles.length > 0) {
       return passingHandles.map(raw => {
         const isTeikei = raw.includes('提携');
-        const handle = raw.replace(/【提携】.*/, '').trim();
+        const isUT = raw.includes('UT候補');
+        const handle = raw.replace(/【[^】]*】/g, '').trim();
         const detail = detailMap.get(handle.toLowerCase()) || { displayName: '', handle, verdict: '', reason: '' };
+        const verdict = isTeikei && isUT ? '◯【提携】【UT候補】' : isTeikei ? '◯【提携】' : isUT ? '◯【UT候補】' : '◯';
         return {
           id: uid(), createdAt: new Date().toISOString(), channel,
           displayName: detail.displayName || '', handle,
-          verdict: isTeikei ? '◯【提携】' : '◯', reason: detail.reason || '',
+          verdict, reason: detail.reason || '',
         };
       });
     }
@@ -159,7 +161,7 @@ export function parseOS0(text: string, channel: string) {
   return [...detailMap.values()].filter(d => d.verdict.startsWith('◯')).map(d => ({
     id: uid(), createdAt: new Date().toISOString(), channel,
     displayName: d.displayName, handle: d.handle,
-    verdict: d.verdict.includes('提携') ? '◯【提携】' : '◯', reason: d.reason,
+    verdict: d.verdict, reason: d.reason,
   }));
 }
 

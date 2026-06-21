@@ -91,9 +91,28 @@ export async function buildTouchAnalysisPrompt(data: AppData): Promise<string> {
   const editBad = count(judged, t => t.editEvaluation === '悪化')
   const editNone = count(judged, t => t.editEvaluation === '変更なし')
 
-  const touchList = judged.map(t =>
-    `${formatDate(t.date)}／${t.channel}／${t.targetPostType}／対象${t.targetValidity}／文面${t.messageValidity}／編集${t.editEvaluation || '-'}／${t.judgmentReason || '-'}／${t.improvementSuggestion || '-'}`
-  ).join('\n')
+  const getRT = (t: (typeof judged)[0]) =>
+    Array.isArray(t.reactionType) ? t.reactionType[0] : t.reactionType
+
+  const withReaction = judged.filter(t => {
+    const rt = getRT(t)
+    return rt && rt !== '未記録'
+  })
+  const falsePositives = withReaction.filter(t => t.messageValidity === '◯' && getRT(t) === '無反応')
+  const falseNegatives = withReaction.filter(t => t.messageValidity === '✕' && getRT(t) === 'テキスト返信')
+  const truePositives = withReaction.filter(t => t.messageValidity === '◯' && getRT(t) === 'テキスト返信')
+  const reactionDataCount = withReaction.length
+  const fpRate = reactionDataCount > 0
+    ? `${falsePositives.length}件（${Math.round(falsePositives.length / reactionDataCount * 100)}%）`
+    : '（反応データなし）'
+  const fnRate = reactionDataCount > 0
+    ? `${falseNegatives.length}件（${Math.round(falseNegatives.length / reactionDataCount * 100)}%）`
+    : '（反応データなし）'
+
+  const touchList = judged.map(t => {
+    const rt = getRT(t)
+    return `${formatDate(t.date)}／${t.channel}／${t.targetPostType}／対象${t.targetValidity}／文面${t.messageValidity}／実反応:${rt || '未記録'}／往復:${t.repExchangeCount ?? '-'}回／編集${t.editEvaluation || '-'}／${t.judgmentReason || '-'}／${t.improvementSuggestion || '-'}`
+  }).join('\n')
 
   const replacements: Record<string, string> = {
     touchList: touchList || '（対象タッチなし）',
@@ -110,6 +129,11 @@ export async function buildTouchAnalysisPrompt(data: AppData): Promise<string> {
     lastAnalysisDate: sinceDate ? formatDate(sinceDate) : '（初回分析）',
     newTouchesCount: String(judged.length),
     lastActionItem: last?.actionItem ?? '（前回分析なし）',
+    reactionDataCount: String(reactionDataCount),
+    falsePositiveRate: fpRate,
+    falseNegativeRate: fnRate,
+    truePositiveCount: String(truePositives.length),
+    osAccuracySuspicion: (falsePositives.length + falseNegatives.length) >= 5 ? 'OSを疑うべき' : 'まだ様子見',
   }
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => replacements[key] ?? '')
 }
@@ -127,6 +151,9 @@ export function parseTouchAnalysis(raw: string): Partial<Analysis> | null {
     frequentNgPostType: pick('よく出る投稿種別✕'),
     lastActionImprovement: pick('前回指摘の改善状況'),
     trendComment: pick('傾向コメント'),
+    falsePositiveRate: pick('偽陽性疑い件数'),
+    falseNegativeRate: pick('偽陰性疑い件数'),
+    osAccuracyVerdict: pick('OS精度判定'),
     actionItem: pick('今すぐ直すべき1点'),
     nextFocusPoint: pick('次回注目ポイント'),
     rawOutput: raw,

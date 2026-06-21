@@ -1,7 +1,7 @@
 import type { AppData, Analysis } from '../types'
 import { uid, todayStr } from './helpers'
 
-export type NotificationType = 'case_pattern' | 'touch_trend' | 'emergency_alert'
+export type NotificationType = 'case_pattern' | 'touch_trend' | 'emergency_alert' | 'os_accuracy_alert'
 
 export interface ActiveNotification {
   type: NotificationType
@@ -99,6 +99,42 @@ export function getActiveNotifications(data: AppData): ActiveNotification[] {
         icon: '📝',
         severity: 'info',
         count: newJudged.length,
+        pendingAnalysisId: existing?.id ?? null,
+      })
+    }
+  }
+
+  // ── os_accuracy_alert ─────────────────────────────────────────
+  if (!dismissed['os_accuracy_alert'] || dismissed['os_accuracy_alert'] < now) {
+    const lastAccuracy = getLastCompleted(analyses, 'os_accuracy_alert')
+    const lastTouchTrend = getLastCompleted(analyses, 'touch_trend')
+    const sinceA = lastAccuracy?.completedAt ?? null
+    const sinceB = lastTouchTrend?.completedAt ?? null
+    const sinceDate = sinceA && sinceB ? (sinceA > sinceB ? sinceA : sinceB) : (sinceA ?? sinceB)
+
+    const allTouches = (data.pipeline || []).flatMap(p => p.touches || [])
+    const getRT = (t: typeof allTouches[0]) =>
+      Array.isArray(t.reactionType) ? t.reactionType[0] : t.reactionType
+
+    const withReaction = allTouches.filter(t => {
+      const rt = getRT(t)
+      if (!rt || rt === '未記録') return false
+      if (!sinceDate) return true
+      return (t.judgedAt || t.date) > sinceDate
+    })
+    const falsePositives = withReaction.filter(t => t.messageValidity === '◯' && getRT(t) === '無反応')
+    const falseNegatives = withReaction.filter(t => t.messageValidity === '✕' && getRT(t) === 'テキスト返信')
+    const total = falsePositives.length + falseNegatives.length
+
+    if (total >= 5) {
+      const existing = analyses.find(a => a.type === 'os_accuracy_alert' && a.status !== 'completed')
+      result.push({
+        type: 'os_accuracy_alert',
+        label: 'OS精度を確認してください',
+        message: `OS判定と実反応の乖離が${total}件検出されました。OSルールの見直しを検討してください。`,
+        icon: '⚠️',
+        severity: 'info',
+        count: total,
         pendingAnalysisId: existing?.id ?? null,
       })
     }
