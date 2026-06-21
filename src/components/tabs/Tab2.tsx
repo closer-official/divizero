@@ -1806,7 +1806,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         )}
 
         {/* S1行動判定セクション */}
-        {!isAwaiting && touch.threadStatus !== 'active' && (() => {
+        {!isAwaiting && !touch.threadEntry && (() => {
           const saved = touch.reactionJudgment
           const result = s1ActionParsed || (saved ? { judgment: saved, nextStep: touch.reactionNextStep || '', warning: touch.reactionWarning || '', reason: '' } : null)
           const judgmentColor = (j: string) => {
@@ -1933,8 +1933,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       {touch.threadStatus === 'active' && (() => {
         const turns = touch.conversationTurns || []
         const lastTurn = turns[turns.length - 1]
-        const showOS2Section = lastTurn?.role === '相手'
-        const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply
+        const showOS2Section = lastTurn?.role === '相手' && !!touch.threadEntry
+        const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply && !!touch.threadEntry
         const repCount = touch.repExchangeCount || 0
         const dmCount = touch.dmExchangeCount || 0
 
