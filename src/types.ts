@@ -285,4 +285,5 @@ export type Prompts = {
   OS3?: string;
   IG_OCR?: string;
   DM?: string;
+  LOG_OCR?: string;
 };

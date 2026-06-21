@@ -11,6 +11,7 @@ export async function loadPrompts(): Promise<Prompts> {
     OS3: '/prompts/OS3_案件検証_latest.md',
     IG_OCR: '/prompts/IG読み取りOCR_latest.md',
     DM: '/prompts/OS_DM文生成_latest.md',
+    LOG_OCR: '/prompts/OS_会話ログOCR_latest.md',
   };
   const entries = await Promise.all(
     Object.entries(files).map(async ([key, path]) => {

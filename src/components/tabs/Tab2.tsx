@@ -27,6 +27,23 @@ import {
 import { copyText } from '../../utils/clipboard'
 
 // ── thread helpers ─────────────────────────────────────────────
+type LogTurn = { role: '自分' | '相手'; text: string; date: string; channel: 'リプ' | 'DM' }
+
+function parseLogOcrOutput(raw: string): LogTurn[] | null {
+  const block = raw.match(/===CONV_START===([\s\S]*?)===CONV_END===/)?.[1]
+  if (!block) return null
+  const segments = block.split('===SEP===').map(s => s.trim()).filter(Boolean)
+  const turns = segments.map(seg => {
+    const role = (seg.match(/役割:\s*(.+)/)?.[1].trim() ?? '自分') as '自分' | '相手'
+    const channel = (seg.match(/チャネル:\s*(.+)/)?.[1].trim() ?? 'DM') as 'リプ' | 'DM'
+    const rawDate = seg.match(/日時:\s*(.+)/)?.[1].trim() ?? ''
+    const date = rawDate && rawDate !== '不明' ? rawDate : new Date().toISOString().slice(0, 10)
+    const text = seg.match(/本文:\s*([\s\S]+)/)?.[1].trim() ?? ''
+    return { role, channel, date, text }
+  }).filter(t => t.text.length > 0)
+  return turns.length > 0 ? turns : null
+}
+
 function advanceStep(step: Step): Step {
   const map: Record<string, Step> = { S1: 'S2', S2: 'S3', S3: 'S4', S4: 'S5', S5: 'S5' }
   return (map[step] ?? step) as Step
@@ -641,6 +658,10 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [logTurnText, setLogTurnText] = useState('')
   const [logTurnDate, setLogTurnDate] = useState(todayStr())
   const [logTurnChannel, setLogTurnChannel] = useState<'リプ'|'DM'>('DM')
+  // ログOCR
+  const [logOcrOpen, setLogOcrOpen] = useState(false)
+  const [logOcrOutput, setLogOcrOutput] = useState('')
+  const [logOcrCopyState, setLogOcrCopyState] = useState<'idle' | 'copied'>('idle')
 
   const touches = item.touches || []
   const s1Count = touches.length
@@ -1054,6 +1075,58 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     <select className="input-base cs text-xs py-1.5 flex-1" value={logRestoreStep} onChange={e => setLogRestoreStep(e.target.value as Step)}>
                       {(['S2','S3','S4','S5'] as Step[]).map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
+                  </div>
+
+                  {/* スクショOCR取り込み */}
+                  <div className="bg-white border border-violet-100 rounded-xl overflow-hidden">
+                    <button
+                      className="w-full px-3 py-2.5 text-left flex items-center gap-2 hover:bg-violet-50 transition"
+                      onClick={() => setLogOcrOpen(v => !v)}
+                    >
+                      <i className="fa-solid fa-camera text-violet-500 text-xs" />
+                      <span className="text-xs font-semibold text-violet-700">スクショから一括取り込み</span>
+                      <i className={`fa-solid fa-chevron-${logOcrOpen ? 'up' : 'down'} text-slate-300 text-xs ml-auto`} />
+                    </button>
+                    {logOcrOpen && (
+                      <div className="border-t border-violet-100 p-3 flex flex-col gap-2">
+                        <button
+                          className={`btn-sec text-xs py-2 justify-center ${logOcrCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                          onClick={async () => {
+                            if (!prompts.LOG_OCR) return
+                            try {
+                              await navigator.clipboard.writeText(prompts.LOG_OCR)
+                              setLogOcrCopyState('copied')
+                              setTimeout(() => setLogOcrCopyState('idle'), 2000)
+                            } catch { setLogOcrCopyState('idle') }
+                          }}
+                        >
+                          <i className={`fa-solid ${logOcrCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                          {logOcrCopyState === 'copied' ? '✓ コピーしました' : 'OCRプロンプトをコピー'}
+                        </button>
+                        <p className="text-[10px] text-slate-400 text-center">↓ Claude/ChatGPT にスクショと一緒に貼り付けて実行</p>
+                        <textarea
+                          rows={3}
+                          className="input-base cs text-xs resize-y"
+                          placeholder="AI出力をここに貼り付け（===CONV_START=== 〜 ===CONV_END===）"
+                          value={logOcrOutput}
+                          onChange={e => setLogOcrOutput(e.target.value)}
+                        />
+                        <button
+                          className="btn-primary text-xs py-2 justify-center"
+                          style={{ background: '#7c3aed' }}
+                          disabled={!logOcrOutput.trim()}
+                          onClick={() => {
+                            const parsed = parseLogOcrOutput(logOcrOutput)
+                            if (!parsed) return
+                            setLogTurns(prev => [...prev, ...parsed])
+                            setLogOcrOutput('')
+                            setLogOcrOpen(false)
+                          }}
+                        >
+                          <i className="fa-solid fa-bolt mr-1" />会話ターンを取り込む
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* 追加済みターン一覧 */}
