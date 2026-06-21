@@ -1069,6 +1069,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     onReactionSaved={handleReactionSaved}
                     onGoToTab3={onGoToTab3}
                     onAddNewTouch={handleAddNewTouch}
+                    onStartDM={() => setDmStartOpen(true)}
                   />
                 ))}
               </div>
@@ -1582,9 +1583,10 @@ interface TouchItemProps {
   onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
   onGoToTab3: () => void
   onAddNewTouch: (touch: Touch) => void
+  onStartDM: () => void
 }
 
-function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onStartDM }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
@@ -1646,27 +1648,26 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     const pipelineUpdates: Partial<PipelineItem> = {}
 
     if (selectedReaction.includes('テキスト返信')) {
-      const selfTurn: ConversationTurn = {
-        id: uid(),
-        role: '自分',
-        text: touch.actualSentText,
-        timestamp: touch.date,
-        channel: initChannel,
-        sentStatus: 'sent',
-        sentAt: touch.date,
-      }
       const replyTurn: ConversationTurn = {
-        id: uid(),
-        role: '相手',
-        text: replyText,
-        timestamp: new Date().toISOString(),
-        channel: initChannel,
-        sentStatus: 'sent',
+        id: uid(), role: '相手', text: replyText,
+        timestamp: new Date().toISOString(), channel: initChannel, sentStatus: 'sent',
+      }
+      if (touch.conversationTurns && touch.conversationTurns.length > 0) {
+        // 継続モード：既存のターンに追加
+        touchUpdates.conversationTurns = [...touch.conversationTurns, replyTurn]
+        touchUpdates.repExchangeCount = initChannel === 'リプ' ? (touch.repExchangeCount || 0) + 1 : touch.repExchangeCount
+        touchUpdates.dmExchangeCount = initChannel === 'DM' ? (touch.dmExchangeCount || 0) + 1 : touch.dmExchangeCount
+      } else {
+        // 初回：最初から会話ターンを作成
+        const selfTurn: ConversationTurn = {
+          id: uid(), role: '自分', text: touch.actualSentText,
+          timestamp: touch.date, channel: initChannel, sentStatus: 'sent', sentAt: touch.date,
+        }
+        touchUpdates.conversationTurns = [selfTurn, replyTurn]
+        touchUpdates.repExchangeCount = initChannel === 'リプ' ? 1 : 0
+        touchUpdates.dmExchangeCount = initChannel === 'DM' ? 1 : 0
       }
       touchUpdates.threadStatus = 'active'
-      touchUpdates.conversationTurns = [selfTurn, replyTurn]
-      touchUpdates.repExchangeCount = initChannel === 'リプ' ? 1 : 0
-      touchUpdates.dmExchangeCount = initChannel === 'DM' ? 1 : 0
       touchUpdates.reactionNote = replyText
       pipelineUpdates.likeReturnStreak = 0
       pipelineUpdates.noReactionStreak = 0
@@ -1729,40 +1730,45 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       setS1ReplyBCopyState('copied')
       setTimeout(() => setS1ReplyBCopyState('idle'), 2000)
     }
-    const isDM = judgment === 'DM移行'
     const now = new Date().toISOString()
-    const newTouch: Touch = isDM
-      ? {
-          id: uid(), date: now,
-          targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
-          aiSuggestedText: '', actualSentText: text, editReason: '',
-          messageValidity: '未判定',
-          status: 'reacted',
-          reactionType: '未記録',
-          reactionNote: '',
-          touchMode: 'conversation',
-          threadEntry: 's3_direct',
-          threadStatus: 'active',
-          conversationTurns: [{
-            id: uid(), role: '自分', text,
-            timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
-          } as ConversationTurn],
-          dmExchangeCount: 0,
-          repExchangeCount: 0,
-        }
-      : {
-          id: uid(), date: now,
-          targetPostText: touch.reactionNote ? touch.reactionNote.slice(0, 60) : '（相手の返信）',
-          targetPostRawText: touch.reactionNote || undefined,
-          targetPostType: '通常投稿',
-          targetValidity: '◯',
-          aiSuggestedText: '', actualSentText: text, editReason: '',
-          messageValidity: '未判定',
-          status: 'awaiting_reaction',
-          reactionType: '未記録',
-          reactionNote: '',
-        }
-    onAddNewTouch(newTouch)
+
+    if (judgment === 'DM移行') {
+      // DM移行：新しいDMタッチを作成（別チャンネルなので分離が正しい）
+      const newTouch: Touch = {
+        id: uid(), date: now,
+        targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
+        aiSuggestedText: '', actualSentText: text, editReason: '',
+        messageValidity: '未判定', status: 'reacted',
+        reactionType: '未記録', reactionNote: '',
+        touchMode: 'conversation', threadEntry: 's3_direct', threadStatus: 'active',
+        conversationTurns: [{
+          id: uid(), role: '自分', text,
+          timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+        } as ConversationTurn],
+        dmExchangeCount: 0, repExchangeCount: 0,
+      }
+      onAddNewTouch(newTouch)
+      return
+    }
+
+    // 公開リプ継続：同じタッチに継続ターンを追加（別レコードにしない）
+    const continuationTurn: ConversationTurn = {
+      id: uid(), role: '自分', text,
+      timestamp: now, channel: 'リプ', sentStatus: 'sent', sentAt: now,
+    }
+    setS1ActionParsed(null)
+    setS1ActionInputOpen(false)
+    onReactionSaved(touch.id, {
+      conversationTurns: [...(touch.conversationTurns || []), continuationTurn],
+      status: 'awaiting_reaction',
+      reactionType: '未記録',
+      reactionNote: '',
+      reactionJudgment: undefined,
+      reactionNextStep: undefined,
+      reactionWarning: undefined,
+      reactionReplyA: undefined,
+      reactionReplyB: undefined,
+    }, {})
   }
 
   async function handleCopyDMPrompt() {
@@ -1963,7 +1969,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         })()}
 
         {/* reaction status */}
-        {isAwaiting && !recordingReaction && touch.threadStatus !== 'active' && (
+        {isAwaiting && !recordingReaction && (touch.threadStatus !== 'active' || !touch.threadEntry) && (
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
             <button className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2" onClick={handleStartReaction}>
@@ -2163,11 +2169,17 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             <div className="px-3 py-2 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2">
               <i className="fa-solid fa-comments text-indigo-500 text-xs" />
               <span className="text-[11px] font-bold text-indigo-700">会話スレッド</span>
-              <span className="text-[10px] text-indigo-400 ml-1">
-                {repCount > 0 && `リプ${repCount}往復`}
-                {repCount > 0 && dmCount > 0 && ' / '}
-                {dmCount > 0 && `DM${dmCount}往復`}
-              </span>
+              {!touch.threadEntry && repCount > 0 ? (
+                <span className={`text-[10px] ml-1 font-semibold ${repCount >= 3 ? 'text-rose-500' : repCount === 2 ? 'text-amber-500' : 'text-indigo-400'}`}>
+                  リプ{repCount}/3往復
+                </span>
+              ) : (
+                <span className="text-[10px] text-indigo-400 ml-1">
+                  {repCount > 0 && `リプ${repCount}往復`}
+                  {repCount > 0 && dmCount > 0 && ' / '}
+                  {dmCount > 0 && `DM${dmCount}往復`}
+                </span>
+              )}
             </div>
 
             {/* chat bubbles */}
@@ -2214,6 +2226,28 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 )
               })}
             </div>
+
+            {/* S1スレッド：リプ往復上限の警告 */}
+            {!touch.threadEntry && repCount >= 2 && (
+              <div className="mx-3 mb-2">
+                {repCount >= 3 ? (
+                  <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-rose-700">🔴 リプ往復3回の上限に達しました</p>
+                    <p className="text-[11px] text-rose-600">これ以上公開リプを続けると逆効果になる可能性があります。DM移行を検討してください。</p>
+                    <button
+                      className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-lg px-3 py-2 transition"
+                      onClick={onStartDM}
+                    >
+                      💬 DM会話を開始する
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">
+                    ⚠️ 次が最後の公開リプです（{repCount}/3）。DM移行を準備してください。
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* DM文生成OSセクション（最終ターンが相手のとき常に表示） */}
             {showOS2Section && (
@@ -2459,7 +2493,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       })()}
 
       {/* ── reaction recording flow ───────── */}
-      {recordingReaction && touch.threadStatus !== 'active' && (
+      {recordingReaction && (touch.threadStatus !== 'active' || !touch.threadEntry) && (
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
@@ -2495,7 +2529,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 </div>
               </div>
               {!replyText.trim() && (
-                <p className="text-[10px] text-slate-400">返信テキストを入力すると会話スレッドが開始されます</p>
+                <p className="text-[10px] text-slate-400">
+                  {touch.conversationTurns && touch.conversationTurns.length > 0
+                    ? '相手の返信テキストを入力してください（会話スレッドに追加されます）'
+                    : '返信テキストを入力すると会話スレッドが開始されます'
+                  }
+                </p>
               )}
             </div>
           )}

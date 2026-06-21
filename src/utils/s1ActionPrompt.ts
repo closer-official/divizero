@@ -21,7 +21,7 @@ export function buildS1ActionPrompt(
     hasReaction(t.reactionType, 'フォロー返し')
   )
 
-  return template
+  let result = template
     .replace('{{accountName}}', item.accountName)
     .replace('{{channel}}', item.channel)
     .replace('{{track}}', item.track)
@@ -36,6 +36,18 @@ export function buildS1ActionPrompt(
     .replace('{{likeReturnStreak}}', String(item.likeReturnStreak || 0))
     .replace('{{noReactionStreak}}', String(item.noReactionStreak || 0))
     .replace('{{followReturned}}', followReturned ? '有' : '無')
+
+  // 複数往復の場合は会話履歴を追加
+  const turns = touch.conversationTurns || []
+  if (turns.length > 2) {
+    result += '\n\n━━━━━━━━━━━━━━━━━━'
+    result += `\n■ 会話履歴（${turns.length}ターン・複数往復）`
+    result += '\n※ 下記は最初のコメント以降の会話の続きです。最新の「相手の返信」をもとに判定してください。\n'
+    result += turns.map((t, i) => `[${i + 1}] ${t.role}：${t.text}`).join('\n')
+    result += `\n\n（上記「${turns[turns.length - 1].role}」のメッセージが今回判定する最新の発言です）`
+  }
+
+  return result
 }
 
 export function parseS1ActionOutput(raw: string): S1ActionResult | null {

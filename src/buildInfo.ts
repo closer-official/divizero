@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 S1行動判定に返信案A/B生成と使うボタンを追加";
+export const BUILD_LABEL = "06/21 タッチ分割修正・S3リプ往復警告UI追加";
