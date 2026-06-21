@@ -29,6 +29,18 @@ import { copyText } from '../../utils/clipboard'
 // ── thread helpers ─────────────────────────────────────────────
 type LogTurn = { role: '自分' | '相手'; text: string; date: string; channel: 'リプ' | 'DM' }
 
+function parseLogOcrDate(raw: string): string {
+  if (!raw || raw === '不明') return new Date().toISOString().slice(0, 16)
+  // "YYYY-MM-DD HH:MM" → "YYYY-MM-DDTHH:MM"
+  const normalized = raw.trim().replace(' ', 'T')
+  const d = new Date(normalized)
+  if (!isNaN(d.getTime())) return normalized
+  // "YYYY-MM-DD" のみ
+  const d2 = new Date(raw.trim())
+  if (!isNaN(d2.getTime())) return raw.trim() + 'T00:00'
+  return new Date().toISOString().slice(0, 16)
+}
+
 function parseLogOcrOutput(raw: string): LogTurn[] | null {
   const block = raw.match(/===CONV_START===([\s\S]*?)===CONV_END===/)?.[1]
   if (!block) return null
@@ -37,7 +49,7 @@ function parseLogOcrOutput(raw: string): LogTurn[] | null {
     const role = (seg.match(/役割:\s*(.+)/)?.[1].trim() ?? '自分') as '自分' | '相手'
     const channel = (seg.match(/チャネル:\s*(.+)/)?.[1].trim() ?? 'DM') as 'リプ' | 'DM'
     const rawDate = seg.match(/日時:\s*(.+)/)?.[1].trim() ?? ''
-    const date = rawDate && rawDate !== '不明' ? rawDate : new Date().toISOString().slice(0, 10)
+    const date = parseLogOcrDate(rawDate)
     const text = seg.match(/本文:\s*([\s\S]+)/)?.[1].trim() ?? ''
     return { role, channel, date, text }
   }).filter(t => t.text.length > 0)
