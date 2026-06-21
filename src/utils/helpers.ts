@@ -122,7 +122,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
@@ -152,6 +152,13 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     if (t.os2NextAction) lines.push(`次アクション: ${t.os2NextAction}`);
     if (t.os2ReplyA) lines.push(`OS②案A: ${t.os2ReplyA}`);
     if (t.os2ReplyB) lines.push(`OS②案B: ${t.os2ReplyB}`);
+    if (t.conversationTurns && t.conversationTurns.length > 0) {
+      lines.push(`会話スレッド（${t.conversationTurns.length}ターン）:`);
+      t.conversationTurns.forEach(ct => {
+        const date = ct.timestamp ? ct.timestamp.slice(0, 10) : '';
+        lines.push(`  [${ct.role}（${ct.channel}）${date ? ' ' + date : ''}] ${ct.text}`);
+      });
+    }
   });
   if (item.judgment) {
     lines.push('');

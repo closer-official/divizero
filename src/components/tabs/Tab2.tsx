@@ -978,6 +978,23 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     })
   }
 
+  function handleCloseCaseFromTouch(result: string) {
+    const closeDate = todayStr()
+    saveData(prev => {
+      const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, closedAt: closeDate } : p) }
+      const pFinal = d.pipeline.find(p => p.id === item.id)!
+      d.closed = [...d.closed, {
+        id: uid(), pipelineId: item.id, createdAt: new Date().toISOString(),
+        accountName: pFinal.accountName, track: pFinal.track,
+        hypothesis: pFinal.hypothesis, startDate: pFinal.startDate,
+        closeDate, result, ruleFired: false,
+      }]
+      return d
+    })
+    toast.show(`「${item.accountName}」をクローズしました（${result}）`)
+    setTimeout(() => onCloseCase(item, result), 300)
+  }
+
   const profileUrl = buildProfileUrl(item.url, item.channel)
   const lastTouchedDisplay = lastTouchedAt
     ? new Date(lastTouchedAt).toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/')
@@ -1075,6 +1092,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     onGoToTab3={onGoToTab3}
                     onAddNewTouch={handleAddNewTouch}
                     onStartDM={() => setDmStartOpen(true)}
+                    onCloseCaseAuto={handleCloseCaseFromTouch}
                   />
                 ))}
               </div>
@@ -1589,9 +1607,10 @@ interface TouchItemProps {
   onGoToTab3: () => void
   onAddNewTouch: (touch: Touch) => void
   onStartDM: () => void
+  onCloseCaseAuto: (result: string) => void
 }
 
-function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onStartDM }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onStartDM, onCloseCaseAuto }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
@@ -1625,6 +1644,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [dmJudgOutput, setDmJudgOutput] = useState('')
   const [dmJudgCopyState, setDmJudgCopyState] = useState<'idle' | 'copied'>('idle')
   const [dmJudgError, setDmJudgError] = useState<string | null>(null)
+  // OS①タッチ文面再判定（保存済みタッチへの再判定）
+  const [touchJudgOpen, setTouchJudgOpen] = useState(false)
+  const [touchJudgOutput, setTouchJudgOutput] = useState('')
+  const [touchJudgCopyState, setTouchJudgCopyState] = useState<'idle' | 'copied'>('idle')
+  const [touchJudgError, setTouchJudgError] = useState<string | null>(null)
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1813,6 +1837,50 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     onReactionSaved(touch.id, { conversationTurns: updatedTurns }, {})
     setDmJudgOutput('')
     setDmJudgTurnId(null)
+  }
+
+  async function handleCopyTouchJudgPrompt() {
+    setTouchJudgError(null)
+    const aiText = touch.aiSuggestedText || ''
+    const aMatch = aiText.match(/A:\s*([\s\S]*?)(?=\nB:|$)/)
+    const bMatch = aiText.match(/B:\s*([\s\S]*)/)
+    const suggestedA = aMatch?.[1]?.trim() ?? aiText
+    const suggestedB = bMatch?.[1]?.trim() ?? ''
+    try {
+      const prompt = await buildJudgmentPrompt({
+        targetPostText: touch.targetPostText || '',
+        targetPostType: touch.targetPostType || '',
+        suggestedTextA: suggestedA,
+        suggestedTextB: suggestedB,
+        actualSentText: touch.actualSentText || '',
+        editReason: touch.editReason || '',
+      })
+      await navigator.clipboard.writeText(prompt)
+      setTouchJudgCopyState('copied')
+      setTimeout(() => setTouchJudgCopyState('idle'), 2000)
+    } catch {
+      setTouchJudgError('コピーに失敗しました')
+    }
+  }
+
+  function handleParseTouchJudg() {
+    setTouchJudgError(null)
+    const parsed = parseJudgmentOutput(touchJudgOutput)
+    if (!parsed) {
+      setTouchJudgError('AI出力の形式が認識できませんでした。===JUDGMENT_START=== から ===JUDGMENT_END=== まで含めて貼り付けてください。')
+      return
+    }
+    onReactionSaved(touch.id, {
+      messageValidity: parsed.judgment,
+      judgmentReason: parsed.judgmentReason,
+      editEvaluation: parsed.editEvaluation,
+      editComment: parsed.editComment,
+      improvementSuggestion: parsed.improvementSuggestion,
+      improvedText: parsed.improvedText,
+      judgedAt: new Date().toISOString(),
+    }, {})
+    setTouchJudgOpen(false)
+    setTouchJudgOutput('')
   }
 
   async function handleCopyDMPrompt() {
@@ -2095,6 +2163,18 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                       )}
                     </div>
                   )}
+                  {result.judgment === 'クローズ' && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex flex-col gap-2">
+                      <p className="text-xs font-bold text-rose-700">この案件はクローズ対象です</p>
+                      <p className="text-[11px] text-rose-600">OS③（案件検証）で会話ログを検証してください。</p>
+                      <button
+                        className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-lg px-3 py-2 transition w-full"
+                        onClick={() => onCloseCaseAuto('フェードアウト')}
+                      >
+                        <i className="fa-solid fa-flag-checkered mr-1.5" />クローズして OS③ へ
+                      </button>
+                    </div>
+                  )}
                 </>
               ) : (
                 <div className="flex flex-col gap-1.5">
@@ -2181,6 +2261,47 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 <span className="text-slate-400 text-[10px] shrink-0">編集評価</span>
                 <span className={`text-[10px] font-medium ${touch.editEvaluation === '適切' ? 'text-emerald-600' : touch.editEvaluation === '悪化' ? 'text-rose-600' : 'text-slate-500'}`}>{touch.editEvaluation}</span>
               </div>
+            )}
+            {/* OS①文面再判定（スレッドなしタッチのみ） */}
+            {!touch.threadEntry && !!touch.actualSentText && (
+              touchJudgOpen ? (
+                <div className="flex flex-col gap-1.5 bg-white border border-violet-100 rounded-xl p-2.5 mt-0.5">
+                  <button
+                    className={`w-full text-xs py-1.5 px-3 rounded-lg font-semibold border transition ${touchJudgCopyState === 'copied' ? 'border-emerald-300 text-emerald-700 bg-emerald-50' : 'border-violet-300 text-violet-700 bg-white hover:bg-violet-50'}`}
+                    onClick={handleCopyTouchJudgPrompt}
+                  >
+                    <i className={`fa-solid ${touchJudgCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
+                    {touchJudgCopyState === 'copied' ? '✓ コピーしました' : '文面再判定プロンプトをコピー'}
+                  </button>
+                  <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
+                  <textarea
+                    rows={2}
+                    className="input-base cs text-xs resize-y"
+                    placeholder="AI出力を貼り付け（===JUDGMENT_START=== 〜 ===JUDGMENT_END===）"
+                    value={touchJudgOutput}
+                    onChange={e => { setTouchJudgOutput(e.target.value); setTouchJudgError(null) }}
+                  />
+                  {touchJudgError && <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">{touchJudgError}</p>}
+                  <div className="flex gap-1.5">
+                    <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => { setTouchJudgOpen(false); setTouchJudgOutput(''); setTouchJudgError(null) }}>キャンセル</button>
+                    <button
+                      className="btn-primary text-xs py-1.5 flex-1 justify-center"
+                      style={{ background: '#4f46e5' }}
+                      disabled={!touchJudgOutput.trim()}
+                      onClick={handleParseTouchJudg}
+                    >
+                      <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="text-[10px] text-slate-400 hover:text-violet-600 border border-slate-200 hover:border-violet-300 rounded-lg px-2 py-0.5 self-start transition"
+                  onClick={() => setTouchJudgOpen(true)}
+                >
+                  {displayMsgValidity !== '未判定' ? '再判定する' : '文章を判定する'}
+                </button>
+              )
             )}
             {touch.os2ConversationLog && (
               <div>
