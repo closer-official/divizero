@@ -1527,6 +1527,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [s1ActionOutput, setS1ActionOutput] = useState('')
   const [s1ActionParsed, setS1ActionParsed] = useState<S1ActionResult | null>(null)
   const [s1ActionCopyState, setS1ActionCopyState] = useState<'idle' | 'copied'>('idle')
+  const [s1ActionInputOpen, setS1ActionInputOpen] = useState(false)
   const [s1ActionError, setS1ActionError] = useState<string | null>(null)
 
   const isAwaiting = touch.status === 'awaiting_reaction'
@@ -1611,6 +1612,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     const prompt = buildS1ActionPrompt(pipelineItem, touch, prompts.S1_ACTION)
     copyText(prompt, () => {
       setS1ActionCopyState('copied')
+      setS1ActionInputOpen(true)
       setTimeout(() => setS1ActionCopyState('idle'), 2000)
     })
   }
@@ -1629,6 +1631,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       reactionWarning: parsed.warning,
     }, {})
     setS1ActionOutput('')
+    setS1ActionInputOpen(false)
   }
 
   async function handleCopyDMPrompt() {
@@ -1836,7 +1839,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     <i className={`fa-solid ${s1ActionCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
                     {s1ActionCopyState === 'copied' ? '✓ コピーしました' : '📋 行動判定プロンプトをコピー（次のアクションをAIに判定させる）'}
                   </button>
-                  {s1ActionCopyState === 'copied' && (
+                  {s1ActionInputOpen && (
                     <div className="flex flex-col gap-1">
                       <textarea
                         rows={3}
