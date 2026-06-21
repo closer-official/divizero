@@ -673,6 +673,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [pJudgmentA, setPJudgmentA] = useState('')
   const [pJudgmentB, setPJudgmentB] = useState('')
   const [copyBtnState, setCopyBtnState] = useState<'idle' | 'copied'>('idle')
+  const [suggACopyState, setSuggACopyState] = useState<'idle' | 'copied'>('idle')
+  const [suggBCopyState, setSuggBCopyState] = useState<'idle' | 'copied'>('idle')
   const [autoFillError, setAutoFillError] = useState<string | null>(null)
   const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
 
@@ -744,6 +746,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
     setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
+    setSuggACopyState('idle'); setSuggBCopyState('idle')
   }
 
   function startAddTouch() {
@@ -1321,13 +1324,19 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               {/* suggestion A/B with 仮判定 badges */}
               {(suggestionA || suggestionB) && (
                 <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 flex flex-col gap-2">
-                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">AI提案（タップで送信文にコピー）</p>
+                  <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">AI提案（「使う」でフォーム入力＋クリップボードにコピー）</p>
                   {suggestionA && (
                     <div className="flex flex-col gap-1">
                       <div className="flex items-start gap-2">
                         <span className="text-violet-600 font-bold text-xs shrink-0">A</span>
                         <p className="text-violet-700 text-xs flex-1 leading-relaxed">{suggestionA}</p>
-                        <button className="shrink-0 btn-sec text-[10px] py-1 px-2" onClick={() => setTSentText(suggestionA)}>使う</button>
+                        <button
+                          className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggACopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                          onClick={async () => {
+                            setTSentText(suggestionA)
+                            try { await navigator.clipboard.writeText(suggestionA); setSuggACopyState('copied'); setTimeout(() => setSuggACopyState('idle'), 1500) } catch {}
+                          }}
+                        >{suggACopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
                       {pJudgmentA && (() => { const b = provisionalBadgeText(pJudgmentA); return b ? <p className={`text-[10px] ml-4 ${b.cls} font-medium`}>{b.text}</p> : null })()}
                     </div>
@@ -1337,7 +1346,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                       <div className="flex items-start gap-2">
                         <span className="text-indigo-500 font-bold text-xs shrink-0">B</span>
                         <p className="text-indigo-600 text-xs flex-1 leading-relaxed">{suggestionB}</p>
-                        <button className="shrink-0 btn-sec text-[10px] py-1 px-2" onClick={() => setTSentText(suggestionB)}>使う</button>
+                        <button
+                          className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggBCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
+                          onClick={async () => {
+                            setTSentText(suggestionB)
+                            try { await navigator.clipboard.writeText(suggestionB); setSuggBCopyState('copied'); setTimeout(() => setSuggBCopyState('idle'), 1500) } catch {}
+                          }}
+                        >{suggBCopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
                       {pJudgmentB && (() => { const b = provisionalBadgeText(pJudgmentB); return b ? <p className={`text-[10px] ml-4 ${b.cls} font-medium`}>{b.text}</p> : null })()}
                     </div>
@@ -1355,8 +1370,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）</label>
-                  <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="相手が書いた投稿本文をそのまま貼り付け（省略・要約しない）" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
+                  <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
+                  <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
