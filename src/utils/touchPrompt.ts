@@ -3,6 +3,7 @@ import { hasReaction, reactionDisplay } from './helpers'
 
 export interface ParsedTouch {
   targetPostText: string
+  targetPostRawText: string
   targetPostType: string
   targetValidity: string
   gateJudgment: string
@@ -98,6 +99,7 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
 
   return {
     targetPostText: pick('接触した投稿'),
+    targetPostRawText: pickUntil('投稿原文', '投稿種別'),
     targetPostType: normalizePostType(pick('投稿種別')),
     targetValidity: normalizeValidity(pick('対象妥当性')),
     gateJudgment: pick('ゲート判定'),

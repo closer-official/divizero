@@ -33,6 +33,7 @@ export interface Touch {
   id: string;
   date: string;
   targetPostText: string;
+  targetPostRawText?: string;
   targetPostType: TouchPostType;
   targetValidity: TouchValidity;
   aiSuggestedText: string;

@@ -57,7 +57,8 @@ export function buildCaseMd(item: PipelineItem): string {
     } else {
       // 既存の新規投稿タッチモード
       md += `### タッチ${i + 1} — ${dateStr(touch.date)}\n\n`
-      md += `**接触した投稿：** ${touch.targetPostText || '—'}\n`
+      md += `**接触した投稿（要約）：** ${touch.targetPostText || '—'}\n`
+      if (touch.targetPostRawText) md += `**投稿原文：** ${touch.targetPostRawText}\n`
       md += `**投稿種別：** ${touch.targetPostType}　**対象妥当性：** ${touch.targetValidity}\n\n`
       if (touch.aiSuggestedText) {
         md += `**AI提案文：** ${touch.aiSuggestedText}\n`

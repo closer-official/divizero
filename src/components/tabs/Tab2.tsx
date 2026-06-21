@@ -260,7 +260,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           lines.push(`\n#### タッチ${ti + 1}（${t.date.slice(0, 10)}）`)
           lines.push(`- 投稿種別: ${t.targetPostType}`)
           lines.push(`- 対象妥当性: ${t.targetValidity}`)
-          if (t.targetPostText) lines.push(`- 接触した投稿: ${t.targetPostText}`)
+          if (t.targetPostText) lines.push(`- 接触した投稿（要約）: ${t.targetPostText}`)
+          if (t.targetPostRawText) lines.push(`- 投稿原文: ${t.targetPostRawText}`)
           lines.push(`- 送った文章: ${t.actualSentText}`)
           if (t.editReason) lines.push(`- 変えた理由: ${t.editReason}`)
           lines.push(`- 文面妥当性: ${t.messageValidity}`)
@@ -676,6 +677,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
   // touch add form
   const [tPostText, setTPostText] = useState('')
+  const [tPostRawText, setTPostRawText] = useState('')
   const [tPostType, setTPostType] = useState<TouchPostType>('通常投稿')
   const [tValidity, setTValidity] = useState<TouchValidity>('未評価')
   const [tAiText, setTAiText] = useState('')
@@ -736,7 +738,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
   function resetForm() {
     setAiOutput(''); setSuggestionA(''); setSuggestionB(''); setPJudgmentA(''); setPJudgmentB('')
-    setTPostText(''); setTPostType('通常投稿'); setTValidity('未評価')
+    setTPostText(''); setTPostRawText(''); setTPostType('通常投稿'); setTValidity('未評価')
     setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
     setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
@@ -769,6 +771,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       return
     }
     setTPostText(parsed.targetPostText)
+    setTPostRawText(parsed.targetPostRawText)
     setTPostType(parsed.targetPostType as TouchPostType)
     setTValidity(parsed.targetValidity as TouchValidity)
     setTAiText(`A: ${parsed.suggestedTextA}\nB: ${parsed.suggestedTextB}`)
@@ -821,7 +824,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     if (!tSentText.trim()) { toast.show('実際に送った文章は必須です', 2000); return }
     const touch: Touch = {
       id: uid(), date: new Date().toISOString(),
-      targetPostText: tPostText, targetPostType: tPostType, targetValidity: tValidity,
+      targetPostText: tPostText, targetPostRawText: tPostRawText || undefined, targetPostType: tPostType, targetValidity: tValidity,
       aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
       messageValidity: tMsgValidity,
       status: 'awaiting_reaction',
@@ -1346,8 +1349,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               {/* form fields */}
               <div className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-slate-500">接触した投稿（相手の文）</label>
-                  <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を引用または要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
+                  <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
+                  <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）</label>
+                  <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="相手が書いた投稿本文をそのまま貼り付け（省略・要約しない）" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -1726,7 +1734,10 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         </div>
 
         {touch.targetPostText && (
-          <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">📝 {touch.targetPostText}</p>
+          <p className="text-[11px] text-slate-500 line-clamp-1 leading-relaxed">📝 {touch.targetPostText}</p>
+        )}
+        {touch.targetPostRawText && (
+          <p className="text-[11px] text-slate-700 whitespace-pre-wrap leading-relaxed bg-slate-50 rounded-lg px-2 py-1.5 border border-slate-100">{touch.targetPostRawText}</p>
         )}
         <p className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3 leading-relaxed">{touch.actualSentText}</p>
         {touch.reactionNote && <p className="text-[11px] text-slate-500 leading-relaxed">💬 {touch.reactionNote}</p>}
