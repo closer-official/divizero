@@ -42,9 +42,9 @@ function parseLogOcrDate(raw: string): string {
 }
 
 function parseLogOcrOutput(raw: string): LogTurn[] | null {
-  const block = raw.match(/={1,3}CONV_START={1,3}([\s\S]*?)={1,3}CONV_END={1,3}/)?.[1]
-  if (!block) return null
-  const segments = block.split(/={1,3}SEP={1,3}/).map(s => s.trim()).filter(Boolean)
+  const blocks = [...raw.matchAll(/={1,3}CONV_START={1,3}([\s\S]*?)={1,3}CONV_END={1,3}/g)].map(m => m[1])
+  if (blocks.length === 0) return null
+  const segments = blocks.flatMap(block => block.split(/={1,3}SEP={1,3}/).map(s => s.trim()).filter(Boolean))
   const turns = segments.map(seg => {
     const role = (seg.match(/役割:\s*(.+)/)?.[1].trim() ?? '自分') as '自分' | '相手'
     const channel = (seg.match(/チャネル:\s*(.+)/)?.[1].trim() ?? 'DM') as 'リプ' | 'DM'

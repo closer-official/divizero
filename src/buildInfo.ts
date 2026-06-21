@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/21 OCRパーサーを=と===両対応に修正";
+export const BUILD_LABEL = "06/21 OCR複数ブロック一括取り込み対応";
