@@ -34,6 +34,15 @@ export interface ConversationTurn {
   dmMsgImprovedText?: string;
 }
 
+export interface SubJudgment {
+  modelName: string;
+  judgment: TouchValidity;
+  judgmentReason: string;
+  improvementSuggestion: string;
+  improvedText: string;
+  judgedAt: string;
+}
+
 export interface Touch {
   id: string;
   date: string;
@@ -70,6 +79,8 @@ export interface Touch {
   conversationTurns?: ConversationTurn[];
   repExchangeCount?: number;
   dmExchangeCount?: number;
+  mainJudgmentModel?: string;
+  subJudgments?: SubJudgment[];
 }
 
 export interface Screening {

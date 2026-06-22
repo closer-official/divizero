@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
-import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step, PostStock } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step, PostStock, SubJudgment } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -783,6 +783,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tEditComment, setTEditComment] = useState('')
   const [tJudgedAt, setTJudgedAt] = useState<string | undefined>(undefined)
   const [tJudgmentError, setTJudgmentError] = useState<string | null>(null)
+  const [tJudgmentModelName, setTJudgmentModelName] = useState('')
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -809,7 +810,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
     setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
-    setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
+    setTJudgmentError(null); setTJudgmentModelName(''); setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
     setTPostDateTime(undefined); setTEngagementStats(undefined)
     setTTouchMode('rep')
@@ -961,6 +962,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         improvementSuggestion: tImprovementSuggestion,
         improvedText: tImprovedText,
         judgedAt: tJudgedAt,
+        mainJudgmentModel: tJudgmentModelName || undefined,
       }
       pipelineUpdates = { currentStep: 'S3' as Step }
     } else {
@@ -979,6 +981,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         improvementSuggestion: tImprovementSuggestion,
         improvedText: tImprovedText,
         judgedAt: tJudgedAt,
+        mainJudgmentModel: tJudgmentModelName || undefined,
       }
     }
 
@@ -1436,6 +1439,23 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     {tJudgmentExpanded && (
                       <div className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3">
                         <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-slate-400">使用モデル（任意）</label>
+                          <div className="flex gap-1 flex-wrap items-center">
+                            {['ChatGPT', 'Gemini', 'Claude'].map(m => (
+                              <button key={m} type="button"
+                                className={`text-[10px] px-2 py-0.5 rounded-md border transition ${tJudgmentModelName === m ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                                onClick={() => setTJudgmentModelName(prev => prev === m ? '' : m)}
+                              >{m}</button>
+                            ))}
+                            <input
+                              className="input-base cs text-[10px] py-0.5 flex-1 min-w-[70px]"
+                              placeholder="その他"
+                              value={['ChatGPT', 'Gemini', 'Claude'].includes(tJudgmentModelName) ? '' : tJudgmentModelName}
+                              onChange={e => setTJudgmentModelName(e.target.value)}
+                            />
+                          </div>
+                        </div>
                         <textarea
                           rows={3}
                           className="input-base cs text-xs resize-y"
@@ -1562,6 +1582,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [touchJudgOutput, setTouchJudgOutput] = useState('')
   const [touchJudgCopyState, setTouchJudgCopyState] = useState<'idle' | 'copied'>('idle')
   const [touchJudgError, setTouchJudgError] = useState<string | null>(null)
+  const [touchJudgModelName, setTouchJudgModelName] = useState('')
 
   const isAwaiting = touch.status === 'awaiting_reaction'
 
@@ -1799,17 +1820,34 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       setTouchJudgError('AI出力の形式が認識できませんでした。===JUDGMENT_START=== から ===JUDGMENT_END=== まで含めて貼り付けてください。')
       return
     }
-    onReactionSaved(touch.id, {
-      messageValidity: parsed.judgment,
-      judgmentReason: parsed.judgmentReason,
-      editEvaluation: parsed.editEvaluation,
-      editComment: parsed.editComment,
-      improvementSuggestion: parsed.improvementSuggestion,
-      improvedText: parsed.improvedText,
-      judgedAt: new Date().toISOString(),
-    }, {})
+    const isFirstJudgment = !touch.messageValidity || touch.messageValidity === '未判定' || touch.messageValidity === '未評価'
+    if (isFirstJudgment) {
+      onReactionSaved(touch.id, {
+        messageValidity: parsed.judgment,
+        judgmentReason: parsed.judgmentReason,
+        editEvaluation: parsed.editEvaluation,
+        editComment: parsed.editComment,
+        improvementSuggestion: parsed.improvementSuggestion,
+        improvedText: parsed.improvedText,
+        judgedAt: new Date().toISOString(),
+        mainJudgmentModel: touchJudgModelName || undefined,
+      }, {})
+    } else {
+      const newSub: SubJudgment = {
+        modelName: touchJudgModelName || 'モデル不明',
+        judgment: parsed.judgment,
+        judgmentReason: parsed.judgmentReason,
+        improvementSuggestion: parsed.improvementSuggestion,
+        improvedText: parsed.improvedText,
+        judgedAt: new Date().toISOString(),
+      }
+      onReactionSaved(touch.id, {
+        subJudgments: [...(touch.subJudgments || []), newSub],
+      }, {})
+    }
     setTouchJudgOpen(false)
     setTouchJudgOutput('')
+    setTouchJudgModelName('')
   }
 
   async function handleCopyMsgPrompt() {
@@ -2184,9 +2222,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 <p className="text-slate-600">{touch.editReason}</p>
               </div>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-slate-400 text-[10px]">文面妥当性</span>
               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(displayMsgValidity)}`}>{displayMsgValidity}</span>
+              {touch.mainJudgmentModel && (
+                <span className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">{touch.mainJudgmentModel}</span>
+              )}
             </div>
             {touch.judgmentReason && (
               <div>
@@ -2212,6 +2253,23 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 <span className={`text-[10px] font-medium ${touch.editEvaluation === '適切' ? 'text-emerald-600' : touch.editEvaluation === '悪化' ? 'text-rose-600' : 'text-slate-500'}`}>{touch.editEvaluation}</span>
               </div>
             )}
+            {touch.subJudgments && touch.subJudgments.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">追加判定</p>
+                {touch.subJudgments.map((sj, i) => (
+                  <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 flex flex-col gap-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-slate-500 font-medium border border-slate-200 rounded px-1.5 py-0.5">{sj.modelName}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(sj.judgment)}`}>{sj.judgment}</span>
+                    </div>
+                    {sj.judgmentReason && <p className="text-slate-600 text-[11px]">{sj.judgmentReason}</p>}
+                    {sj.improvementSuggestion && sj.improvementSuggestion !== 'なし' && (
+                      <p className="text-amber-600 text-[11px]">改善: {sj.improvementSuggestion}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {/* OS①文面再判定（スレッドなしタッチのみ） */}
             {!touch.threadEntry && !!touch.actualSentText && (
               touchJudgOpen ? (
@@ -2224,6 +2282,23 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     {touchJudgCopyState === 'copied' ? '✓ コピーしました' : '文面再判定プロンプトをコピー'}
                   </button>
                   <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] text-slate-400">使用モデル（任意）</label>
+                    <div className="flex gap-1 flex-wrap items-center">
+                      {['ChatGPT', 'Gemini', 'Claude'].map(m => (
+                        <button key={m} type="button"
+                          className={`text-[10px] px-2 py-0.5 rounded-md border transition ${touchJudgModelName === m ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                          onClick={() => setTouchJudgModelName(prev => prev === m ? '' : m)}
+                        >{m}</button>
+                      ))}
+                      <input
+                        className="input-base cs text-[10px] py-0.5 flex-1 min-w-[70px]"
+                        placeholder="その他"
+                        value={['ChatGPT', 'Gemini', 'Claude'].includes(touchJudgModelName) ? '' : touchJudgModelName}
+                        onChange={e => setTouchJudgModelName(e.target.value)}
+                      />
+                    </div>
+                  </div>
                   <textarea
                     rows={2}
                     className="input-base cs text-xs resize-y"
@@ -2233,7 +2308,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                   />
                   {touchJudgError && <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">{touchJudgError}</p>}
                   <div className="flex gap-1.5">
-                    <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => { setTouchJudgOpen(false); setTouchJudgOutput(''); setTouchJudgError(null) }}>キャンセル</button>
+                    <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => { setTouchJudgOpen(false); setTouchJudgOutput(''); setTouchJudgError(null); setTouchJudgModelName('') }}>キャンセル</button>
                     <button
                       className="btn-primary text-xs py-1.5 flex-1 justify-center"
                       style={{ background: '#4f46e5' }}
@@ -2249,7 +2324,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                   className="text-[10px] text-slate-400 hover:text-violet-600 border border-slate-200 hover:border-violet-300 rounded-lg px-2 py-0.5 self-start transition"
                   onClick={() => setTouchJudgOpen(true)}
                 >
-                  {displayMsgValidity !== '未判定' ? '再判定する' : '文章を判定する'}
+                  {displayMsgValidity !== '未判定' ? '別モデルで追加判定' : '文章を判定する'}
                 </button>
               )
             )}

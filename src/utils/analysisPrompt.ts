@@ -111,8 +111,15 @@ export async function buildTouchAnalysisPrompt(data: AppData): Promise<string> {
 
   const touchList = judged.map(t => {
     const rt = getRT(t)
-    return `${formatDate(t.date)}／${t.channel}／${t.targetPostType}／対象${t.targetValidity}／文面${t.messageValidity}／実反応:${rt || '未記録'}／往復:${t.repExchangeCount ?? '-'}回／編集${t.editEvaluation || '-'}／${t.judgmentReason || '-'}／${t.improvementSuggestion || '-'}`
+    const mainModel = t.mainJudgmentModel || 'モデル不明'
+    const mainJudg = `メイン:${mainModel}(${t.messageValidity})`
+    const subJudg = t.subJudgments && t.subJudgments.length > 0
+      ? t.subJudgments.map(s => `${s.modelName}(${s.judgment})`).join('・')
+      : 'なし'
+    return `${formatDate(t.date)}／${t.channel}／${t.targetPostType}／対象${t.targetValidity}／${mainJudg}／サブ:${subJudg}／実反応:${rt || '未記録'}／編集${t.editEvaluation || '-'}／${t.judgmentReason || '-'}／${t.improvementSuggestion || '-'}`
   }).join('\n')
+
+  const multiJudgmentCount = judged.filter(t => t.subJudgments && t.subJudgments.length > 0).length
 
   const replacements: Record<string, string> = {
     touchList: touchList || '（対象タッチなし）',
@@ -129,6 +136,7 @@ export async function buildTouchAnalysisPrompt(data: AppData): Promise<string> {
     lastAnalysisDate: sinceDate ? formatDate(sinceDate) : '（初回分析）',
     newTouchesCount: String(judged.length),
     lastActionItem: last?.actionItem ?? '（前回分析なし）',
+    multiJudgmentCount: String(multiJudgmentCount),
     reactionDataCount: String(reactionDataCount),
     falsePositiveRate: fpRate,
     falseNegativeRate: fnRate,
@@ -149,6 +157,7 @@ export function parseTouchAnalysis(raw: string): Partial<Analysis> | null {
     editEvalSummary: pick('編集評価サマリ'),
     topImprovementPattern: pick('最多改善提案パターン'),
     frequentNgPostType: pick('よく出る投稿種別✕'),
+    alertDetail: pick('AI判定の差異考察'),
     lastActionImprovement: pick('前回指摘の改善状況'),
     trendComment: pick('傾向コメント'),
     falsePositiveRate: pick('偽陽性疑い件数'),
