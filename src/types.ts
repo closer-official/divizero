@@ -1,4 +1,4 @@
-export type Channel = 'twitter' | 'instagram' | 'threads';
+export type Channel = 'twitter' | 'instagram' | 'threads' | 'dm';
 export type Track = 'FT' | 'NT' | 'SKIP';
 export type Step = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 
@@ -191,6 +191,8 @@ export interface PipelineItem {
   state?: 'active' | 'waiting' | 'sleeping' | 'closed';
   recontact_date?: string;
   temperature?: number;
+  last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
+  last_reaction_at?: string;
 }
 
 export interface ClosedDeal {

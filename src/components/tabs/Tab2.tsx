@@ -113,6 +113,18 @@ function reactionBadge(r: string) {
   }
   return m[r] ?? 'bg-gray-100 text-gray-400'
 }
+const CHANNEL_LABEL: Record<string, string> = { twitter: 'X', instagram: 'IG', threads: 'TH', dm: 'DM' }
+function channelLabel(ch: string) { return CHANNEL_LABEL[ch] ?? ch.toUpperCase() }
+function stateBadgeStyle(s?: string): string {
+  if (!s || s === 'active') return 'bg-emerald-100 text-emerald-700'
+  if (s === 'waiting') return 'bg-amber-100 text-amber-700'
+  if (s === 'sleeping') return 'bg-slate-100 text-slate-500'
+  return 'bg-rose-100 text-rose-600'
+}
+function stateLabel(s?: string): string {
+  if (!s || s === 'active') return 'active'
+  return s
+}
 function judgmentColor(j: string) {
   if (j === '正常' || j.startsWith('正常')) return 'text-emerald-600'
   if (j === 'クローズ') return 'text-rose-600'
@@ -170,7 +182,7 @@ interface Props {
 export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: Props) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('all')
-  const [filterStep, setFilterStep] = useState('all')
+  const [filterState, setFilterState] = useState('all')
   const [sort, setSort] = useState('newest')
   const [currentPage, setCurrentPage] = useState(1)
 
@@ -202,37 +214,53 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     requestAnimationFrame(() => {
       document.getElementById(`case-card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
-  }, [currentPage, filter, filterStep])
+  }, [currentPage, filter, filterState])
 
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
-  // Sort oldest-first for pagination page assignment
-  const activeOldestFirst = [...active].sort((a, b) =>
-    (a.startDate || a.closedAt || '').localeCompare(b.startDate || b.closedAt || '')
-  )
-  let filtered = [...activeOldestFirst]
+
+  // State priority: active=0, waiting=1, sleeping=2, closed=3
+  function stateOrder(p: PipelineItem): number {
+    const s = p.state ?? 'active'
+    if (s === 'active') return 0
+    if (s === 'waiting') return 1
+    if (s === 'sleeping') return 2
+    return 3
+  }
+
+  let filtered = [...active]
   if (filter === 'FT') filtered = filtered.filter(p => p.track === 'FT')
   else if (filter === 'NT') filtered = filtered.filter(p => p.track === 'NT')
   else if (filter === 'warn') filtered = filtered.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
-  if (filterStep !== 'all') filtered = filtered.filter(p => p.currentStep === filterStep)
-  if (sort === 'urgent') filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
+  if (filterState === 'active') filtered = filtered.filter(p => !p.state || p.state === 'active')
+  else if (filterState === 'waiting') filtered = filtered.filter(p => p.state === 'waiting')
+  else if (filterState === 'sleeping') filtered = filtered.filter(p => p.state === 'sleeping')
 
-  // Pagination: page 1 = newest (remainder), page N = oldest 10
+  if (sort === 'urgent') {
+    filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
+  } else {
+    filtered.sort((a, b) => {
+      const oa = stateOrder(a), ob = stateOrder(b)
+      if (oa !== ob) return oa - ob
+      const sa = a.state ?? 'active'
+      if (sa === 'active') {
+        return (a.lastContactDate || a.startDate || '').localeCompare(b.lastContactDate || b.startDate || '')
+      }
+      if (sa === 'waiting') {
+        return (a.recontact_date || '').localeCompare(b.recontact_date || '')
+      }
+      return (a.startDate || '').localeCompare(b.startDate || '')
+    })
+  }
+
+  // Sequential pagination
   const N = filtered.length
   const totalPages = Math.ceil(N / 10) || 1
-  const r = N % 10 || (N > 0 ? 10 : 0) // items on page 1
 
   function getPageItems(page: number): PipelineItem[] {
-    if (N === 0) return []
-    let startIdx: number, endIdx: number
-    if (page === 1) {
-      startIdx = N - r; endIdx = N
-    } else {
-      endIdx = N - r - (page - 2) * 10
-      startIdx = Math.max(0, endIdx - 10)
-    }
-    return [...filtered].slice(startIdx, endIdx).reverse()
+    const start = (page - 1) * 10
+    return filtered.slice(start, start + 10)
   }
 
   const pageItems = getPageItems(currentPage)
@@ -312,21 +340,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
   }
 
-  // #12 warn banner click: navigate to page containing item, then expand
+  // warn banner click: navigate to page containing item, then expand
   function handleWarnItemClick(itemId: string) {
-    const allSorted = sort === 'urgent'
-      ? [...activeOldestFirst].sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
-      : activeOldestFirst
-    const Nall = allSorted.length
-    const rr = Nall % 10 || (Nall > 0 ? 10 : 0)
-    const idx = allSorted.findIndex(it => it.id === itemId)
+    const idx = filtered.findIndex(it => it.id === itemId)
     if (idx === -1) { expandId(itemId); return }
-    const targetPage = idx >= Nall - rr ? 1 : Math.floor((Nall - rr - 1 - idx) / 10) + 2
-    const willChange = targetPage !== currentPage || filter !== 'all' || filterStep !== 'all'
+    const targetPage = Math.floor(idx / 10) + 1
+    const willChange = targetPage !== currentPage || filter !== 'all' || filterState !== 'all'
     if (willChange) {
       pendingExpandId.current = itemId
       setFilter('all')
-      setFilterStep('all')
+      setFilterState('all')
       setCurrentPage(targetPage)
     } else {
       expandId(itemId)
@@ -501,12 +524,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           <option value="NT">NT</option>
           <option value="warn">警告のみ</option>
         </select>
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 90 }} value={filterStep} onChange={e => { setFilterStep(e.target.value); setCurrentPage(1) }}>
-          <option value="all">全ステップ</option>
-          {['S1','S2','S3','S4','S5'].map(s => <option key={s} value={s}>{s}</option>)}
+        <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={filterState} onChange={e => { setFilterState(e.target.value); setCurrentPage(1) }}>
+          <option value="all">全状態</option>
+          <option value="active">active</option>
+          <option value="waiting">waiting</option>
+          <option value="sleeping">sleeping</option>
         </select>
         <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={sort} onChange={e => setSort(e.target.value)}>
-          <option value="newest">新しい順</option>
+          <option value="newest">状態優先順</option>
           <option value="urgent">緊急度順</option>
         </select>
         <div className="ml-auto flex gap-1 shrink-0">
@@ -1039,11 +1064,24 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         <div className="flex items-center gap-2">
           <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.track)}`}>{item.track}</span>
           <p className="font-semibold text-sm text-slate-800 flex-1 min-w-0 truncate">{item.accountName}</p>
-          <StepSelector item={item} saveData={saveData} toast={toast} />
+          {/* チャネルバッジ */}
+          <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">{channelLabel(item.channel)}</span>
+          {/* 温度バッジ（0より大きい場合のみ） */}
+          {(item.temperature ?? 0) > 0 && (
+            <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded shrink-0">温{item.temperature}</span>
+          )}
+          {/* 状態バッジ */}
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
+        {/* 再接触日（waiting のみ） */}
+        {item.state === 'waiting' && item.recontact_date && (
+          <p className="text-[11px] text-amber-600 font-semibold mt-1">
+            <i className="fa-solid fa-clock-rotate-left mr-1 text-[10px]" />再接触日: {item.recontact_date}
+          </p>
+        )}
         {item.hypothesis && <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>}
         {(displayJudgment || displayNextAction) && (
           <div className="flex items-center gap-2 mt-1.5 text-xs">
@@ -1082,7 +1120,31 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           {/* step bar + actions */}
           <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b border-slate-100">
             <StepsBar currentStep={item.currentStep} />
+            <StepSelector item={item} saveData={saveData} toast={toast} />
             <div className="ml-auto flex items-center gap-1 shrink-0">
+              {/* チャネル変更 */}
+              {role === 'admin' && (
+                <select
+                  className="input-base text-[10px] py-1 px-2"
+                  style={{ maxWidth: 64 }}
+                  value={item.channel}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => {
+                    saveData(prev => ({
+                      ...prev,
+                      pipeline: prev.pipeline.map(p =>
+                        p.id === item.id ? { ...p, channel: e.target.value as import('../../types').Channel } : p
+                      ),
+                    }))
+                    toast.show('チャネルを変更しました')
+                  }}
+                >
+                  <option value="twitter">X</option>
+                  <option value="instagram">IG</option>
+                  <option value="threads">TH</option>
+                  <option value="dm">DM</option>
+                </select>
+              )}
               {profileUrl && (
                 <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-[11px] py-1 px-2">
                   <i className="fa-solid fa-arrow-up-right-from-square" />
@@ -1764,13 +1826,19 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       touchUpdates.os2Judgment = s1CapJudgment()
       pipelineUpdates.likeReturnStreak = newLikeStreak
       pipelineUpdates.noReactionStreak = 0
+      pipelineUpdates.last_reaction = 'heart'
+      pipelineUpdates.last_reaction_at = new Date().toISOString()
     } else if (selectedReaction.includes('無反応')) {
       touchUpdates.os2Judgment = noReactionJudgment()
       pipelineUpdates.noReactionStreak = newNoReactionStreak
       pipelineUpdates.likeReturnStreak = 0
+      pipelineUpdates.last_reaction = 'none'
+      pipelineUpdates.last_reaction_at = new Date().toISOString()
     } else if (selectedReaction.includes('公開拒絶（R5）')) {
       touchUpdates.os2Judgment = 'クローズ'
       pipelineUpdates.judgment = 'クローズ'
+      pipelineUpdates.last_reaction = 'negative'
+      pipelineUpdates.last_reaction_at = new Date().toISOString()
     }
 
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
@@ -2027,6 +2095,17 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       d.setDate(d.getDate() + msgParsed.recontactDays)
       pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
       pipelineUpdates.state = 'waiting'
+    }
+    // OS_現象未来 の「返信パターン判定」から temperature と last_reaction をセット
+    if (msgParsed?.reactionPattern) {
+      const tempMap: Record<string, number> = { '反応なし': 0, '❤️': 10, '温度20': 20, '温度50': 50, '温度80以上': 80, '否定': 0 }
+      const lrMap: Record<string, 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative'> = {
+        '反応なし': 'none', '❤️': 'heart', '温度20': 'temp20', '温度50': 'temp50', '温度80以上': 'temp80', '否定': 'negative',
+      }
+      const temp = tempMap[msgParsed.reactionPattern]
+      if (temp !== undefined) pipelineUpdates.temperature = temp
+      const lr = lrMap[msgParsed.reactionPattern]
+      if (lr) { pipelineUpdates.last_reaction = lr; pipelineUpdates.last_reaction_at = new Date().toISOString() }
     }
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setDraftText('')

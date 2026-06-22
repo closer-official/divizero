@@ -83,23 +83,34 @@ export default function App() {
 
   const confirm: ConfirmAPI = { show: showConfirm }
 
-  // waiting → active 自動遷移（起動時・再接触日チェック）
+  // waiting → active 自動遷移 & 48h未反応 → last_reaction:none（起動時チェック）
   const recontactCheckDone = useRef(false)
   useEffect(() => {
     if (loading || recontactCheckDone.current) return
     recontactCheckDone.current = true
     const now = new Date()
-    const needsUpdate = (data.pipeline || []).some(
-      p => p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now
-    )
+    const h48ago = new Date(now.getTime() - 48 * 60 * 60 * 1000)
+    const needsUpdate = (data.pipeline || []).some(p => {
+      if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) return true
+      const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
+      if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) return true
+      return false
+    })
     if (!needsUpdate) return
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => {
+        let updated = { ...p }
         if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) {
-          return { ...p, state: 'active' as const }
+          updated = { ...updated, state: 'active' as const }
         }
-        return p
+        const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
+        if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) {
+          if (!p.last_reaction || p.last_reaction_at !== latestTouch.date) {
+            updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
+          }
+        }
+        return updated
       }),
     }))
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
