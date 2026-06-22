@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/22 Tier2完了: last_reaction自動更新・48h無反応チェック・state/temperature自動セット";
+export const BUILD_LABEL = "06/22 Tier3完了: 温度バッジ色視覚化・再接触日アプリ内通知";

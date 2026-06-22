@@ -83,36 +83,44 @@ export default function App() {
 
   const confirm: ConfirmAPI = { show: showConfirm }
 
-  // waiting → active 自動遷移 & 48h未反応 → last_reaction:none（起動時チェック）
+  // waiting → active 自動遷移 & 48h未反応 → last_reaction:none & 再接触日通知（起動時チェック）
   const recontactCheckDone = useRef(false)
   useEffect(() => {
     if (loading || recontactCheckDone.current) return
     recontactCheckDone.current = true
     const now = new Date()
     const h48ago = new Date(now.getTime() - 48 * 60 * 60 * 1000)
-    const needsUpdate = (data.pipeline || []).some(p => {
-      if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) return true
+    const recontactDue = (data.pipeline || []).filter(
+      p => p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now
+    )
+    const needsUpdate = recontactDue.length > 0 || (data.pipeline || []).some(p => {
       const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-      if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) return true
-      return false
+      return latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago
     })
-    if (!needsUpdate) return
-    saveData(prev => ({
-      ...prev,
-      pipeline: prev.pipeline.map(p => {
-        let updated = { ...p }
-        if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) {
-          updated = { ...updated, state: 'active' as const }
-        }
-        const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-        if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) {
-          if (!p.last_reaction || p.last_reaction_at !== latestTouch.date) {
-            updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
+    if (needsUpdate) {
+      saveData(prev => ({
+        ...prev,
+        pipeline: prev.pipeline.map(p => {
+          let updated = { ...p }
+          if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) {
+            updated = { ...updated, state: 'active' as const }
           }
-        }
-        return updated
-      }),
-    }))
+          const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
+          if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) {
+            if (!p.last_reaction || p.last_reaction_at !== latestTouch.date) {
+              updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
+            }
+          }
+          return updated
+        }),
+      }))
+    }
+    if (recontactDue.length > 0) {
+      const msg = recontactDue.length === 1
+        ? `${recontactDue[0].accountName} の再接触日です`
+        : `${recontactDue[0].accountName} ほか${recontactDue.length - 1}件の再接触日です`
+      setTimeout(() => showToast(msg, 6000), 800)
+    }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pull-to-refresh (mobile)

@@ -125,6 +125,12 @@ function stateLabel(s?: string): string {
   if (!s || s === 'active') return 'active'
   return s
 }
+function tempBadgeStyle(t: number): string {
+  if (t >= 80) return 'bg-orange-100 text-orange-600'
+  if (t >= 50) return 'bg-emerald-100 text-emerald-600'
+  if (t >= 20) return 'bg-blue-100 text-blue-600'
+  return 'bg-slate-100 text-slate-500'
+}
 function judgmentColor(j: string) {
   if (j === '正常' || j.startsWith('正常')) return 'text-emerald-600'
   if (j === 'クローズ') return 'text-rose-600'
@@ -1068,7 +1074,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">{channelLabel(item.channel)}</span>
           {/* 温度バッジ（0より大きい場合のみ） */}
           {(item.temperature ?? 0) > 0 && (
-            <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded shrink-0">温{item.temperature}</span>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${tempBadgeStyle(item.temperature ?? 0)}`}>温{item.temperature}</span>
           )}
           {/* 状態バッジ */}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
