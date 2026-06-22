@@ -1,6 +1,5 @@
 import { execSync } from 'child_process';
-import { writeFileSync, cpSync, mkdirSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { writeFileSync } from 'fs';
 
 // Parse message from: -m "text" / --m="text" / positional arg
 const args = process.argv.slice(2);
@@ -20,14 +19,6 @@ if (!message) {
   console.error('使い方: npm run deploy -- -m "コミットメッセージ"');
   process.exit(1);
 }
-
-// Sync prompts/ → public/prompts/ so Vite serves them correctly
-mkdirSync('./public/prompts', { recursive: true });
-const promptFiles = readdirSync('./prompts').filter(f => f.endsWith('.md') && f.includes('_latest'));
-for (const f of promptFiles) {
-  cpSync(join('./prompts', f), join('./public/prompts', f));
-}
-console.log(`✓ ${promptFiles.length}件のプロンプトを public/prompts/ に同期`);
 
 // Write build label into the app (date + message)
 const today = new Date().toLocaleDateString('ja-JP', { month: '2-digit', day: '2-digit' }).replace('/', '/');
