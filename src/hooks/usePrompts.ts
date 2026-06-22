@@ -13,7 +13,7 @@ export async function loadPrompts(): Promise<Prompts> {
     OS2: '/prompts/OS2_行動判定_latest.md',
     OS3: '/prompts/OS3_案件検証_latest.md',
     IG_OCR: '/prompts/IG読み取りOCR_latest.md',
-    DM: '/prompts/OS_DM文生成_latest.md',
+    PHENOMENON_FUTURE: '/prompts/OS_現象未来_latest.md',
     LOG_OCR: '/prompts/OS_会話ログOCR_latest.md',
     S1_ACTION: '/prompts/OS_S1リアクション後行動判定_latest.md',
     DM_JUDGE: '/prompts/OS_DM文面判定_latest.md',

@@ -13,8 +13,8 @@ OS①の接触対象ゲート・禁止語・トーンルールを完全に引き
 アカウント名：{{accountName}}
 ハンドル：{{handle}}
 チャネル：{{channel}}
-トラック：{{track}}
-現在ステップ：{{currentStep}}
+トラック：{{track}}（NT / UT）
+温度：{{temperature}}（0〜100）
 事前仮説：{{hypothesis}}
 
 ■ これまでのタッチ履歴（直近5件・新しい順）

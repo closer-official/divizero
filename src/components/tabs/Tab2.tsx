@@ -6,7 +6,7 @@ import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
-import { buildDMPrompt, parseDMOutput, type DMGenerationResult } from '../../utils/dmPrompt'
+import { buildPhenomenonFuturePrompt, parsePhenomenonFutureOutput, type PhenomenonFutureResult } from '../../utils/phenomenonFuturePrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
@@ -114,10 +114,11 @@ function reactionBadge(r: string) {
   return m[r] ?? 'bg-gray-100 text-gray-400'
 }
 function judgmentColor(j: string) {
-  if (j === '前進' || j.startsWith('前進')) return 'text-violet-700'
+  if (j === '正常' || j.startsWith('正常')) return 'text-emerald-600'
   if (j === 'クローズ') return 'text-rose-600'
   if (j === '休眠') return 'text-slate-500'
-  return 'text-amber-600'
+  if (j === '対象再選定') return 'text-amber-600'
+  return 'text-slate-600'
 }
 
 // ── chip ───────────────────────────────────────────────────────
@@ -797,7 +798,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     try {
       let prompt: string
       if (tIsDM) {
-        if (!prompts.DM) { setAutoFillError('DMプロンプトの読み込みに失敗しました。'); return }
+        if (!prompts.PHENOMENON_FUTURE) { setAutoFillError('現象未来プロンプトの読み込みに失敗しました。'); return }
         const dummyTouch: Touch = {
           id: '', date: new Date().toISOString(),
           targetPostText: '', targetPostType: '通常投稿', targetValidity: '未評価',
@@ -805,7 +806,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           messageValidity: '未判定', reactionType: '未記録', reactionNote: '',
           threadEntry: 's3_direct', conversationTurns: [],
         }
-        prompt = buildDMPrompt(item, dummyTouch, prompts.DM)
+        prompt = buildPhenomenonFuturePrompt(item, dummyTouch, prompts.PHENOMENON_FUTURE)
       } else {
         prompt = await buildTouchPrompt(item, touches)
       }
@@ -821,9 +822,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setAutoFillError(null)
     setAutoFillWarning(null)
     if (tIsDM) {
-      const parsed = parseDMOutput(aiOutput)
+      const parsed = parsePhenomenonFutureOutput(aiOutput)
       if (!parsed) {
-        setAutoFillError('AI出力の形式が認識できませんでした。===DM_START=== から ===DM_END=== までを含めて貼り付けてください。')
+        setAutoFillError('AI出力の形式が認識できませんでした。===MSG_START=== から ===MSG_END=== までを含めて貼り付けてください。')
         return
       }
       setSuggestionA(parsed.suggestedA)
@@ -1448,7 +1449,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   onClick={handleCopyPrompt}
                 >
                   <i className={`fa-solid ${copyBtnState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
-                  {copyBtnState === 'copied' ? '✓ コピーしました' : tIsDM ? 'DM文生成プロンプトをコピー' : 'プロンプトをコピー'}
+                  {copyBtnState === 'copied' ? '✓ コピーしました' : tIsDM ? 'OS_現象未来プロンプトをコピー' : 'プロンプトをコピー'}
                 </button>
                 <p className="text-[10px] text-slate-400 text-center">
                   {tIsDM ? '↓ ChatGPT等に貼り付けて実行' : '↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行'}
@@ -1458,7 +1459,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 <textarea
                   rows={3}
                   className="input-base cs text-xs resize-y"
-                  placeholder="AIの出力をここに貼り付け（===TOUCH_START=== から ===TOUCH_END=== まで）"
+                  placeholder={tIsDM ? "AI出力をここに貼り付け（===MSG_START=== から ===MSG_END=== まで）" : "AIの出力をここに貼り付け（===TOUCH_START=== から ===TOUCH_END=== まで）"}
                   value={aiOutput}
                   onChange={e => { setAiOutput(e.target.value); setAutoFillError(null); setAutoFillWarning(null) }}
                 />
@@ -1672,9 +1673,9 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   // thread state
   const [replyText, setReplyText] = useState('')
   const [initChannel, setInitChannel] = useState<'リプ' | 'DM'>('リプ')
-  const [dmOutput, setDmOutput] = useState('')
-  const [dmParsed, setDmParsed] = useState<DMGenerationResult | null>(null)
-  const [dmCopyState, setDmCopyState] = useState<'idle' | 'copied'>('idle')
+  const [msgOutput, setMsgOutput] = useState('')
+  const [msgParsed, setMsgParsed] = useState<PhenomenonFutureResult | null>(null)
+  const [msgCopyState, setMsgCopyState] = useState<'idle' | 'copied'>('idle')
   const [os2CpOutput, setOs2CpOutput] = useState('')
   const [os2CpParsed, setOs2CpParsed] = useState<OS2CheckpointResult | null>(null)
   const [os2CpCopyState, setOs2CpCopyState] = useState<'idle' | 'copied'>('idle')
@@ -1711,12 +1712,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const touchesWithFollow = (pipelineItem.touches || []).some(t => hasReaction(t.reactionType, 'フォロー返し')) || selectedReaction.includes('フォロー返し')
 
   function s1CapJudgment(): string {
-    if (newLikeStreak < 3) return `前進（新規投稿待ち → 別の具体点でS1再生成）`
-    if (touchesWithFollow) return `前進（チャネル格上げ）`
+    if (newLikeStreak < 3) return `正常（新規投稿待ち → 別の具体点でS1再生成）`
+    if (touchesWithFollow) return `正常（チャネル格上げ）`
     return `休眠`
   }
   function noReactionJudgment(): string {
-    if (newNoReactionStreak === 1) return `維持（次の新規投稿を待つ）`
+    if (newNoReactionStreak === 1) return `正常（次の新規投稿を待つ）`
     return `休眠（無反応${newNoReactionStreak}連続。追いS1はしない）`
   }
 
@@ -1776,8 +1777,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setRecordingReaction(false)
     setSelectedReaction([])
     setReactionNote('')
-    setDmOutput('')
-    setDmParsed(null)
+    setMsgOutput('')
+    setMsgParsed(null)
   }
 
   function handleCopyS1ActionPrompt() {
@@ -1937,23 +1938,22 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setTouchJudgOutput('')
   }
 
-  async function handleCopyDMPrompt() {
-    if (!prompts.DM) return
-    const prompt = buildDMPrompt(pipelineItem, touch, prompts.DM)
+  async function handleCopyMsgPrompt() {
+    if (!prompts.PHENOMENON_FUTURE) return
+    const prompt = buildPhenomenonFuturePrompt(pipelineItem, touch, prompts.PHENOMENON_FUTURE)
     try {
       await navigator.clipboard.writeText(prompt)
-      setDmCopyState('copied')
-      setTimeout(() => setDmCopyState('idle'), 2000)
+      setMsgCopyState('copied')
+      setTimeout(() => setMsgCopyState('idle'), 2000)
     } catch {
-      setDmCopyState('idle')
+      setMsgCopyState('idle')
     }
   }
 
-  function handleParseDMOutput() {
-    const parsed = parseDMOutput(dmOutput)
+  function handleParseMsgOutput() {
+    const parsed = parsePhenomenonFutureOutput(msgOutput)
     if (!parsed) return
-    setDmParsed(parsed)
-    if (parsed.os2Recommended) setShowOs2Cp(true)
+    setMsgParsed(parsed)
   }
 
   async function handleCopyOs2CpPrompt() {
@@ -1985,13 +1985,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       channel: draftChannel,
       sentStatus: 'sent',
       sentAt: new Date().toISOString(),
-      ...(dmParsed ? {
-        dmConversationState: dmParsed.conversationState,
-        dmSuggestedA: dmParsed.suggestedA,
-        dmSuggestedB: dmParsed.suggestedB,
-        dmNextAim: dmParsed.nextAim,
-        dmOs2Recommended: dmParsed.os2Recommended,
-        dmRawOutput: dmParsed.rawOutput,
+      ...(msgParsed ? {
+        dmConversationState: msgParsed.purpose,
+        dmSuggestedA: msgParsed.suggestedA,
+        dmSuggestedB: msgParsed.suggestedB,
+        dmNextAim: msgParsed.aim,
+        dmRawOutput: msgParsed.rawOutput,
       } : {}),
       ...(os2CpParsed ? {
         os2Judgment: os2CpParsed.judgment,
@@ -2016,21 +2015,24 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     if (os2CpParsed) {
       pipelineUpdates.judgment = os2CpParsed.judgment || null
       pipelineUpdates.nextAction = os2CpParsed.nextAction || null
-      if (os2CpParsed.judgment === '前進') {
-        pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
+      if (os2CpParsed.judgment === '休眠') {
+        pipelineUpdates.state = 'sleeping'
+      } else if (os2CpParsed.judgment === 'クローズ') {
+        pipelineUpdates.state = 'closed'
       }
     }
-    // DM文生成OSがより高いステップを検出した場合は自動移行
-    if (dmParsed?.currentStep && stepToNum(dmParsed.currentStep) > stepToNum(pipelineItem.currentStep)) {
-      const nextStep = dmParsed.currentStep as Step
-      pipelineUpdates.currentStep = nextStep
-      pipelineUpdates.stepHistory = [...(pipelineItem.stepHistory || []), { step: nextStep, date: todayStr() }]
+    // OS_現象未来 の「次のアクション」から再接触日をセット
+    if (msgParsed?.recontactDays != null) {
+      const d = new Date()
+      d.setDate(d.getDate() + msgParsed.recontactDays)
+      pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
+      pipelineUpdates.state = 'waiting'
     }
     onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
     setDraftText('')
     setDraftEditReason('')
-    setDmOutput('')
-    setDmParsed(null)
+    setMsgOutput('')
+    setMsgParsed(null)
     setOs2CpOutput('')
     setOs2CpParsed(null)
     setShowOs2Cp(false)
@@ -2540,98 +2542,95 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
               </div>
             )}
 
-            {/* DM文生成OSセクション（最終ターンが相手のとき常に表示） */}
+            {/* OS_現象未来セクション（最終ターンが相手のとき常に表示） */}
             {showOS2Section && (
               <div className="mx-3 mb-3 flex flex-col gap-2">
-                {/* DM文生成 */}
+                {/* 現象未来プロンプトコピー */}
                 <button
                   className={`w-full py-2.5 text-sm font-bold rounded-xl border-2 transition ${
-                    dmCopyState === 'copied'
+                    msgCopyState === 'copied'
                       ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
                       : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
                   }`}
-                  onClick={handleCopyDMPrompt}
+                  onClick={handleCopyMsgPrompt}
                 >
-                  <i className={`fa-solid ${dmCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1.5`} />
-                  {dmCopyState === 'copied' ? '✓ コピーしました' : '📋 DM文生成プロンプトをコピー'}
+                  <i className={`fa-solid ${msgCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1.5`} />
+                  {msgCopyState === 'copied' ? '✓ コピーしました' : '📋 OS_現象未来プロンプトをコピー'}
                 </button>
                 <p className="text-[10px] text-slate-400 text-center">↓ Claude/ChatGPT等で実行 → 出力を貼る</p>
                 <textarea
                   rows={3}
                   className="input-base cs text-xs resize-y"
-                  placeholder="AI出力をここに貼り付け（===DM_START=== 〜 ===DM_END===）"
-                  value={dmOutput}
-                  onChange={e => setDmOutput(e.target.value)}
+                  placeholder="AI出力をここに貼り付け（===MSG_START=== 〜 ===MSG_END===）"
+                  value={msgOutput}
+                  onChange={e => setMsgOutput(e.target.value)}
                 />
                 <button
                   className="btn-primary text-xs py-2 justify-center"
                   style={{ background: '#4f46e5' }}
-                  onClick={handleParseDMOutput}
-                  disabled={!dmOutput.trim()}
+                  onClick={handleParseMsgOutput}
+                  disabled={!msgOutput.trim()}
                 >
                   <i className="fa-solid fa-bolt mr-1" />取り込む
                 </button>
 
-                {dmParsed && (
+                {msgParsed && (
                   <div className="flex flex-col gap-2">
-                    {/* 会話状態バッジ */}
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-slate-400 shrink-0">会話状態</span>
-                      <span className={`font-bold px-2 py-0.5 rounded-full text-[11px] ${
-                        dmParsed.conversationState === '質問あり' ? 'bg-emerald-100 text-emerald-700' :
-                        dmParsed.conversationState === 'クローズ型' ? 'bg-rose-100 text-rose-700' :
-                        'bg-amber-100 text-amber-700'
-                      }`}>{dmParsed.conversationState}</span>
+                    {/* 今回の目的・返信パターン判定バッジ */}
+                    <div className="flex items-center gap-2 flex-wrap text-xs">
+                      {msgParsed.purpose && (
+                        <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-indigo-100 text-indigo-700">
+                          目的：{msgParsed.purpose}
+                        </span>
+                      )}
+                      {msgParsed.reactionPattern && (
+                        <span className="font-bold px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-600">
+                          {msgParsed.reactionPattern}
+                        </span>
+                      )}
                     </div>
 
                     {/* 提案文A/B */}
-                    {(dmParsed.suggestedA || dmParsed.suggestedB) && (
+                    {(msgParsed.suggestedA || msgParsed.suggestedB) && (
                       <div className="flex flex-col gap-1.5">
-                        {dmParsed.suggestedA && (
+                        {msgParsed.suggestedA && (
                           <div className="bg-violet-50 border border-violet-100 rounded-xl p-2.5 flex items-start gap-2">
                             <span className="text-[10px] font-bold text-violet-600 shrink-0 mt-0.5">A</span>
-                            <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{dmParsed.suggestedA}</p>
+                            <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{msgParsed.suggestedA}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-violet-600 border border-violet-300 rounded-lg px-2 py-1 hover:bg-violet-100 transition min-h-[28px]"
-                              onClick={() => setDraftText(dmParsed.suggestedA)}
+                              onClick={() => setDraftText(msgParsed!.suggestedA)}
                             >使う</button>
                           </div>
                         )}
-                        {dmParsed.suggestedB && (
+                        {msgParsed.suggestedB && msgParsed.suggestedB !== '（空欄）' && (
                           <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2">
                             <span className="text-[10px] font-bold text-indigo-600 shrink-0 mt-0.5">B</span>
-                            <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{dmParsed.suggestedB}</p>
+                            <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{msgParsed.suggestedB}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-indigo-600 border border-indigo-300 rounded-lg px-2 py-1 hover:bg-indigo-100 transition min-h-[28px]"
-                              onClick={() => setDraftText(dmParsed.suggestedB)}
+                              onClick={() => setDraftText(msgParsed!.suggestedB)}
                             >使う</button>
                           </div>
                         )}
                       </div>
                     )}
 
-                    {/* 次の狙い */}
-                    {dmParsed.nextAim && (
+                    {/* 今回の狙い・次のアクション */}
+                    {msgParsed.aim && msgParsed.aim !== 'なし' && (
                       <p className="text-[11px] text-slate-500 px-1">
-                        <span className="font-bold text-slate-600">次の狙い：</span>{dmParsed.nextAim}
+                        <span className="font-bold text-slate-600">今回の狙い：</span>{msgParsed.aim}
                       </p>
                     )}
-
-                    {/* OS²推奨バナー */}
-                    {dmParsed.os2Recommended && !showOs2Cp && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
-                        <i className="fa-solid fa-triangle-exclamation text-amber-500 text-sm mt-0.5 shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-xs font-bold text-amber-700">⚠ OS②判定を推奨</p>
-                          {dmParsed.os2Reason && <p className="text-[11px] text-amber-600 mt-0.5">{dmParsed.os2Reason}</p>}
-                        </div>
-                        <button
-                          className="shrink-0 text-[10px] font-bold text-amber-700 border border-amber-300 rounded-lg px-2.5 py-1.5 hover:bg-amber-100 transition min-h-[28px]"
-                          onClick={() => setShowOs2Cp(true)}
-                        >
-                          判定する
-                        </button>
-                      </div>
+                    {msgParsed.nextAction && (
+                      <p className={`text-[11px] font-semibold px-1 ${msgParsed.recontactDays != null ? 'text-amber-600' : 'text-emerald-600'}`}>
+                        <span className="font-bold">次のアクション：</span>{msgParsed.nextAction}
+                        {msgParsed.recontactDays != null && (
+                          <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                            → 再接触日をセット
+                          </span>
+                        )}
+                      </p>
                     )}
                   </div>
                 )}
@@ -2671,7 +2670,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     {os2CpParsed && (
                       <div className="bg-white border border-indigo-100 rounded-lg p-3 flex flex-col gap-1 text-xs">
                         <p className={`font-bold ${
-                          os2CpParsed.judgment === '前進' ? 'text-violet-700' :
+                          os2CpParsed.judgment === '正常' ? 'text-emerald-600' :
                           os2CpParsed.judgment === 'クローズ' ? 'text-rose-600' :
                           os2CpParsed.judgment === '休眠' ? 'text-slate-500' :
                           'text-amber-600'
@@ -2788,7 +2787,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
-            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction.includes(r)} onClick={() => { setSelectedReaction(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]); setDmParsed(null) }} />)}
+            {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction.includes(r)} onClick={() => { setSelectedReaction(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]); setMsgParsed(null) }} />)}
           </div>
 
           {/* テキスト返信 → スレッド初期化 */}

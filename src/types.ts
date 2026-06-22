@@ -187,6 +187,10 @@ export interface PipelineItem {
   isOpen: boolean;
   closedAt?: string | null;
   closedCaseId?: string | null;
+  // S∞ループ構造フィールド
+  state?: 'active' | 'waiting' | 'sleeping' | 'closed';
+  recontact_date?: string;
+  temperature?: number;
 }
 
 export interface ClosedDeal {
@@ -303,7 +307,7 @@ export type Prompts = {
   OS2?: string;
   OS3?: string;
   IG_OCR?: string;
-  DM?: string;
+  PHENOMENON_FUTURE?: string;
   LOG_OCR?: string;
   S1_ACTION?: string;
   DM_JUDGE?: string;
