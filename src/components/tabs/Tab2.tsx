@@ -1272,15 +1272,15 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1">
                   <button
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'rep' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    onClick={() => { setTTouchMode('rep'); resetForm() }}
+                    onClick={() => { resetForm(); setTTouchMode('rep') }}
                   >公開リプ/コメント</button>
                   <button
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'story' ? 'bg-pink-500 text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    onClick={() => { setTTouchMode('story'); resetForm() }}
+                    onClick={() => { resetForm(); setTTouchMode('story') }}
                   >ストーリー返信</button>
                   <button
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'dm' ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    onClick={() => { setTTouchMode('dm'); resetForm() }}
+                    onClick={() => { resetForm(); setTTouchMode('dm') }}
                   >通常DM</button>
                 </div>
               </div>
