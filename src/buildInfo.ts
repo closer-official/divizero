@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/22 OS0_latest v2上書き・プロンプト組み立てロジック修正";
+export const BUILD_LABEL = "06/22 OS0を媒体別v2ファイルに分割・モード別コピープロンプト対応";

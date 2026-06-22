@@ -294,6 +294,9 @@ export interface AppData {
 
 export type Prompts = {
   OS0?: string;
+  OS0_X?: string;
+  OS0_IG?: string;
+  OS0_TH?: string;
   OS1_X?: string;
   OS1_IG?: string;
   OS1_TH?: string;

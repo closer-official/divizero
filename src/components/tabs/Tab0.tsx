@@ -30,7 +30,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function handleCopyPrompt() {
-    const prompt = prompts.OS0
+    const prompt = mode === 'instagram' ? prompts.OS0_IG : mode === 'threads' ? prompts.OS0_TH : prompts.OS0_X
     if (!prompt) { toast.show('プロンプトを読み込み中です'); return }
     const excluded = data.excluded || []
     const handles = excluded.map(e => e.handle).filter(Boolean).join('\n')

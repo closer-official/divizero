@@ -3,7 +3,10 @@ import type { Prompts } from '../types';
 
 export async function loadPrompts(): Promise<Prompts> {
   const files: Record<keyof Prompts, string> = {
-    OS0: '/prompts/OS0_一次選別_latest.md',
+    OS0: '/prompts/OS0_一次選別_v2.md',
+    OS0_X: '/prompts/OS0_X_一次選別_v2.md',
+    OS0_IG: '/prompts/OS0_Instagram_一次選別_v2.md',
+    OS0_TH: '/prompts/OS0_Threads_一次選別_v2.md',
     OS1_X: '/prompts/OS1_X_接触スクリーニング_latest.md',
     OS1_IG: '/prompts/OS1_Instagram_接触スクリーニング_latest.md',
     OS1_TH: '/prompts/OS1_Threads_接触スクリーニング_latest.md',
