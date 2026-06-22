@@ -127,19 +127,20 @@ OS①プロンプト + スクショを外部AI へ → 出力を貼り付け →
 ## S∞ループ構造（PipelineItem の状態管理）
 
 ```
-PipelineItem.state: 'active' | 'waiting' | 'sleeping' | 'closed'
+PipelineItem.state: 'active' | 'waiting' | 'sleeping' | 'archived' | 'closed'
 PipelineItem.temperature: number (0–100)  # 接触温度
 PipelineItem.last_reaction: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative'
-PipelineItem.recontact_date: string (ISO date)  # waiting → active への自動遷移日
+PipelineItem.recontact_date: string (ISO date)  # waiting/sleeping/archived → active への自動遷移日
 ```
 
 - **active**: 接触アクティブ。再接触日になると自動で active に戻る
-- **waiting**: 再接触日まで待機中（App 起動時に `recontact_date <= now` で active に自動昇格）
-- **sleeping**: 長期休眠
+- **waiting**: 再接触日まで待機中（7〜30日後が目安）
+- **sleeping**: 低頻度監視（1〜3ヶ月後が目安）。いいね3連続＋フォロー返しなし等で移行
+- **archived**: 長期保管（半年以上）。完全無反応3連続 / 30日反応ゼロで移行
 - **closed**: クローズ済み
 
 起動時チェック（`App.tsx` の `useEffect`）:
-1. `state === 'waiting'` かつ `recontact_date <= now` → `state = 'active'` に更新
+1. `state === 'waiting' | 'sleeping' | 'archived'` かつ `recontact_date <= now` → `state = 'active'` に更新
 2. 最新 Touch が `awaiting_reaction` かつ 48h 経過 → `last_reaction = 'none'` に更新
 3. 再接触日が来ているアカウントがあればトースト通知
 
