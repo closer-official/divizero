@@ -287,6 +287,43 @@ export interface Analysis {
   osAccuracyVerdict?: string;
 }
 
+export interface OtherAnalysisResult {
+  typeName: string;
+  persona: string;
+  emotionHook: string;
+  structure: string;
+  transferable: string;
+  rawOutput: string;
+  analyzedAt: string;
+}
+
+export interface PostStock {
+  id: string;
+  createdAt: string;
+  sourceType: 'os2_touch' | 'manual';
+  accountName: string;
+  channel: Channel;
+  postText: string;
+  postRawText?: string;
+  postDateTime?: string;
+  engagementStats?: string;
+  status: 'unanalyzed' | 'analyzed';
+  otherAnalysis?: OtherAnalysisResult;
+}
+
+export interface OwnPostAnalysis {
+  id: string;
+  createdAt: string;
+  postText: string;
+  engagementStats: string;
+  evaluation: string;
+  goodPoints: string;
+  badPoints: string;
+  readerReason: string;
+  improvementPoint: string;
+  rawOutput: string;
+}
+
 export interface AppData {
   screenings: Screening[];
   targets: Target[];
@@ -296,6 +333,9 @@ export interface AppData {
   trash: TrashItem[];
   logs?: LogEntry[];
   analyses?: Analysis[];
+  postStocks?: PostStock[];
+  ownPostAnalyses?: OwnPostAnalysis[];
+  myProfile?: string;
 }
 
 export type Prompts = {
@@ -313,4 +353,7 @@ export type Prompts = {
   LOG_OCR?: string;
   S1_ACTION?: string;
   DM_JUDGE?: string;
+  OS4_OTHER_ANALYSIS?: string;
+  OS4_OWN_ANALYSIS?: string;
+  OS4_POST_GEN?: string;
 };

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
-import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step, PostStock } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -769,6 +769,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tSentText, setTSentText] = useState('')
   const [tEditReason, setTEditReason] = useState('')
   const [tMsgValidity, setTMsgValidity] = useState<TouchValidity>('未判定')
+  const [tPostDateTime, setTPostDateTime] = useState<string | undefined>(undefined)
+  const [tEngagementStats, setTEngagementStats] = useState<string | undefined>(undefined)
 
   // judgment (文面再判定)
   const [tJudgmentExpanded, setTJudgmentExpanded] = useState(false)
@@ -809,6 +811,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
     setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
+    setTPostDateTime(undefined); setTEngagementStats(undefined)
     setTTouchMode('rep')
   }
 
@@ -863,6 +866,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }
     setTPostText(parsed.targetPostText)
     setTPostRawText(parsed.targetPostRawText)
+    setTPostDateTime(parsed.postDateTime || undefined)
+    setTEngagementStats(parsed.engagementStats || undefined)
     setTPostType(parsed.targetPostType as TouchPostType)
     setTValidity(parsed.targetValidity as TouchValidity)
     setTAiText(`A: ${parsed.suggestedTextA}\nB: ${parsed.suggestedTextB}`)
@@ -977,12 +982,26 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       }
     }
 
+    const shouldStock = tTouchMode !== 'dm' && (tPostRawText.trim() || tPostText.trim())
+    const newStock: PostStock | null = shouldStock ? {
+      id: uid(), createdAt: now,
+      sourceType: 'os2_touch',
+      accountName: item.accountName,
+      channel: item.channel,
+      postText: tPostText || '（要約なし）',
+      postRawText: tPostRawText || undefined,
+      postDateTime: tPostDateTime || undefined,
+      engagementStats: tEngagementStats || undefined,
+      status: 'unanalyzed',
+    } : null
+
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
         ? { ...p, ...pipelineUpdates, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
         : p
       ),
+      ...(newStock ? { postStocks: [...(prev.postStocks || []), newStock] } : {}),
     }))
     resetForm()
     setAddingTouch(false)

@@ -12,6 +12,8 @@ export interface ParsedTouch {
   suggestedTextB: string
   provisionalJudgmentB: string
   nextAim: string
+  postDateTime?: string
+  engagementStats?: string
 }
 
 function formatDate(isoStr: string): string {
@@ -97,9 +99,11 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
     return '未評価'
   }
 
+  const postDateTime = pick('投稿日時')
+  const engagementStats = pick('エンゲージメント')
   return {
     targetPostText: pick('接触した投稿'),
-    targetPostRawText: pickUntil('投稿原文', '投稿種別'),
+    targetPostRawText: pickUntil('投稿原文', '投稿日時') || pickUntil('投稿原文', '投稿種別'),
     targetPostType: normalizePostType(pick('投稿種別')),
     targetValidity: normalizeValidity(pick('対象妥当性')),
     gateJudgment: pick('ゲート判定'),
@@ -108,5 +112,7 @@ export function parseTouchOutput(raw: string): ParsedTouch | null {
     suggestedTextB: pickUntil('提案文B', '仮判定B'),
     provisionalJudgmentB: pick('仮判定B').trim(),
     nextAim: pick('次の狙い'),
+    postDateTime: postDateTime && postDateTime !== '不明' ? postDateTime : undefined,
+    engagementStats: engagementStats && engagementStats !== '不明' ? engagementStats : undefined,
   }
 }

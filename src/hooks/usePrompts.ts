@@ -17,6 +17,9 @@ export async function loadPrompts(): Promise<Prompts> {
     LOG_OCR: '/prompts/OS_会話ログOCR_latest.md',
     S1_ACTION: '/prompts/OS_S1リアクション後行動判定_latest.md',
     DM_JUDGE: '/prompts/OS_DM文面判定_latest.md',
+    OS4_OTHER_ANALYSIS: '/prompts/OS4_他社投稿分析_latest.md',
+    OS4_OWN_ANALYSIS: '/prompts/OS4_自社投稿分析_latest.md',
+    OS4_POST_GEN: '/prompts/OS4_自社投稿生成_latest.md',
   };
   const entries = await Promise.all(
     Object.entries(files).map(async ([key, path]) => {

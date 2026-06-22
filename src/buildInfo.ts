@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/23 反応記録UI: ストーリー返信・DM両方でisAwaitingなら常に表示";
+export const BUILD_LABEL = "06/23 OS④ 投稿分析・生成機能 実装（他社投稿ストック・自社投稿分析・投稿案生成）";
