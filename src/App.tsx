@@ -91,7 +91,7 @@ export default function App() {
     const now = new Date()
     const h48ago = new Date(now.getTime() - 48 * 60 * 60 * 1000)
     const recontactDue = (data.pipeline || []).filter(
-      p => p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now
+      p => (p.state === 'waiting' || p.state === 'sleeping' || p.state === 'archived') && p.recontact_date && new Date(p.recontact_date) <= now
     )
     const needsUpdate = recontactDue.length > 0 || (data.pipeline || []).some(p => {
       const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
@@ -102,7 +102,7 @@ export default function App() {
         ...prev,
         pipeline: prev.pipeline.map(p => {
           let updated = { ...p }
-          if (p.state === 'waiting' && p.recontact_date && new Date(p.recontact_date) <= now) {
+          if ((p.state === 'waiting' || p.state === 'sleeping' || p.state === 'archived') && p.recontact_date && new Date(p.recontact_date) <= now) {
             updated = { ...updated, state: 'active' as const }
           }
           const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]

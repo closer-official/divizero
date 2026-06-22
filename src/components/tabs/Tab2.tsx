@@ -119,6 +119,7 @@ function stateBadgeStyle(s?: string): string {
   if (!s || s === 'active') return 'bg-emerald-100 text-emerald-700'
   if (s === 'waiting') return 'bg-amber-100 text-amber-700'
   if (s === 'sleeping') return 'bg-slate-100 text-slate-500'
+  if (s === 'archived') return 'bg-purple-100 text-purple-600'
   return 'bg-rose-100 text-rose-600'
 }
 function stateLabel(s?: string): string {
@@ -135,6 +136,7 @@ function judgmentColor(j: string) {
   if (j === '正常' || j.startsWith('正常')) return 'text-emerald-600'
   if (j === 'クローズ') return 'text-rose-600'
   if (j === '休眠') return 'text-slate-500'
+  if (j === '保管') return 'text-purple-600'
   if (j === '対象再選定') return 'text-amber-600'
   return 'text-slate-600'
 }
@@ -226,13 +228,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
   const active = data.pipeline.filter(p => p.isOpen)
 
-  // State priority: active=0, waiting=1, sleeping=2, closed=3
+  // State priority: active=0, waiting=1, sleeping=2, archived=3, closed=4
   function stateOrder(p: PipelineItem): number {
     const s = p.state ?? 'active'
     if (s === 'active') return 0
     if (s === 'waiting') return 1
     if (s === 'sleeping') return 2
-    return 3
+    if (s === 'archived') return 3
+    return 4
   }
 
   let filtered = [...active]
@@ -242,6 +245,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   if (filterState === 'active') filtered = filtered.filter(p => !p.state || p.state === 'active')
   else if (filterState === 'waiting') filtered = filtered.filter(p => p.state === 'waiting')
   else if (filterState === 'sleeping') filtered = filtered.filter(p => p.state === 'sleeping')
+  else if (filterState === 'archived') filtered = filtered.filter(p => p.state === 'archived')
 
   if (sort === 'urgent') {
     filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
@@ -535,6 +539,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           <option value="active">active</option>
           <option value="waiting">waiting</option>
           <option value="sleeping">sleeping</option>
+          <option value="archived">archived（保管）</option>
         </select>
         <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={sort} onChange={e => setSort(e.target.value)}>
           <option value="newest">状態優先順</option>
@@ -1082,9 +1087,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
-        {/* 再接触日（waiting のみ） */}
-        {item.state === 'waiting' && item.recontact_date && (
-          <p className="text-[11px] text-amber-600 font-semibold mt-1">
+        {/* 再接触日（waiting / sleeping / archived） */}
+        {(item.state === 'waiting' || item.state === 'sleeping' || item.state === 'archived') && item.recontact_date && (
+          <p className={`text-[11px] font-semibold mt-1 ${item.state === 'archived' ? 'text-purple-600' : 'text-amber-600'}`}>
             <i className="fa-solid fa-clock-rotate-left mr-1 text-[10px]" />再接触日: {item.recontact_date}
           </p>
         )}
@@ -2091,6 +2096,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       pipelineUpdates.nextAction = os2CpParsed.nextAction || null
       if (os2CpParsed.judgment === '休眠') {
         pipelineUpdates.state = 'sleeping'
+      } else if (os2CpParsed.judgment === '保管') {
+        pipelineUpdates.state = 'archived'
       } else if (os2CpParsed.judgment === 'クローズ') {
         pipelineUpdates.state = 'closed'
       }
@@ -2239,7 +2246,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
 
         {/* os2 judgment result (reacted) */}
         {!isAwaiting && touch.os2Judgment && touch.threadStatus !== 'active' && (
-          <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${hasReaction(touch.reactionType, 'テキスト返信') ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : 'bg-blue-50 text-blue-700'}`}>
+          <div className={`mt-1 px-2 py-1.5 rounded-lg text-[11px] font-semibold ${hasReaction(touch.reactionType, 'テキスト返信') ? 'bg-violet-50 text-violet-700' : touch.os2Judgment.startsWith('休眠') ? 'bg-slate-50 text-slate-500' : touch.os2Judgment.startsWith('保管') ? 'bg-purple-50 text-purple-600' : 'bg-blue-50 text-blue-700'}`}>
             → {touch.os2Judgment}
           </div>
         )}
@@ -2260,6 +2267,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             if (j === 'DM移行') return 'bg-indigo-50 border-indigo-200 text-indigo-800'
             if (j === '次投稿再接触') return 'bg-blue-50 border-blue-200 text-blue-800'
             if (j === '休眠') return 'bg-slate-50 border-slate-200 text-slate-600'
+            if (j === '保管') return 'bg-purple-50 border-purple-200 text-purple-700'
             if (j === 'クローズ') return 'bg-rose-50 border-rose-200 text-rose-700'
             return 'bg-slate-50 border-slate-200 text-slate-700'
           }
@@ -2758,6 +2766,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                           os2CpParsed.judgment === '正常' ? 'text-emerald-600' :
                           os2CpParsed.judgment === 'クローズ' ? 'text-rose-600' :
                           os2CpParsed.judgment === '休眠' ? 'text-slate-500' :
+                          os2CpParsed.judgment === '保管' ? 'text-purple-600' :
                           'text-amber-600'
                         }`}>判定：{os2CpParsed.judgment}</p>
                         {os2CpParsed.nextAction && <p className="text-slate-600">次アクション：{os2CpParsed.nextAction}</p>}

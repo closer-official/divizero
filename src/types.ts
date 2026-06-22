@@ -188,7 +188,7 @@ export interface PipelineItem {
   closedAt?: string | null;
   closedCaseId?: string | null;
   // S∞ループ構造フィールド
-  state?: 'active' | 'waiting' | 'sleeping' | 'closed';
+  state?: 'active' | 'waiting' | 'sleeping' | 'archived' | 'closed';
   recontact_date?: string;
   temperature?: number;
   last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
