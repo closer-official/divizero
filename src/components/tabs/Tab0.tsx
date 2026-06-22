@@ -23,6 +23,8 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [input, setInput] = useState('')
   const [result, setResult] = useState('')
   const [excludedOpen, setExcludedOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
 
   function setModeAndSave(m: Mode) {
     setMode(m)
@@ -109,6 +111,20 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       }, 0)
       return d
     })
+  }
+
+  function handleStartEdit(id: string, currentName: string) {
+    setEditingId(id)
+    setEditingName(currentName)
+  }
+
+  function handleSaveName(id: string) {
+    const name = editingName.trim()
+    saveData(prev => ({
+      ...prev,
+      screenings: prev.screenings.map(s => s.id === id ? { ...s, displayName: name } : s),
+    }))
+    setEditingId(null)
   }
 
   function handleGoToOS1(id: string, channel: Mode) {
@@ -231,7 +247,30 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                       {verdictBadge}
                       {channelBadge(item.channel)}
                       <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-sm text-slate-800 truncate">{item.displayName || '(名前なし)'}</p>
+                        {editingId === item.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              className="input-base text-sm py-0.5 px-2 h-7 flex-1 min-w-0"
+                              value={editingName}
+                              onChange={e => setEditingName(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveName(item.id); if (e.key === 'Escape') setEditingId(null) }}
+                              autoFocus
+                            />
+                            <button className="btn-primary text-xs py-0.5 px-2 h-7 shrink-0" onClick={() => handleSaveName(item.id)}>保存</button>
+                            <button className="btn-sec text-xs py-0.5 px-2 h-7 shrink-0" onClick={() => setEditingId(null)}>×</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 group">
+                            <p className="font-semibold text-sm text-slate-800 truncate">{item.displayName ? item.displayName : <span className="text-rose-400">(名前なし)</span>}</p>
+                            <button
+                              className="opacity-0 group-hover:opacity-100 transition w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-violet-500 hover:bg-violet-50 shrink-0"
+                              onClick={() => handleStartEdit(item.id, item.displayName || '')}
+                              title="名前を編集"
+                            >
+                              <i className="fa-solid fa-pen text-[10px]" />
+                            </button>
+                          </div>
+                        )}
                         <p className="text-[11px] text-slate-500 truncate">{item.handle}{item.reason ? ' — ' + item.reason : ''}</p>
                       </div>
                       <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-xs py-1.5 px-2.5 shrink-0">

@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/22 OS0を媒体別v2ファイルに分割・モード別コピープロンプト対応";
+export const BUILD_LABEL = "06/22 OS⓪名前パース修正・名前編集機能追加";

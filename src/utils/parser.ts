@@ -131,12 +131,13 @@ export function parseOS0(text: string, channel: string) {
   if (sectionMatch) {
     for (const line of sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l)) {
       const parts = line.split(/[｜|]/);
-      if (parts.length < 4) continue;
-      const handle = parts[2]?.trim() || '';
-      if (!handle.startsWith('@')) continue;
+      const handleIdx = parts.findIndex(p => p.trim().startsWith('@'));
+      if (handleIdx < 0) continue;
+      const handle = parts[handleIdx].trim();
+      const displayName = parts.slice(1, handleIdx).join('|').trim();
       detailMap.set(handle.toLowerCase(), {
-        displayName: parts[1]?.trim() || '', handle,
-        verdict: parts[3]?.trim() || '', reason: parts[4]?.trim() || '',
+        displayName, handle,
+        verdict: parts[handleIdx + 1]?.trim() || '', reason: parts[handleIdx + 2]?.trim() || '',
       });
     }
   }
@@ -171,13 +172,14 @@ export function parseOS0NG(text: string, channel: string) {
   if (!sectionMatch) return ngs;
   for (const line of sectionMatch[1].split('\n').map(l => l.trim()).filter(l => l)) {
     const parts = line.split(/[｜|]/);
-    if (parts.length < 4) continue;
-    const handle = parts[2]?.trim() || '';
-    if (!handle.startsWith('@')) continue;
-    const verdict = parts[3]?.trim() || '';
+    const handleIdx = parts.findIndex(p => p.trim().startsWith('@'));
+    if (handleIdx < 0) continue;
+    const handle = parts[handleIdx].trim();
+    const displayName = parts.slice(1, handleIdx).join('|').trim();
+    const verdict = parts[handleIdx + 1]?.trim() || '';
     if (verdict.startsWith('◯')) continue;
     const skipCodeMatch = verdict.match(/X(\d)/);
-    ngs.push({ handle, displayName: parts[1]?.trim() || '', channel, reason: 'OS⓪NG', skipCode: skipCodeMatch ? 'X' + skipCodeMatch[1] : '' });
+    ngs.push({ handle, displayName, channel, reason: 'OS⓪NG', skipCode: skipCodeMatch ? 'X' + skipCodeMatch[1] : '' });
   }
   return ngs;
 }
