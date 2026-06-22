@@ -923,7 +923,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
         messageValidity: '未判定',
-        status: 'reacted',
+        status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
         touchMode: 'conversation',
@@ -2017,7 +2017,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         })()}
 
         {/* reaction status */}
-        {isAwaiting && !recordingReaction && (touch.threadStatus !== 'active' || !touch.threadEntry) && (
+        {isAwaiting && !recordingReaction && (
           <div className="flex items-center gap-2 mt-1">
             <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
             <button className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2" onClick={handleStartReaction}>
@@ -2653,7 +2653,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       })()}
 
       {/* ── reaction recording flow ───────── */}
-      {recordingReaction && (touch.threadStatus !== 'active' || !touch.threadEntry) && (
+      {recordingReaction && (
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
