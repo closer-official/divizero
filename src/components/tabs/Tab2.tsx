@@ -1044,6 +1044,29 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
         {item.hypothesis && <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>}
+        {(displayJudgment || displayNextAction) && (
+          <div className="flex items-center gap-2 mt-1.5 text-xs">
+            {displayJudgment && (
+              <span className={`font-bold shrink-0 text-[11px] ${judgmentColor(displayJudgment)}`}>{displayJudgment}</span>
+            )}
+            {displayNextAction && (
+              <span className="text-indigo-600 truncate"><i className="fa-solid fa-arrow-right text-indigo-300 text-[10px] mr-1" />{displayNextAction}</span>
+            )}
+          </div>
+        )}
+        {displayReplyA && (
+          <div className="flex items-center gap-1 mt-1 text-[11px] text-violet-600 bg-violet-50 rounded-lg px-2 py-1" onClick={e => e.stopPropagation()}>
+            <span className="font-bold shrink-0 text-violet-500">案A</span>
+            <span className="truncate flex-1">{displayReplyA}</span>
+            <button
+              className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-violet-100 transition"
+              onClick={e => { e.stopPropagation(); copyText(displayReplyA, () => toast.show('案Aをコピーしました')) }}
+              title="コピー"
+            >
+              <i className="fa-regular fa-copy text-[10px]" />
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-3 mt-1.5 text-xs text-slate-400">
           {lastTouchedDisplay ? <span>最終タッチ：{lastTouchedDisplay}</span> : <span className="text-slate-300">タッチなし</span>}
           <span>計{s1Count}回</span>
