@@ -6,6 +6,7 @@ body{font-family:'Inter','Noto Sans JP',sans-serif;background:#f8fafc;color:#1e2
 .tab-panel{display:none!important}
 .tab-panel.active{display:flex!important;flex-direction:column;gap:20px;animation:fadeIn .2s ease-out}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideInRight{from{opacity:0;transform:translateX(32px)}to{opacity:1;transform:translateX(0)}}
 .cs::-webkit-scrollbar{width:5px;height:5px}
 .cs::-webkit-scrollbar-track{background:#f1f5f9}
 .cs::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}

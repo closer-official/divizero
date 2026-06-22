@@ -175,6 +175,74 @@ const MSG_VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未判定']
 const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）']
 const CLOSE_RESULTS = ['断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', '受注']
 
+// ── KanbanCard ─────────────────────────────────────────────────
+interface KanbanCardProps {
+  item: PipelineItem
+  isActive: boolean
+  onClick: () => void
+}
+function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
+  const touches = item.touches || []
+  const days = daysSince(item.lastContactDate || item.startDate)
+  const latestOs2 = [...touches].reverse().find(t => t.os2Judgment)
+  const displayJ = latestOs2?.os2Judgment || item.judgment
+  return (
+    <div
+      onClick={onClick}
+      className={`rounded-xl border p-2.5 cursor-pointer transition select-none ${
+        isActive ? 'border-indigo-400 bg-indigo-50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50'
+      }`}
+    >
+      <div className="flex items-center gap-1 flex-wrap mb-1">
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.track)}`}>{item.track}</span>
+        <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1 py-0.5 rounded shrink-0">{channelLabel(item.channel)}</span>
+        {(item.temperature ?? 0) > 0 && (
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tempBadgeStyle(item.temperature ?? 0)}`}>温{item.temperature}</span>
+        )}
+      </div>
+      <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
+      <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+        <span>{touches.length}T</span>
+        {days > 0 && <span className={days >= 7 ? 'text-amber-500 font-medium' : ''}>{days}日前</span>}
+      </div>
+      {displayJ && <p className={`text-[10px] mt-1 font-medium truncate ${judgmentColor(displayJ)}`}>{displayJ}</p>}
+      {(item.state === 'waiting' || item.state === 'sleeping' || item.state === 'archived') && item.recontact_date && (
+        <p className="text-[10px] text-amber-500 mt-0.5 truncate">↻ {item.recontact_date}</p>
+      )}
+    </div>
+  )
+}
+
+// ── KanbanColumn ───────────────────────────────────────────────
+interface KanbanColumnProps {
+  label: string
+  colorClass: string
+  items: PipelineItem[]
+  activeId: string | null
+  onCardClick: (id: string) => void
+}
+function KanbanColumn({ label, colorClass, items, activeId, onCardClick }: KanbanColumnProps) {
+  return (
+    <div className="flex-shrink-0 w-44 sm:w-48 flex flex-col snap-start">
+      <div className="flex items-center gap-1.5 mb-2 px-0.5">
+        <p className={`text-[11px] font-bold flex-1 ${colorClass}`}>{label}</p>
+        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
+      </div>
+      <div className="flex flex-col gap-1.5 min-h-[60px]">
+        {items.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-slate-100 py-6 flex items-center justify-center">
+            <span className="text-[10px] text-slate-300">なし</span>
+          </div>
+        ) : (
+          items.map(item => (
+            <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)} />
+          ))
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Tab2 ───────────────────────────────────────────────────────
 interface Props {
   data: AppData
@@ -188,11 +256,8 @@ interface Props {
 }
 
 export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: Props) {
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('all')
-  const [filterState, setFilterState] = useState('all')
-  const [sort, setSort] = useState('newest')
-  const [currentPage, setCurrentPage] = useState(1)
+  const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
 
   // ── MD preview modal state ────────────────────────────────────
   const [mdPreview, setMdPreview] = useState<{ content: string; filename: string } | null>(null)
@@ -206,76 +271,39 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   // Emergency alert detail view
   const [emergencyDetail, setEmergencyDetail] = useState<string | null>(null)
 
-  const pendingExpandId = useRef<string | null>(null)
-
   // #14 scroll to top on mount (bell click → tab switch)
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [])
 
-  // #12 expand pending card after page/filter change
-  useEffect(() => {
-    if (!pendingExpandId.current) return
-    const id = pendingExpandId.current
-    pendingExpandId.current = null
-    setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
-    requestAnimationFrame(() => {
-      document.getElementById(`case-card-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    })
-  }, [currentPage, filter, filterState])
-
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
-
-  // State priority: active=0, waiting=1, sleeping=2, archived=3, closed=4
-  function stateOrder(p: PipelineItem): number {
-    const s = p.state ?? 'active'
-    if (s === 'active') return 0
-    if (s === 'waiting') return 1
-    if (s === 'sleeping') return 2
-    if (s === 'archived') return 3
-    return 4
-  }
-
-  let filtered = [...active]
-  if (filter === 'FT') filtered = filtered.filter(p => p.track === 'FT')
-  else if (filter === 'NT') filtered = filtered.filter(p => p.track === 'NT')
-  else if (filter === 'warn') filtered = filtered.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
-  if (filterState === 'active') filtered = filtered.filter(p => !p.state || p.state === 'active')
-  else if (filterState === 'waiting') filtered = filtered.filter(p => p.state === 'waiting')
-  else if (filterState === 'sleeping') filtered = filtered.filter(p => p.state === 'sleeping')
-  else if (filterState === 'archived') filtered = filtered.filter(p => p.state === 'archived')
-
-  if (sort === 'urgent') {
-    filtered.sort((a, b) => daysSince(b.lastContactDate) - daysSince(a.lastContactDate))
-  } else {
-    filtered.sort((a, b) => {
-      const oa = stateOrder(a), ob = stateOrder(b)
-      if (oa !== ob) return oa - ob
-      const sa = a.state ?? 'active'
-      if (sa === 'active') {
-        return (a.lastContactDate || a.startDate || '').localeCompare(b.lastContactDate || b.startDate || '')
-      }
-      if (sa === 'waiting') {
-        return (a.recontact_date || '').localeCompare(b.recontact_date || '')
-      }
-      return (a.startDate || '').localeCompare(b.startDate || '')
-    })
-  }
-
-  // Sequential pagination
-  const N = filtered.length
-  const totalPages = Math.ceil(N / 10) || 1
-
-  function getPageItems(page: number): PipelineItem[] {
-    const start = (page - 1) * 10
-    return filtered.slice(start, start + 10)
-  }
-
-  const pageItems = getPageItems(currentPage)
-
   const warnItems = active.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
+
+  // カンバン列定義
+  type KanbanColKey = 's1' | 's1l' | 's2' | 's3plus' | 'archived'
+  const KANBAN_COLS: Array<{ key: KanbanColKey; label: string; colorClass: string }> = [
+    { key: 's1', label: 'S1 接触中', colorClass: 'text-indigo-600' },
+    { key: 's1l', label: 'S1-L 待機・休眠', colorClass: 'text-amber-600' },
+    { key: 's2', label: 'S2 会話中', colorClass: 'text-violet-600' },
+    { key: 's3plus', label: 'S3〜 DM提案', colorClass: 'text-emerald-600' },
+    { key: 'archived', label: '保管', colorClass: 'text-purple-600' },
+  ]
+  function getColKey(item: PipelineItem): KanbanColKey {
+    if (item.state === 'archived') return 'archived'
+    if (item.state === 'waiting' || item.state === 'sleeping') return 's1l'
+    if (item.currentStep === 'S1') return 's1'
+    if (item.currentStep === 'S2') return 's2'
+    return 's3plus'
+  }
+  function getColItems(key: KanbanColKey): PipelineItem[] {
+    let items = active.filter(p => getColKey(p) === key)
+    if (filter === 'FT') items = items.filter(p => p.track === 'FT')
+    else if (filter === 'NT') items = items.filter(p => p.track === 'NT')
+    else if (filter === 'warn') items = items.filter(p => warnItems.some(w => w.id === p.id))
+    return items.sort((a, b) => daysSince(b.lastContactDate || b.startDate) - daysSince(a.lastContactDate || a.startDate))
+  }
 
   function handleExportCaseMd(item: PipelineItem) {
     const content = buildCaseMd(item)
@@ -283,10 +311,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     setMdPreview({ content, filename })
   }
 
-  function exportPageMD(page: number) {
-    const items = getPageItems(page)
+  function exportAllMD() {
+    const items = active
     const lines: string[] = [
-      `# OS② パイプライン - ページ${page} / 全${totalPages}ページ`,
+      `# OS② パイプライン`,
       `生成: ${new Date().toLocaleDateString('ja-JP')}`,
       '',
     ]
@@ -306,23 +334,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           lines.push(`- 投稿種別: ${t.targetPostType}`)
           lines.push(`- 対象妥当性: ${t.targetValidity}`)
           if (t.targetPostText) lines.push(`- 接触した投稿（要約）: ${t.targetPostText}`)
-          if (t.targetPostRawText) lines.push(`- 投稿原文: ${t.targetPostRawText}`)
           lines.push(`- 送った文章: ${t.actualSentText}`)
           if (t.editReason) lines.push(`- 変えた理由: ${t.editReason}`)
           lines.push(`- 文面妥当性: ${t.messageValidity}`)
-          if (t.judgmentReason) lines.push(`- 判定理由: ${t.judgmentReason}`)
-          if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`- 改善提案: ${t.improvementSuggestion}`)
           lines.push(`- 反応: ${reactionDisplay(t.reactionType)}`)
-          if (t.reactionNote) lines.push(`- 反応補足: ${t.reactionNote}`)
           if (t.os2Judgment) lines.push(`- OS②判定: ${t.os2Judgment}`)
-          if (t.os2NextAction) lines.push(`- 次アクション: ${t.os2NextAction}`)
-          if (t.os2ReplyA) lines.push(`- OS②案A: ${t.os2ReplyA}`)
-          if (t.os2ReplyB) lines.push(`- OS②案B: ${t.os2ReplyB}`)
         })
       }
       lines.push('\n---\n')
     })
-    setMdPreview({ content: lines.join('\n'), filename: `os2_page${page}.md` })
+    setMdPreview({ content: lines.join('\n'), filename: `os2_pipeline.md` })
   }
 
   function openManualAnalysis(type: 'case_pattern' | 'touch_trend') {
@@ -338,35 +359,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     })
   }
 
-  function toggleExpand(id: string) {
-    setExpandedIds(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-  function expandId(id: string) {
-    setExpandedIds(prev => { const next = new Set(prev); next.add(id); return next })
-  }
-
-  // warn banner click: navigate to page containing item, then expand
   function handleWarnItemClick(itemId: string) {
-    const idx = filtered.findIndex(it => it.id === itemId)
-    if (idx === -1) { expandId(itemId); return }
-    const targetPage = Math.floor(idx / 10) + 1
-    const willChange = targetPage !== currentPage || filter !== 'all' || filterState !== 'all'
-    if (willChange) {
-      pendingExpandId.current = itemId
-      setFilter('all')
-      setFilterState('all')
-      setCurrentPage(targetPage)
-    } else {
-      expandId(itemId)
-      requestAnimationFrame(() => {
-        document.getElementById(`case-card-${itemId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      })
-    }
+    setDrawerItemId(itemId)
   }
 
   // ── Analysis modal handlers ───────────────────────────────────
@@ -528,24 +522,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
       {/* Filter + analysis manual trigger */}
       <div className="flex gap-2 flex-wrap items-center">
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => { setFilter(e.target.value); setCurrentPage(1) }}>
+        <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => setFilter(e.target.value)}>
           <option value="all">全て ({active.length})</option>
           <option value="FT">FT</option>
           <option value="NT">NT</option>
           <option value="warn">警告のみ</option>
         </select>
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={filterState} onChange={e => { setFilterState(e.target.value); setCurrentPage(1) }}>
-          <option value="all">全状態</option>
-          <option value="active">active</option>
-          <option value="waiting">waiting</option>
-          <option value="sleeping">sleeping</option>
-          <option value="archived">archived（保管）</option>
-        </select>
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 100 }} value={sort} onChange={e => setSort(e.target.value)}>
-          <option value="newest">状態優先順</option>
-          <option value="urgent">緊急度順</option>
-        </select>
         <div className="ml-auto flex gap-1 shrink-0">
+          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
+            <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
+          </button>
           <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('case_pattern')} title="失注パターン分析">
             <i className="fa-solid fa-chart-bar text-violet-500" /><span className="hidden sm:inline ml-1">失注分析</span>
           </button>
@@ -555,62 +541,70 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         </div>
       </div>
 
-      {/* Pagination controls */}
-      {totalPages > 1 && (
-        <div className="flex items-center gap-1 flex-wrap">
-          <span className="text-[10px] text-slate-400 mr-1">{N}件 / {totalPages}ページ</span>
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map(pg => (
-            <button
-              key={pg}
-              onClick={() => setCurrentPage(pg)}
-              className={`text-[11px] font-bold w-8 h-8 rounded-lg border transition ${
-                pg === currentPage
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-              }`}
-            >
-              {pg}
-            </button>
-          ))}
-          <button className="btn-sec text-[11px] py-1.5 px-2 ml-1" onClick={() => exportPageMD(currentPage)}>
-            <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
-          </button>
-        </div>
-      )}
-
-      {pageItems.length === 0 ? (
+      {/* ── Kanban Board ─────────────────────────────────────────── */}
+      {active.length === 0 ? (
         <div className="card flex flex-col items-center justify-center py-16 text-slate-300 gap-2">
           <i className="fa-solid fa-chart-gantt text-4xl" />
           <p className="text-sm font-medium">案件がありません</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {totalPages <= 1 && (
-            <div className="flex justify-end">
-              <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => exportPageMD(1)}>
-                <i className="fa-solid fa-file-arrow-down text-slate-400" /> MD出力
-              </button>
-            </div>
-          )}
-          {pageItems.map(p => (
-            <CaseCard
-              key={p.id}
-              item={p}
-              expanded={expandedIds.has(p.id)}
-              onToggle={() => toggleExpand(p.id)}
-              data={data}
-              saveData={saveData}
-              prompts={prompts}
-              role={role}
-              toast={toast}
-              confirm={confirm}
-              onGoToTab3={onGoToTab3}
-              onCloseCase={onCloseCase}
-              onExportMd={handleExportCaseMd}
+        <div className="flex gap-3 overflow-x-auto -mx-4 px-4 pb-3 snap-x snap-mandatory">
+          {KANBAN_COLS.map(col => (
+            <KanbanColumn
+              key={col.key}
+              label={col.label}
+              colorClass={col.colorClass}
+              items={getColItems(col.key)}
+              activeId={drawerItemId}
+              onCardClick={id => setDrawerItemId(id)}
             />
           ))}
         </div>
       )}
+
+      {/* ── Slide-over Drawer ────────────────────────────────────── */}
+      {drawerItemId && (() => {
+        const drawerItem = active.find(p => p.id === drawerItemId)
+        if (!drawerItem) return null
+        return (
+          <div className="fixed inset-0 z-50 flex" style={{ animation: 'fadeIn .15s ease-out' }}>
+            <div
+              className="flex-1 bg-slate-900/40 backdrop-blur-[2px]"
+              onClick={() => setDrawerItemId(null)}
+            />
+            <div className="w-full max-w-lg bg-white shadow-2xl overflow-y-auto flex flex-col" style={{ animation: 'slideInRight .2s ease-out' }}>
+              <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 shrink-0">
+                <button
+                  className="text-slate-400 hover:text-slate-700 p-1 rounded transition min-h-[36px] min-w-[36px] flex items-center justify-center"
+                  onClick={() => setDrawerItemId(null)}
+                >
+                  <i className="fa-solid fa-xmark text-sm" />
+                </button>
+                <p className="font-bold text-slate-800 flex-1 truncate text-sm">{drawerItem.accountName}</p>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(drawerItem.state)}`}>{stateLabel(drawerItem.state)}</span>
+                <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full shrink-0">{drawerItem.currentStep}</span>
+              </div>
+              <CaseCard
+                item={drawerItem}
+                expanded={true}
+                onToggle={() => {}}
+                data={data}
+                saveData={saveData}
+                prompts={prompts}
+                role={role}
+                toast={toast}
+                confirm={confirm}
+                onGoToTab3={onGoToTab3}
+                onCloseCase={(item, result) => {
+                  setDrawerItemId(null)
+                  onCloseCase(item, result)
+                }}
+                onExportMd={handleExportCaseMd}
+              />
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Analysis Modal ────────────────────────────────────── */}
       {modalNotif && (
@@ -1001,11 +995,11 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }))
   }
 
-  function handleAddNewTouch(touch: Touch) {
+  function handleAddNewTouch(touch: Touch, pipelineUpdates?: Partial<PipelineItem>) {
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
-        ? { ...p, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
+        ? { ...p, ...(pipelineUpdates || {}), touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
         : p
       ),
     }))
@@ -1733,7 +1727,7 @@ interface TouchItemProps {
   onDelete: () => void
   onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
   onGoToTab3: () => void
-  onAddNewTouch: (touch: Touch) => void
+  onAddNewTouch: (touch: Touch, pipelineUpdates?: Partial<PipelineItem>) => void
   onStartDM: () => void
   onCloseCaseAuto: (result: string) => void
 }
@@ -1878,13 +1872,23 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       return
     }
     setS1ActionParsed(parsed)
+    const pipelineUpdates: Partial<PipelineItem> = {}
+    if (parsed.judgment === '休眠') {
+      pipelineUpdates.state = 'sleeping'
+      const d = new Date(); d.setDate(d.getDate() + 30)
+      pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
+    } else if (parsed.judgment === '保管') {
+      pipelineUpdates.state = 'archived'
+      const d = new Date(); d.setDate(d.getDate() + 180)
+      pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
+    }
     onReactionSaved(touch.id, {
       reactionJudgment: parsed.judgment,
       reactionNextStep: parsed.nextStep,
       reactionWarning: parsed.warning,
       reactionReplyA: parsed.replyA,
       reactionReplyB: parsed.replyB,
-    }, {})
+    }, pipelineUpdates)
     setS1ActionOutput('')
     setS1ActionInputOpen(false)
   }
@@ -1901,7 +1905,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     const now = new Date().toISOString()
 
     if (judgment === 'DM移行') {
-      // DM移行：新しいDMタッチを作成（別チャンネルなので分離が正しい）
+      // DM移行：新しいDMタッチを作成 & currentStep を S3 に自動進める
       const newTouch: Touch = {
         id: uid(), date: now,
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
@@ -1915,7 +1919,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         } as ConversationTurn],
         dmExchangeCount: 0, repExchangeCount: 0,
       }
-      onAddNewTouch(newTouch)
+      onAddNewTouch(newTouch, { currentStep: 'S3' as Step })
       return
     }
 
@@ -2096,10 +2100,16 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       pipelineUpdates.nextAction = os2CpParsed.nextAction || null
       if (os2CpParsed.judgment === '休眠') {
         pipelineUpdates.state = 'sleeping'
+        const d = new Date(); d.setDate(d.getDate() + 30)
+        pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
       } else if (os2CpParsed.judgment === '保管') {
         pipelineUpdates.state = 'archived'
+        const d = new Date(); d.setDate(d.getDate() + 180)
+        pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
       } else if (os2CpParsed.judgment === 'クローズ') {
         pipelineUpdates.state = 'closed'
+      } else if (os2CpParsed.judgment.startsWith('前進') || os2CpParsed.judgment === '前進') {
+        pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
       }
     }
     // OS_現象未来 の「次のアクション」から再接触日をセット
