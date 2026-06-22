@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/23 タッチ追加3択トグル修正: resetForm後にモードセット";
+export const BUILD_LABEL = "06/23 ストーリー返信: 投稿タッチと同じ反応選択UI表示に修正";

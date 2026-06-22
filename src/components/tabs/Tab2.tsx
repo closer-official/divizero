@@ -949,15 +949,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
-        touchMode: 'conversation',
         threadEntry: 's1_story_reply',
-        threadStatus: 'active',
-        conversationTurns: [{
-          id: uid(), role: '自分', text: tSentText,
-          timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
-        } as ConversationTurn],
-        dmExchangeCount: 0,
-        repExchangeCount: 0,
         judgmentReason: tJudgmentReason,
         editEvaluation: tEditEvaluation,
         editComment: tEditComment,
@@ -2042,7 +2034,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         )}
 
         {/* S1行動判定セクション */}
-        {!isAwaiting && !touch.threadEntry && (() => {
+        {!isAwaiting && (!touch.threadEntry || touch.threadEntry === 's1_story_reply') && (() => {
           const saved = touch.reactionJudgment
           const result = s1ActionParsed || (saved ? {
             judgment: saved,
