@@ -276,6 +276,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     window.scrollTo(0, 0)
   }, [])
 
+  // ドロワー開閉時にbodyスクロールを制御
+  useEffect(() => {
+    if (drawerItemId) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [drawerItemId])
+
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
@@ -572,7 +582,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               className="flex-1 bg-slate-900/40 backdrop-blur-[2px]"
               onClick={() => setDrawerItemId(null)}
             />
-            <div className="w-full max-w-lg bg-white shadow-2xl overflow-y-auto flex flex-col" style={{ animation: 'slideInRight .2s ease-out' }}>
+            <div className="w-full max-w-lg bg-white shadow-2xl overflow-y-auto overscroll-contain flex flex-col h-full" style={{ animation: 'slideInRight .2s ease-out' }}>
               <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 shrink-0">
                 <button
                   className="text-slate-400 hover:text-slate-700 p-1 rounded transition min-h-[36px] min-w-[36px] flex items-center justify-center"
