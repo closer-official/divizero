@@ -577,13 +577,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         const drawerItem = active.find(p => p.id === drawerItemId)
         if (!drawerItem) return null
         return (
-          <div className="fixed inset-0 z-50 flex" style={{ animation: 'fadeIn .15s ease-out' }}>
+          <div className="fixed inset-0 z-50" style={{ animation: 'fadeIn .15s ease-out' }}>
             <div
-              className="flex-1 bg-slate-900/40 backdrop-blur-[2px]"
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
               onClick={() => setDrawerItemId(null)}
             />
-            <div className="w-full max-w-lg bg-white shadow-2xl overflow-y-auto overscroll-contain flex flex-col h-full" style={{ animation: 'slideInRight .2s ease-out' }}>
-              <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2 shrink-0">
+            <div
+              className="absolute top-0 right-0 bottom-0 w-full max-w-lg bg-white shadow-2xl flex flex-col"
+              style={{ animation: 'slideInRight .2s ease-out' }}
+            >
+              <div className="shrink-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2">
                 <button
                   className="text-slate-400 hover:text-slate-700 p-1 rounded transition min-h-[36px] min-w-[36px] flex items-center justify-center"
                   onClick={() => setDrawerItemId(null)}
@@ -594,23 +597,25 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(drawerItem.state)}`}>{stateLabel(drawerItem.state)}</span>
                 <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full shrink-0">{drawerItem.currentStep}</span>
               </div>
-              <CaseCard
-                item={drawerItem}
-                expanded={true}
-                onToggle={() => {}}
-                data={data}
-                saveData={saveData}
-                prompts={prompts}
-                role={role}
-                toast={toast}
-                confirm={confirm}
-                onGoToTab3={onGoToTab3}
-                onCloseCase={(item, result) => {
-                  setDrawerItemId(null)
-                  onCloseCase(item, result)
-                }}
-                onExportMd={handleExportCaseMd}
-              />
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+                <CaseCard
+                  item={drawerItem}
+                  expanded={true}
+                  onToggle={() => {}}
+                  data={data}
+                  saveData={saveData}
+                  prompts={prompts}
+                  role={role}
+                  toast={toast}
+                  confirm={confirm}
+                  onGoToTab3={onGoToTab3}
+                  onCloseCase={(item, result) => {
+                    setDrawerItemId(null)
+                    onCloseCase(item, result)
+                  }}
+                  onExportMd={handleExportCaseMd}
+                />
+              </div>
             </div>
           </div>
         )
