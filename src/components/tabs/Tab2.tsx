@@ -26,7 +26,6 @@ import {
   trackBadgeClass, stepsBarData, daysSince,
   uid, todayStr, hasReaction, toReactionArr, reactionDisplay,
 } from '../../utils/helpers'
-import { StepSelector } from '../StepSelector'
 import { copyText } from '../../utils/clipboard'
 
 // ── thread helpers ─────────────────────────────────────────────
@@ -761,7 +760,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
 
   // touch add form
-  const [tIsDM, setTIsDM] = useState(false)
+  const [tTouchMode, setTTouchMode] = useState<'rep' | 'story' | 'dm'>('rep')
   const [tPostText, setTPostText] = useState('')
   const [tPostRawText, setTPostRawText] = useState('')
   const [tPostType, setTPostType] = useState<TouchPostType>('通常投稿')
@@ -785,26 +784,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
-
-  // DM会話開始
-  const [dmStartOpen, setDmStartOpen] = useState(false)
-  const [dmEntryType, setDmEntryType] = useState<'s3_direct' | 'log_restore'>('s3_direct')
-  // S3直行フォーム
-  const [dmSelfText, setDmSelfText] = useState('')
-  const [dmSelfDate, setDmSelfDate] = useState(todayStr())
-  const [dmReplyText, setDmReplyText] = useState('')
-  const [dmReplyDate, setDmReplyDate] = useState(todayStr())
-  // ログ復元フォーム
-  const [logRestoreStep, setLogRestoreStep] = useState<Step>('S3')
-  const [logTurns, setLogTurns] = useState<Array<{role: '自分'|'相手'; text: string; date: string; channel: 'リプ'|'DM'}>>([])
-  const [logTurnRole, setLogTurnRole] = useState<'自分'|'相手'>('自分')
-  const [logTurnText, setLogTurnText] = useState('')
-  const [logTurnDate, setLogTurnDate] = useState(todayStr())
-  const [logTurnChannel, setLogTurnChannel] = useState<'リプ'|'DM'>('DM')
-  // ログOCR
-  const [logOcrOpen, setLogOcrOpen] = useState(false)
-  const [logOcrOutput, setLogOcrOutput] = useState('')
-  const [logOcrCopyState, setLogOcrCopyState] = useState<'idle' | 'copied'>('idle')
 
   const touches = item.touches || []
   const s1Count = touches.length
@@ -830,7 +809,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
     setTJudgmentError(null); setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
-    setTIsDM(false)
+    setTTouchMode('rep')
   }
 
   function startAddTouch() {
@@ -842,7 +821,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setAutoFillError(null)
     try {
       let prompt: string
-      if (tIsDM) {
+      if (tTouchMode === 'dm') {
         if (!prompts.PHENOMENON_FUTURE) { setAutoFillError('現象未来プロンプトの読み込みに失敗しました。'); return }
         const dummyTouch: Touch = {
           id: '', date: new Date().toISOString(),
@@ -866,7 +845,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function handleAutoFill() {
     setAutoFillError(null)
     setAutoFillWarning(null)
-    if (tIsDM) {
+    if (tTouchMode === 'dm') {
       const parsed = parsePhenomenonFutureOutput(aiOutput)
       if (!parsed) {
         setAutoFillError('AI出力の形式が認識できませんでした。===MSG_START=== から ===MSG_END=== までを含めて貼り付けてください。')
@@ -935,51 +914,92 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function handleAddTouch() {
     if (!tSentText.trim()) { toast.show('実際に送った文章は必須です', 2000); return }
     const now = new Date().toISOString()
-    const touch: Touch = tIsDM
-      ? {
-          id: uid(), date: now,
-          targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
-          aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-          messageValidity: '未判定',
-          status: 'reacted',
-          reactionType: '未記録',
-          reactionNote: '',
-          touchMode: 'conversation',
-          threadEntry: 's3_direct',
-          threadStatus: 'active',
-          conversationTurns: [{
-            id: uid(), role: '自分', text: tSentText,
-            timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
-          } as ConversationTurn],
-          dmExchangeCount: 0,
-          repExchangeCount: 0,
-        }
-      : {
-          id: uid(), date: now,
-          targetPostText: tPostText, targetPostRawText: tPostRawText || undefined,
-          targetPostType: tPostType, targetValidity: tValidity,
-          aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-          messageValidity: tMsgValidity,
-          status: 'awaiting_reaction',
-          reactionType: '未記録',
-          reactionNote: '',
-          judgmentReason: tJudgmentReason,
-          editEvaluation: tEditEvaluation,
-          editComment: tEditComment,
-          improvementSuggestion: tImprovementSuggestion,
-          improvedText: tImprovedText,
-          judgedAt: tJudgedAt,
-        }
+    let touch: Touch
+    let pipelineUpdates: Partial<PipelineItem> = {}
+
+    if (tTouchMode === 'dm') {
+      touch = {
+        id: uid(), date: now,
+        targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
+        aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
+        messageValidity: '未判定',
+        status: 'reacted',
+        reactionType: '未記録',
+        reactionNote: '',
+        touchMode: 'conversation',
+        threadEntry: 's3_direct',
+        threadStatus: 'active',
+        conversationTurns: [{
+          id: uid(), role: '自分', text: tSentText,
+          timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+        } as ConversationTurn],
+        dmExchangeCount: 0,
+        repExchangeCount: 0,
+      }
+      pipelineUpdates = { currentStep: 'S3' as Step }
+    } else if (tTouchMode === 'story') {
+      touch = {
+        id: uid(), date: now,
+        targetPostText: tPostText || '（ストーリー返信）',
+        targetPostRawText: tPostRawText || undefined,
+        targetPostType: 'ストーリー',
+        targetValidity: '◯',
+        aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
+        messageValidity: tMsgValidity,
+        status: 'awaiting_reaction',
+        reactionType: '未記録',
+        reactionNote: '',
+        touchMode: 'conversation',
+        threadEntry: 's1_story_reply',
+        threadStatus: 'active',
+        conversationTurns: [{
+          id: uid(), role: '自分', text: tSentText,
+          timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+        } as ConversationTurn],
+        dmExchangeCount: 0,
+        repExchangeCount: 0,
+        judgmentReason: tJudgmentReason,
+        editEvaluation: tEditEvaluation,
+        editComment: tEditComment,
+        improvementSuggestion: tImprovementSuggestion,
+        improvedText: tImprovedText,
+        judgedAt: tJudgedAt,
+      }
+      pipelineUpdates = { currentStep: 'S3' as Step }
+    } else {
+      touch = {
+        id: uid(), date: now,
+        targetPostText: tPostText, targetPostRawText: tPostRawText || undefined,
+        targetPostType: tPostType, targetValidity: tValidity,
+        aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
+        messageValidity: tMsgValidity,
+        status: 'awaiting_reaction',
+        reactionType: '未記録',
+        reactionNote: '',
+        judgmentReason: tJudgmentReason,
+        editEvaluation: tEditEvaluation,
+        editComment: tEditComment,
+        improvementSuggestion: tImprovementSuggestion,
+        improvedText: tImprovedText,
+        judgedAt: tJudgedAt,
+      }
+    }
+
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
-        ? { ...p, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
+        ? { ...p, ...pipelineUpdates, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
         : p
       ),
     }))
     resetForm()
     setAddingTouch(false)
-    toast.show(tIsDM ? 'DM送信を記録しました' : 'タッチを記録しました（反応待ち）')
+    const msg = tTouchMode === 'dm'
+      ? 'DM送信を記録しました（S3へ移動）'
+      : tTouchMode === 'story'
+        ? 'ストーリー返信を記録しました（S3へ移動）'
+        : 'タッチを記録しました（反応待ち）'
+    toast.show(msg)
   }
 
   function handleDeleteTouch(touchId: string) {
@@ -1140,7 +1160,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           {/* step bar + actions */}
           <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b border-slate-100">
             <StepsBar currentStep={item.currentStep} />
-            <StepSelector item={item} saveData={saveData} toast={toast} />
             <div className="ml-auto flex items-center gap-1 shrink-0">
               {/* チャネル変更 */}
               {role === 'admin' && (
@@ -1228,7 +1247,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     onReactionSaved={handleReactionSaved}
                     onGoToTab3={onGoToTab3}
                     onAddNewTouch={handleAddNewTouch}
-                    onStartDM={() => setDmStartOpen(true)}
                     onCloseCaseAuto={handleCloseCaseFromTouch}
                   />
                 ))}
@@ -1237,7 +1255,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           </div>
 
           {/* add touch */}
-          {!addingTouch && !dmStartOpen ? (
+          {!addingTouch ? (
             <div className="px-4 pb-4 flex flex-col gap-2">
               <button
                 className="w-full py-3 text-sm font-semibold text-indigo-600 border-2 border-dashed border-indigo-200 rounded-xl hover:bg-indigo-50 transition min-h-[44px]"
@@ -1245,303 +1263,47 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               >
                 <i className="fa-solid fa-plus mr-1" />タッチを追加
               </button>
-              <button
-                className="w-full py-2.5 text-sm font-semibold text-violet-600 border-2 border-dashed border-violet-200 rounded-xl hover:bg-violet-50 transition min-h-[40px]"
-                onClick={() => setDmStartOpen(true)}
-              >
-                <i className="fa-solid fa-comments mr-1" />💬 DM会話を開始
-              </button>
-            </div>
-          ) : dmStartOpen ? (
-            <div className="mx-4 mb-4 p-4 bg-violet-50 rounded-xl border border-violet-200 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <p className="font-bold text-sm text-violet-800">💬 DM会話を開始</p>
-                <button className="text-slate-400 hover:text-slate-600 text-sm" onClick={() => setDmStartOpen(false)}>✕</button>
-              </div>
-
-              {/* エントリー種別 */}
-              <div className="flex gap-2">
-                {([['s3_direct', 'IGストーリー返信起点（S3直行）'], ['log_restore', '会話ログを復元']] as const).map(([v, label]) => (
-                  <button
-                    key={v}
-                    type="button"
-                    className={`flex-1 py-2 text-xs font-medium rounded-xl border transition ${dmEntryType === v ? 'bg-violet-600 border-violet-600 text-white' : 'bg-white border-violet-200 text-violet-700'}`}
-                    onClick={() => setDmEntryType(v)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-
-              {dmEntryType === 's3_direct' && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] text-slate-500">自分が送ったストーリー返信</label>
-                    <textarea rows={2} className="input-base cs text-xs resize-y" value={dmSelfText} onChange={e => setDmSelfText(e.target.value)} placeholder="自分が送ったテキスト" />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex flex-col gap-1">
-                      <label className="text-[11px] text-slate-500">送信日</label>
-                      <input type="date" className="input-base cs text-xs" value={dmSelfDate} onChange={e => setDmSelfDate(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[11px] text-slate-500">相手の最初の返信</label>
-                    <textarea rows={2} className="input-base cs text-xs resize-y" value={dmReplyText} onChange={e => setDmReplyText(e.target.value)} placeholder="相手のテキスト" />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="flex-1 flex flex-col gap-1">
-                      <label className="text-[11px] text-slate-500">受信日</label>
-                      <input type="date" className="input-base cs text-xs" value={dmReplyDate} onChange={e => setDmReplyDate(e.target.value)} />
-                    </div>
-                  </div>
-                  <button
-                    className="btn-primary text-xs py-2.5 justify-center"
-                    style={{ background: '#7c3aed' }}
-                    disabled={!dmSelfText.trim() || !dmReplyText.trim()}
-                    onClick={() => {
-                      const selfTurn: ConversationTurn = {
-                        id: uid(), role: '自分', text: dmSelfText,
-                        timestamp: new Date(dmSelfDate).toISOString(),
-                        channel: 'DM', sentStatus: 'sent', sentAt: new Date(dmSelfDate).toISOString(),
-                      }
-                      const replyTurn: ConversationTurn = {
-                        id: uid(), role: '相手', text: dmReplyText,
-                        timestamp: new Date(dmReplyDate).toISOString(),
-                        channel: 'DM', sentStatus: 'sent',
-                      }
-                      const newTouch: Touch = {
-                        id: uid(),
-                        date: new Date(dmSelfDate).toISOString(),
-                        touchMode: 'conversation',
-                        threadEntry: 's3_direct',
-                        threadStatus: 'active',
-                        conversationTurns: [selfTurn, replyTurn],
-                        repExchangeCount: 0,
-                        dmExchangeCount: 1,
-                        targetPostText: '（ストーリー返信起点・投稿なし）',
-                        targetPostType: 'ストーリー',
-                        targetValidity: '◯',
-                        aiSuggestedText: '',
-                        actualSentText: dmSelfText,
-                        editReason: '',
-                        messageValidity: '未判定',
-                        reactionType: 'テキスト返信',
-                        reactionNote: '',
-                        status: 'awaiting_reaction',
-                      }
-                      saveData((prev: AppData) => ({
-                        ...prev,
-                        pipeline: prev.pipeline.map(p =>
-                          p.id !== item.id ? p : {
-                            ...p,
-                            currentStep: 'S3' as Step,
-                            touches: [...(p.touches || []), newTouch],
-                          }
-                        ),
-                      }))
-                      setDmStartOpen(false)
-                      setDmSelfText(''); setDmReplyText('')
-                      setDmSelfDate(todayStr()); setDmReplyDate(todayStr())
-                    }}
-                  >
-                    <i className="fa-solid fa-comments mr-1" />スレッドを作成（ステップをS3に進める）
-                  </button>
-                </div>
-              )}
-
-              {dmEntryType === 'log_restore' && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] text-slate-500">現在のステップ</label>
-                    <select className="input-base cs text-xs py-1.5 flex-1" value={logRestoreStep} onChange={e => setLogRestoreStep(e.target.value as Step)}>
-                      {(['S2','S3','S4','S5'] as Step[]).map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-
-                  {/* スクショOCR取り込み */}
-                  <div className="bg-white border border-violet-100 rounded-xl overflow-hidden">
-                    <button
-                      className="w-full px-3 py-2.5 text-left flex items-center gap-2 hover:bg-violet-50 transition"
-                      onClick={() => setLogOcrOpen(v => !v)}
-                    >
-                      <i className="fa-solid fa-camera text-violet-500 text-xs" />
-                      <span className="text-xs font-semibold text-violet-700">スクショから一括取り込み</span>
-                      <i className={`fa-solid fa-chevron-${logOcrOpen ? 'up' : 'down'} text-slate-300 text-xs ml-auto`} />
-                    </button>
-                    {logOcrOpen && (
-                      <div className="border-t border-violet-100 p-3 flex flex-col gap-2">
-                        <button
-                          className={`btn-sec text-xs py-2 justify-center ${logOcrCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                          onClick={async () => {
-                            if (!prompts.LOG_OCR) return
-                            try {
-                              await navigator.clipboard.writeText(prompts.LOG_OCR)
-                              setLogOcrCopyState('copied')
-                              setTimeout(() => setLogOcrCopyState('idle'), 2000)
-                            } catch { setLogOcrCopyState('idle') }
-                          }}
-                        >
-                          <i className={`fa-solid ${logOcrCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
-                          {logOcrCopyState === 'copied' ? '✓ コピーしました' : 'OCRプロンプトをコピー'}
-                        </button>
-                        <p className="text-[10px] text-slate-400 text-center">↓ Claude/ChatGPT にスクショと一緒に貼り付けて実行</p>
-                        <textarea
-                          rows={3}
-                          className="input-base cs text-xs resize-y"
-                          placeholder="AI出力をここに貼り付け（===CONV_START=== 〜 ===CONV_END===）"
-                          value={logOcrOutput}
-                          onChange={e => setLogOcrOutput(e.target.value)}
-                        />
-                        <button
-                          className="btn-primary text-xs py-2 justify-center"
-                          style={{ background: '#7c3aed' }}
-                          disabled={!logOcrOutput.trim()}
-                          onClick={() => {
-                            const parsed = parseLogOcrOutput(logOcrOutput)
-                            if (!parsed) return
-                            setLogTurns(prev => [...prev, ...parsed])
-                            setLogOcrOutput('')
-                            setLogOcrOpen(false)
-                          }}
-                        >
-                          <i className="fa-solid fa-bolt mr-1" />会話ターンを取り込む
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 追加済みターン一覧 */}
-                  {logTurns.length > 0 && (
-                    <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
-                      {logTurns.map((t, i) => (
-                        <div key={i} className={`text-[10px] px-2 py-1.5 rounded-lg ${t.role === '自分' ? 'bg-indigo-50 text-indigo-700 text-right' : 'bg-slate-100 text-slate-700'}`}>
-                          <span className="font-bold">{t.role}</span> {t.date} [{t.channel}] {t.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* ターン追加フォーム */}
-                  <div className="bg-white border border-violet-100 rounded-xl p-3 flex flex-col gap-2">
-                    <div className="flex gap-2">
-                      {(['自分', '相手'] as const).map(r => (
-                        <button key={r} type="button"
-                          className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition ${logTurnRole === r ? 'bg-violet-600 border-violet-600 text-white' : 'bg-white border-violet-200 text-violet-700'}`}
-                          onClick={() => setLogTurnRole(r)}
-                        >{r}</button>
-                      ))}
-                      {(['リプ', 'DM'] as const).map(ch => (
-                        <button key={ch} type="button"
-                          className={`flex-1 py-1.5 text-[11px] font-medium rounded-lg border transition ${logTurnChannel === ch ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-200 text-indigo-700'}`}
-                          onClick={() => setLogTurnChannel(ch)}
-                        >{ch}</button>
-                      ))}
-                    </div>
-                    <input type="date" className="input-base cs text-xs" value={logTurnDate} onChange={e => setLogTurnDate(e.target.value)} />
-                    <textarea rows={2} className="input-base cs text-xs resize-y" value={logTurnText} onChange={e => setLogTurnText(e.target.value)} placeholder="テキスト" />
-                    <button
-                      className="btn-sec text-xs py-2 justify-center"
-                      disabled={!logTurnText.trim()}
-                      onClick={() => {
-                        setLogTurns(prev => [...prev, { role: logTurnRole, text: logTurnText, date: logTurnDate, channel: logTurnChannel }])
-                        setLogTurnText('')
-                      }}
-                    >
-                      <i className="fa-solid fa-plus mr-1" />このターンを追加
-                    </button>
-                  </div>
-
-                  <button
-                    className="btn-primary text-xs py-2.5 justify-center"
-                    style={{ background: '#7c3aed' }}
-                    disabled={logTurns.length < 2}
-                    onClick={() => {
-                      const turns: ConversationTurn[] = logTurns.map(t => ({
-                        id: uid(), role: t.role, text: t.text,
-                        timestamp: new Date(t.date).toISOString(),
-                        channel: t.channel as 'リプ' | 'DM',
-                        sentStatus: 'sent' as const,
-                      }))
-                      const repCount = Math.floor(logTurns.filter(t => t.channel === 'リプ').length / 2)
-                      const dmCount = Math.floor(logTurns.filter(t => t.channel === 'DM').length / 2)
-                      const firstSelfText = logTurns.find(t => t.role === '自分')?.text ?? ''
-                      const newTouch: Touch = {
-                        id: uid(),
-                        date: new Date(logTurns[0].date).toISOString(),
-                        touchMode: 'conversation',
-                        threadEntry: 'log_restore',
-                        threadStatus: 'active',
-                        conversationTurns: turns,
-                        repExchangeCount: repCount,
-                        dmExchangeCount: dmCount,
-                        targetPostText: '（ログ復元）',
-                        targetPostType: 'その他',
-                        targetValidity: '◯',
-                        aiSuggestedText: '',
-                        actualSentText: firstSelfText,
-                        editReason: '',
-                        messageValidity: '未判定',
-                        reactionType: 'テキスト返信',
-                        reactionNote: '',
-                        status: 'awaiting_reaction',
-                      }
-                      saveData((prev: AppData) => ({
-                        ...prev,
-                        pipeline: prev.pipeline.map(p =>
-                          p.id !== item.id ? p : {
-                            ...p,
-                            currentStep: logRestoreStep,
-                            touches: [...(p.touches || []), newTouch],
-                          }
-                        ),
-                      }))
-                      setDmStartOpen(false)
-                      setLogTurns([])
-                      setLogTurnText('')
-                    }}
-                  >
-                    <i className="fa-solid fa-check mr-1" />復元を確定
-                  </button>
-                </div>
-              )}
             </div>
           ) : (
             <div ref={addFormRef} className="mx-4 mb-4 p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-4">
-              {/* タイトル + DM/リプ トグル */}
+              {/* タイトル + 3択トグル */}
               <div className="flex items-center gap-3">
                 <p className="font-bold text-sm text-slate-800 flex-1">タッチを追加</p>
-                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1">
+                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1">
                   <button
-                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${!tIsDM ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    onClick={() => { setTIsDM(false); resetForm() }}
-                  >リプ</button>
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'rep' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { setTTouchMode('rep'); resetForm() }}
+                  >公開リプ/コメント</button>
                   <button
-                    className={`text-[11px] font-semibold px-3 py-1 rounded-lg transition ${tIsDM ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
-                    onClick={() => { setTIsDM(true); resetForm() }}
-                  >DM</button>
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'story' ? 'bg-pink-500 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { setTTouchMode('story'); resetForm() }}
+                  >ストーリー返信</button>
+                  <button
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'dm' ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { setTTouchMode('dm'); resetForm() }}
+                  >通常DM</button>
                 </div>
               </div>
 
               {/* ① AI generation section */}
-              <div className={`bg-white border rounded-xl p-3 flex flex-col gap-2 ${tIsDM ? 'border-indigo-200' : 'border-indigo-100'}`}>
+              <div className={`bg-white border rounded-xl p-3 flex flex-col gap-2 ${tTouchMode === 'dm' ? 'border-violet-200' : tTouchMode === 'story' ? 'border-pink-100' : 'border-indigo-100'}`}>
                 <p className="text-xs font-bold text-indigo-700">① AIで生成</p>
                 <button
                   className={`btn-sec text-xs py-2 justify-center ${copyBtnState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                   onClick={handleCopyPrompt}
                 >
                   <i className={`fa-solid ${copyBtnState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
-                  {copyBtnState === 'copied' ? '✓ コピーしました' : tIsDM ? 'OS_現象未来プロンプトをコピー' : 'プロンプトをコピー'}
+                  {copyBtnState === 'copied' ? '✓ コピーしました' : tTouchMode === 'dm' ? 'OS_現象未来プロンプトをコピー' : 'プロンプトをコピー'}
                 </button>
                 <p className="text-[10px] text-slate-400 text-center">
-                  {tIsDM ? '↓ ChatGPT等に貼り付けて実行' : '↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行'}
+                  {tTouchMode === 'dm' ? '↓ ChatGPT等に貼り付けて実行' : '↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行'}
                 </p>
 
                 <p className="text-xs font-bold text-indigo-700 mt-1">② AI出力を貼り付け</p>
                 <textarea
                   rows={3}
                   className="input-base cs text-xs resize-y"
-                  placeholder={tIsDM ? "AI出力をここに貼り付け（===MSG_START=== から ===MSG_END=== まで）" : "AIの出力をここに貼り付け（===TOUCH_START=== から ===TOUCH_END=== まで）"}
+                  placeholder={tTouchMode === 'dm' ? "AI出力をここに貼り付け（===MSG_START=== から ===MSG_END=== まで）" : "AIの出力をここに貼り付け（===TOUCH_START=== から ===TOUCH_END=== まで）"}
                   value={aiOutput}
                   onChange={e => { setAiOutput(e.target.value); setAutoFillError(null); setAutoFillWarning(null) }}
                 />
@@ -1599,44 +1361,48 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
               {/* form fields */}
               <div className="flex flex-col gap-3">
-                {/* 投稿関連フィールド（リプモードのみ） */}
-                {!tIsDM && (
+                {/* 投稿関連フィールド（公開リプ・ストーリー返信モードのみ） */}
+                {tTouchMode !== 'dm' && (
                   <>
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
-                      <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
-                    </div>
+                    {tTouchMode === 'rep' && (
+                      <>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
+                          <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
+                        </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
-                      <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
-                    </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
+                          <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
+                        </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-500">投稿種別</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {POST_TYPES.map(t => <Chip key={t} label={t} selected={tPostType === t} onClick={() => setTPostType(t)} />)}
-                      </div>
-                    </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">投稿種別</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {POST_TYPES.map(t => <Chip key={t} label={t} selected={tPostType === t} onClick={() => setTPostType(t)} />)}
+                          </div>
+                        </div>
 
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-500">対象妥当性</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tValidity === v} onClick={() => setTValidity(v)} />)}
-                      </div>
-                      <p className="text-[10px] text-slate-400">◯=課題/通常/達成　△=グレー　✕=愚痴/ネタへの営業</p>
-                    </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">対象妥当性</label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tValidity === v} onClick={() => setTValidity(v)} />)}
+                          </div>
+                          <p className="text-[10px] text-slate-400">◯=課題/通常/達成　△=グレー　✕=愚痴/ネタへの営業</p>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
 
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-slate-500">AIの提案文（任意）</label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tIsDM ? 'AIが提案したDM文' : 'AIが提案した文章'} value={tAiText} onChange={e => setTAiText(e.target.value)} />
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? 'AIが提案したDM文' : 'AIが提案した文章'} value={tAiText} onChange={e => setTAiText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">{tIsDM ? '実際に送ったDM文' : '実際に送った文章'} <span className="text-rose-500">*</span></label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tIsDM ? '実際に送ったDMの文章' : '実際に送ったコメント・DM文'} value={tSentText} onChange={e => setTSentText(e.target.value)} />
+                  <label className="text-xs font-semibold text-slate-700">{tTouchMode === 'dm' ? '実際に送ったDM文' : tTouchMode === 'story' ? '実際に送ったストーリー返信文' : '実際に送った文章'} <span className="text-rose-500">*</span></label>
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? '実際に送ったDMの文章' : tTouchMode === 'story' ? '相手のストーリーへの返信として送った文章' : '実際に送ったコメント・DM文'} value={tSentText} onChange={e => setTSentText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -1644,8 +1410,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="AIの提案から変更した理由" value={tEditReason} onChange={e => setTEditReason(e.target.value)} />
                 </div>
 
-                {/* 文面再判定セクション（リプモードのみ） */}
-                {!tIsDM && (
+                {/* 文面再判定セクション（DM以外のモード） */}
+                {tTouchMode !== 'dm' && (
                   <div className="flex flex-col gap-2 pt-1">
                     <button
                       className={`btn-sec text-xs py-2 justify-center ${!tSentText.trim() ? 'opacity-40 pointer-events-none' : ''} ${tJudgmentCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
@@ -1743,11 +1509,10 @@ interface TouchItemProps {
   onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
   onGoToTab3: () => void
   onAddNewTouch: (touch: Touch, pipelineUpdates?: Partial<PipelineItem>) => void
-  onStartDM: () => void
   onCloseCaseAuto: (result: string) => void
 }
 
-function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onStartDM, onCloseCaseAuto }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
@@ -2644,13 +2409,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 {repCount >= 3 ? (
                   <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex flex-col gap-2">
                     <p className="text-xs font-bold text-rose-700">🔴 リプ往復3回の上限に達しました</p>
-                    <p className="text-[11px] text-rose-600">これ以上公開リプを続けると逆効果になる可能性があります。DM移行を検討してください。</p>
-                    <button
-                      className="text-xs font-bold text-white bg-rose-500 hover:bg-rose-600 rounded-lg px-3 py-2 transition"
-                      onClick={onStartDM}
-                    >
-                      💬 DM会話を開始する
-                    </button>
+                    <p className="text-[11px] text-rose-600">これ以上公開リプを続けると逆効果になる可能性があります。「タッチを追加」→「通常DM」でDM移行を記録してください。</p>
                   </div>
                 ) : (
                   <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5">

@@ -422,20 +422,6 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onClose }
         </div>
       )}
 
-      <div className="flex justify-end pt-2 border-t border-slate-100">
-        {t.track !== 'SKIP' && (
-          <button
-            className={`btn-primary text-xs py-2 px-4 ${t.pipelineId ? 'opacity-50' : ''}`}
-            onClick={onToPipeline}
-            disabled={!!t.pipelineId}
-          >
-            {t.pipelineId
-              ? <><i className="fa-solid fa-check text-emerald-400" />パイプライン登録済み</>
-              : <><i className="fa-solid fa-arrow-right" />パイプラインへ移動（OS②）</>
-            }
-          </button>
-        )}
-      </div>
     </div>
   )
 }

@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/22 ドロワースクロール修正（flex min-h-0）";
+export const BUILD_LABEL = "06/23 ストーリー返信モード追加・DM会話開始モーダル削除・StepSelector削除・Tab1パイプラインボタン削除";
