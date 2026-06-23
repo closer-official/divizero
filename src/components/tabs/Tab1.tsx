@@ -13,6 +13,7 @@ interface Props {
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
+  onGoToTab2: () => void
 }
 
 type Mode = 'twitter' | 'instagram' | 'threads'
@@ -23,11 +24,19 @@ const TRACK_TIPS: Record<string, string> = {
   SKIP: '接触対象外（除外フィルター該当）'
 }
 
-export default function Tab1({ data, saveData, prompts, role, toast, confirm }: Props) {
+type Prefill = { displayName: string; handle: string; channel: string }
+
+export default function Tab1({ data, saveData, prompts, role, toast, confirm, onGoToTab2 }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os_screening_mode') as Mode) || 'twitter')
   const [resultText, setResultText] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
+  const [prefill, setPrefill] = useState<Prefill | null>(() => {
+    try {
+      const s = localStorage.getItem('os1_prefill')
+      return s ? JSON.parse(s) : null
+    } catch { return null }
+  })
 
   useEffect(() => {
     setSelectedId(null)
@@ -66,6 +75,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm }: 
     } as Target
     saveData(prev => ({ ...prev, targets: [...prev.targets, newTarget] }))
     setResultText('')
+    localStorage.removeItem('os1_prefill')
+    setPrefill(null)
     toast.show(`「${newTarget.accountName}」をOS①リストに追加しました`)
     setSelectedId(newTarget.id)
     setPage(0)
@@ -128,8 +139,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm }: 
       })
       return d
     })
-    toast.show(`「${tgt.accountName}」をパイプラインへ追加しました`)
-    setSelectedId(targetId)
+    toast.show(`「${tgt.accountName}」をOS②パイプラインに移行します…`, 2000)
+    setTimeout(() => onGoToTab2(), 1500)
   }
 
   const allTargets = [...data.targets].reverse()
@@ -194,6 +205,24 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm }: 
                 })}
               </div>
             </div>
+
+            {prefill && (
+              <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 text-xs">
+                <i className="fa-solid fa-arrow-right-to-bracket text-violet-500 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="font-bold text-violet-800">OS⓪から引き継ぎ：</span>
+                  <span className="text-violet-700">{prefill.displayName || prefill.handle}</span>
+                  {prefill.displayName && prefill.handle && (
+                    <span className="text-violet-400 ml-1">@{prefill.handle}</span>
+                  )}
+                </div>
+                <button
+                  className="shrink-0 text-violet-300 hover:text-violet-500 p-1"
+                  onClick={() => { localStorage.removeItem('os1_prefill'); setPrefill(null) }}
+                  title="クリア"
+                ><i className="fa-solid fa-xmark" /></button>
+              </div>
+            )}
 
             <div className={`rounded-xl p-3 text-xs border ${info.bg}`}>{info.text}</div>
 
@@ -341,6 +370,13 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onClose }
             <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-xs py-1.5 px-2.5">
               <i className="fa-solid fa-arrow-up-right-from-square text-xs" />プロフィール
             </a>
+          )}
+          {t.track !== 'SKIP' && (
+            t.pipelineId
+              ? <span className="text-[11px] text-indigo-500 font-semibold px-2"><i className="fa-solid fa-check mr-1" />OS②済</span>
+              : <button className="btn-primary text-xs py-1.5 px-3" onClick={onToPipeline}>
+                  <i className="fa-solid fa-arrow-right" />OS②へ移行
+                </button>
           )}
           <button className="text-slate-400 hover:text-slate-600 p-1 ml-1" onClick={onClose}>
             <i className="fa-solid fa-xmark text-lg" />

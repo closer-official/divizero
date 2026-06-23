@@ -128,6 +128,14 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function handleGoToOS1(id: string, channel: Mode) {
+    const item = data.screenings.find(x => x.id === id)
+    if (item) {
+      localStorage.setItem('os1_prefill', JSON.stringify({
+        displayName: item.displayName || '',
+        handle: item.handle || '',
+        channel,
+      }))
+    }
     saveData(prev => ({ ...prev, screenings: prev.screenings.filter(x => x.id !== id) }))
     localStorage.setItem('os_screening_mode', channel)
     onGoToTab1()
