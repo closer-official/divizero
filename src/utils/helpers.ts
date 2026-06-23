@@ -32,6 +32,7 @@ export function urgencyClass(days: number): string {
 export function trackBadgeClass(track: string): string {
   if (track === 'FT') return 'track-ft';
   if (track === 'NT') return 'track-nt';
+  if (track === 'UT') return 'track-ut';
   return 'track-skip';
 }
 

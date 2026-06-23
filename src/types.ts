@@ -1,5 +1,5 @@
 export type Channel = 'twitter' | 'instagram' | 'threads' | 'dm';
-export type Track = 'FT' | 'NT' | 'SKIP';
+export type Track = 'FT' | 'NT' | 'UT' | 'SKIP';
 export type Step = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 
 export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・嬉しい報告' | '愚痴・本音' | 'ネタ' | 'ストーリー' | 'その他';

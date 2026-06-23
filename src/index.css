@@ -17,6 +17,7 @@ body{font-family:'Inter','Noto Sans JP',sans-serif;background:#f8fafc;color:#1e2
 .step-dot{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
 .track-ft{background:#ede9fe;color:#6d28d9;border:1px solid #ddd6fe}
 .track-nt{background:#e0e7ff;color:#3730a3;border:1px solid #c7d2fe}
+.track-ut{background:#fef3c7;color:#b45309;border:1px solid #fde68a}
 .track-skip{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
 .urgency-ok{color:#16a34a}
 .urgency-warn{color:#d97706}

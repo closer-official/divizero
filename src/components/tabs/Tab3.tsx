@@ -20,7 +20,7 @@ interface Props {
 export default function Tab3({ data, saveData, prompts, role, toast, confirm, prefill, onPrefillConsumed }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [name, setName] = useState('')
-  const [track, setTrack] = useState<'FT' | 'NT' | 'SKIP'>('NT')
+  const [track, setTrack] = useState<'FT' | 'NT' | 'UT' | 'SKIP'>('NT')
   const [hypo, setHypo] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState(todayStr())

@@ -25,7 +25,7 @@ export interface ConfirmAPI {
 }
 export interface PrefilledOS3 {
   name: string
-  track: 'FT' | 'NT' | 'SKIP'
+  track: 'FT' | 'NT' | 'UT' | 'SKIP'
   hypo: string
   startDate: string
   convText: string

@@ -213,6 +213,7 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
 }
 
 // ── KanbanColumn ───────────────────────────────────────────────
+const KANBAN_PAGE = 20
 interface KanbanColumnProps {
   label: string
   colorClass: string
@@ -221,21 +222,51 @@ interface KanbanColumnProps {
   onCardClick: (id: string) => void
 }
 function KanbanColumn({ label, colorClass, items, activeId, onCardClick }: KanbanColumnProps) {
+  const [visible, setVisible] = useState(KANBAN_PAGE)
+  const sentinelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => { setVisible(KANBAN_PAGE) }, [items.length])
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting) setVisible(v => Math.min(v + KANBAN_PAGE, items.length))
+      },
+      { threshold: 0.1 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [items.length])
+
+  const shown = items.slice(0, visible)
+
   return (
     <div className="flex-shrink-0 w-44 sm:w-48 flex flex-col snap-start">
       <div className="flex items-center gap-1.5 mb-2 px-0.5">
         <p className={`text-[11px] font-bold flex-1 ${colorClass}`}>{label}</p>
         <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
       </div>
-      <div className="flex flex-col gap-1.5 min-h-[60px]">
+      <div
+        className="flex flex-col gap-1.5 min-h-[60px] overflow-y-auto overscroll-contain cs"
+        style={{ maxHeight: 'calc(100vh - 320px)' }}
+      >
         {items.length === 0 ? (
           <div className="rounded-xl border-2 border-dashed border-slate-100 py-6 flex items-center justify-center">
             <span className="text-[10px] text-slate-300">なし</span>
           </div>
         ) : (
-          items.map(item => (
-            <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)} />
-          ))
+          <>
+            {shown.map(item => (
+              <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)} />
+            ))}
+            {visible < items.length && (
+              <div ref={sentinelRef} className="py-2 flex justify-center shrink-0">
+                <span className="text-[10px] text-slate-300">読込中…</span>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -257,6 +288,11 @@ interface Props {
 export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: Props) {
   const [filter, setFilter] = useState('all')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
+  const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
+  const drawerRef = useRef<HTMLDivElement>(null)
+  const resizingRef = useRef(false)
+  const resizeStartX = useRef(0)
+  const resizeStartW = useRef(0)
 
   // ── MD preview modal state ────────────────────────────────────
   const [mdPreview, setMdPreview] = useState<{ content: string; filename: string } | null>(null)
@@ -306,12 +342,33 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     if (item.currentStep === 'S2') return 's2'
     return 's3plus'
   }
+  const warnIds = new Set(warnItems.map(w => w.id))
+
+  function urgencySort(a: PipelineItem, b: PipelineItem): number {
+    // 1. 30d warn (forced close) > 7d warn > none
+    const aWarn = warnIds.has(a.id) ? (daysSince(a.startDate) >= 30 ? 2 : 1) : 0
+    const bWarn = warnIds.has(b.id) ? (daysSince(b.startDate) >= 30 ? 2 : 1) : 0
+    if (bWarn !== aWarn) return bWarn - aWarn
+    // 2. awaiting_reaction (longer elapsed first)
+    const aLast = (a.touches || []).slice(-1)[0]
+    const bLast = (b.touches || []).slice(-1)[0]
+    const aAwaiting = aLast?.status === 'awaiting_reaction'
+    const bAwaiting = bLast?.status === 'awaiting_reaction'
+    if (aAwaiting !== bAwaiting) return aAwaiting ? -1 : 1
+    // 3. oldest last contact first (b-a: larger daysSince = more urgent = earlier in list)
+    return daysSince(b.lastContactDate || b.startDate) - daysSince(a.lastContactDate || a.startDate)
+  }
+
+  function filterActive(items: PipelineItem[]): PipelineItem[] {
+    if (filter === 'FT') return items.filter(p => p.track === 'FT')
+    if (filter === 'NT') return items.filter(p => p.track === 'NT')
+    if (filter === 'UT') return items.filter(p => p.track === 'UT')
+    if (filter === 'warn') return items.filter(p => warnIds.has(p.id))
+    return items
+  }
+
   function getColItems(key: KanbanColKey): PipelineItem[] {
-    let items = active.filter(p => getColKey(p) === key)
-    if (filter === 'FT') items = items.filter(p => p.track === 'FT')
-    else if (filter === 'NT') items = items.filter(p => p.track === 'NT')
-    else if (filter === 'warn') items = items.filter(p => warnItems.some(w => w.id === p.id))
-    return items.sort((a, b) => daysSince(b.lastContactDate || b.startDate) - daysSince(a.lastContactDate || a.startDate))
+    return filterActive(active.filter(p => getColKey(p) === key)).sort(urgencySort)
   }
 
   function handleExportCaseMd(item: PipelineItem) {
@@ -321,7 +378,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function exportAllMD() {
-    const items = active
+    const items = filterActive(active)
     const lines: string[] = [
       `# OS② パイプライン`,
       `生成: ${new Date().toLocaleDateString('ja-JP')}`,
@@ -440,6 +497,26 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     toast.show('分析結果を保存しました')
   }
 
+  function handleDrawerResizeStart(e: React.MouseEvent) {
+    e.preventDefault()
+    resizingRef.current = true
+    resizeStartX.current = e.clientX
+    resizeStartW.current = drawerRef.current?.offsetWidth ?? Math.round(window.innerWidth * 0.5)
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return
+      const delta = resizeStartX.current - ev.clientX
+      const next = Math.max(320, Math.min(window.innerWidth - 40, resizeStartW.current + delta))
+      setDrawerWidth(next)
+    }
+    const onUp = () => {
+      resizingRef.current = false
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
   function handleDismiss(type: ActiveNotification['type']) {
     setDismissedUntil(type)
     // Force re-render by toggling state (notifications computed from data+localStorage)
@@ -531,11 +608,12 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
       {/* Filter + analysis manual trigger */}
       <div className="flex gap-2 flex-wrap items-center">
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => setFilter(e.target.value)}>
+        <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
           <option value="all">全て ({active.length})</option>
-          <option value="FT">FT</option>
-          <option value="NT">NT</option>
-          <option value="warn">警告のみ</option>
+          <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
+          <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
+          <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
+          <option value="warn">警告のみ ({warnItems.length})</option>
         </select>
         <div className="ml-auto flex gap-1 shrink-0">
           <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
@@ -582,9 +660,20 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               onClick={() => setDrawerItemId(null)}
             />
             <div
-              className="absolute top-0 right-0 bottom-0 w-full max-w-lg bg-white shadow-2xl flex flex-col"
-              style={{ animation: 'slideInRight .2s ease-out' }}
+              ref={drawerRef}
+              className="absolute top-0 right-0 bottom-0 bg-white shadow-2xl flex flex-col"
+              style={{
+                width: drawerWidth ? `${drawerWidth}px` : '50%',
+                minWidth: '320px',
+                maxWidth: '90vw',
+                animation: 'slideInRight .2s ease-out',
+              }}
             >
+              {/* Resize handle */}
+              <div
+                className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-10 hover:bg-indigo-300 transition-colors"
+                onMouseDown={handleDrawerResizeStart}
+              />
               <div className="shrink-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2">
                 <button
                   className="text-slate-400 hover:text-slate-700 p-1 rounded transition min-h-[36px] min-w-[36px] flex items-center justify-center"
