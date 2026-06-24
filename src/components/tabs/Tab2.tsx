@@ -873,6 +873,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tJudgedAt, setTJudgedAt] = useState<string | undefined>(undefined)
   const [tJudgmentError, setTJudgmentError] = useState<string | null>(null)
   const [tJudgmentModelName, setTJudgmentModelName] = useState('')
+  const [tJudgmentHistory, setTJudgmentHistory] = useState<SubJudgment[]>([])
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -899,7 +900,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
     setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
     setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
-    setTJudgmentError(null); setTJudgmentModelName(''); setAutoFillError(null); setAutoFillWarning(null)
+    setTJudgmentError(null); setTJudgmentModelName(''); setTJudgmentHistory([]); setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
     setTPostDateTime(undefined); setTEngagementStats(undefined)
     setTTouchMode('rep')
@@ -997,13 +998,31 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       setTJudgmentError('AI出力の形式が認識できませんでした。===JUDGMENT_START=== から ===JUDGMENT_END=== まで含めて貼り付けてください。')
       return
     }
-    setTMsgValidity(parsed.judgment)
-    setTJudgmentReason(parsed.judgmentReason)
-    setTEditEvaluation(parsed.editEvaluation)
-    setTEditComment(parsed.editComment)
-    setTImprovementSuggestion(parsed.improvementSuggestion)
-    setTImprovedText(parsed.improvedText)
-    setTJudgedAt(new Date().toISOString())
+    const model = tJudgmentModelName || '不明'
+    const newEntry: SubJudgment = {
+      modelName: model,
+      judgment: parsed.judgment,
+      judgmentReason: parsed.judgmentReason,
+      improvementSuggestion: parsed.improvementSuggestion,
+      improvedText: parsed.improvedText,
+      judgedAt: new Date().toISOString(),
+    }
+    const isFirst = tJudgmentHistory.length === 0
+    setTJudgmentHistory(prev => {
+      const idx = prev.findIndex(j => j.modelName === model)
+      if (idx >= 0) { const next = [...prev]; next[idx] = newEntry; return next }
+      return [...prev, newEntry]
+    })
+    if (isFirst) {
+      setTMsgValidity(parsed.judgment)
+      setTJudgmentReason(parsed.judgmentReason)
+      setTEditEvaluation(parsed.editEvaluation)
+      setTEditComment(parsed.editComment)
+      setTImprovementSuggestion(parsed.improvementSuggestion)
+      setTImprovedText(parsed.improvedText)
+      setTJudgedAt(new Date().toISOString())
+    }
+    setTJudgmentOutput('')
   }
 
   function handleAddTouch() {
@@ -1045,13 +1064,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         reactionType: '未記録',
         reactionNote: '',
         threadEntry: 's1_story_reply',
-        judgmentReason: tJudgmentReason,
+        judgmentReason: tJudgmentHistory[0]?.judgmentReason || tJudgmentReason,
         editEvaluation: tEditEvaluation,
         editComment: tEditComment,
-        improvementSuggestion: tImprovementSuggestion,
-        improvedText: tImprovedText,
-        judgedAt: tJudgedAt,
-        mainJudgmentModel: tJudgmentModelName || undefined,
+        improvementSuggestion: tJudgmentHistory[0]?.improvementSuggestion || tImprovementSuggestion,
+        improvedText: tJudgmentHistory[0]?.improvedText || tImprovedText,
+        judgedAt: tJudgmentHistory.length > 0 ? tJudgmentHistory[tJudgmentHistory.length - 1].judgedAt : tJudgedAt,
+        mainJudgmentModel: tJudgmentHistory[0]?.modelName || tJudgmentModelName || undefined,
+        subJudgments: tJudgmentHistory.length > 1 ? tJudgmentHistory.slice(1) : undefined,
       }
       pipelineUpdates = { currentStep: 'S3' as Step }
     } else {
@@ -1064,13 +1084,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
-        judgmentReason: tJudgmentReason,
+        judgmentReason: tJudgmentHistory[0]?.judgmentReason || tJudgmentReason,
         editEvaluation: tEditEvaluation,
         editComment: tEditComment,
-        improvementSuggestion: tImprovementSuggestion,
-        improvedText: tImprovedText,
-        judgedAt: tJudgedAt,
-        mainJudgmentModel: tJudgmentModelName || undefined,
+        improvementSuggestion: tJudgmentHistory[0]?.improvementSuggestion || tImprovementSuggestion,
+        improvedText: tJudgmentHistory[0]?.improvedText || tImprovedText,
+        judgedAt: tJudgmentHistory.length > 0 ? tJudgmentHistory[tJudgmentHistory.length - 1].judgedAt : tJudgedAt,
+        mainJudgmentModel: tJudgmentHistory[0]?.modelName || tJudgmentModelName || undefined,
+        subJudgments: tJudgmentHistory.length > 1 ? tJudgmentHistory.slice(1) : undefined,
       }
     }
 
@@ -1534,7 +1555,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                             {['ChatGPT', 'Gemini', 'Claude'].map(m => (
                               <button key={m} type="button"
                                 className={`text-[10px] px-2 py-0.5 rounded-md border transition ${tJudgmentModelName === m ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                                onClick={() => setTJudgmentModelName(prev => prev === m ? '' : m)}
+                                onClick={() => setTJudgmentModelName(m)}
                               >{m}</button>
                             ))}
                             <input
@@ -1561,15 +1582,24 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                       </div>
                     )}
 
-                    {tJudgmentReason && (
-                      <div className="bg-slate-50 border border-slate-100 rounded-lg px-3 py-2 flex flex-col gap-1 text-[11px]">
-                        <p className="text-slate-400">判定理由：<span className="text-slate-700 font-medium">{tJudgmentReason}</span></p>
-                        {tImprovementSuggestion && tImprovementSuggestion !== 'なし' && (
-                          <p className="text-amber-600">改善提案：{tImprovementSuggestion}</p>
-                        )}
-                        {tImprovedText && tImprovedText !== 'なし' && (
-                          <p className="text-indigo-600">改善案：{tImprovedText}</p>
-                        )}
+                    {tJudgmentHistory.length > 0 && (
+                      <div className="flex flex-col gap-1.5">
+                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">各AIの判定（{tJudgmentHistory.length}件）</p>
+                        {tJudgmentHistory.map((j, i) => (
+                          <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] text-slate-500 font-medium border border-slate-200 rounded px-1.5 py-0.5">{j.modelName}</span>
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(j.judgment)}`}>{j.judgment}</span>
+                            </div>
+                            {j.judgmentReason && <p className="text-slate-600 text-[11px]">{j.judgmentReason}</p>}
+                            {j.improvementSuggestion && j.improvementSuggestion !== 'なし' && (
+                              <p className="text-amber-600 text-[11px]">改善: {j.improvementSuggestion}</p>
+                            )}
+                            {j.improvedText && j.improvedText !== 'なし' && (
+                              <p className="text-indigo-600 text-[11px]">改善案: {j.improvedText}</p>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -1578,7 +1608,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                       <div className="flex flex-wrap gap-1.5">
                         {MSG_VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
                       </div>
-                      {tJudgedAt && <p className="text-[10px] text-emerald-600">✓ AI判定済み（手動変更も可）</p>}
+                      {tJudgmentHistory.length > 0 && <p className="text-[10px] text-emerald-600">✓ {tJudgmentHistory.length}件のAI判定あり（手動変更も可）</p>}
                     </div>
                   </div>
                 )}
@@ -1934,9 +1964,9 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         subJudgments: [...(touch.subJudgments || []), newSub],
       }, {})
     }
-    setTouchJudgOpen(false)
     setTouchJudgOutput('')
     setTouchJudgModelName('')
+    setTouchJudgError(null)
   }
 
   async function handleCopyMsgPrompt() {
@@ -2311,52 +2341,49 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                 <p className="text-slate-600">{touch.editReason}</p>
               </div>
             )}
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-slate-400 text-[10px]">文面妥当性</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(displayMsgValidity)}`}>{displayMsgValidity}</span>
-              {touch.mainJudgmentModel && (
-                <span className="text-[10px] text-slate-400 border border-slate-200 rounded px-1.5 py-0.5">{touch.mainJudgmentModel}</span>
-              )}
-            </div>
-            {touch.judgmentReason && (
-              <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-0.5">判定理由</p>
-                <p className="text-slate-600 text-[11px]">{touch.judgmentReason}</p>
-              </div>
-            )}
-            {touch.improvementSuggestion && touch.improvementSuggestion !== 'なし' && (
-              <div>
-                <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-wide mb-0.5">改善提案</p>
-                <p className="text-amber-700 text-[11px]">{touch.improvementSuggestion}</p>
-              </div>
-            )}
-            {touch.improvedText && touch.improvedText !== 'なし' && (
-              <div>
-                <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-0.5">改善案</p>
-                <p className="text-indigo-700 text-[11px] whitespace-pre-wrap">{touch.improvedText}</p>
-              </div>
-            )}
+            {(() => {
+              const hasMain = touch.mainJudgmentModel || displayMsgValidity !== '未判定'
+              const allJudgments: Array<{ modelName: string; judgment: string; judgmentReason?: string; improvementSuggestion?: string; improvedText?: string }> = []
+              if (hasMain) {
+                allJudgments.push({
+                  modelName: touch.mainJudgmentModel || '—',
+                  judgment: displayMsgValidity,
+                  judgmentReason: touch.judgmentReason,
+                  improvementSuggestion: touch.improvementSuggestion,
+                  improvedText: touch.improvedText,
+                })
+              }
+              if (touch.subJudgments) allJudgments.push(...touch.subJudgments)
+              return allJudgments.length > 0 ? (
+                <div className="flex flex-col gap-1">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">各AIの判定（{allJudgments.length}件）</p>
+                  {allJudgments.map((j, i) => (
+                    <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 flex flex-col gap-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[10px] text-slate-500 font-medium border border-slate-200 rounded px-1.5 py-0.5">{j.modelName}</span>
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(j.judgment as import('../../types').TouchValidity)}`}>{j.judgment}</span>
+                      </div>
+                      {j.judgmentReason && <p className="text-slate-600 text-[11px]">{j.judgmentReason}</p>}
+                      {j.improvementSuggestion && j.improvementSuggestion !== 'なし' && (
+                        <p className="text-amber-600 text-[11px]">改善: {j.improvementSuggestion}</p>
+                      )}
+                      {j.improvedText && j.improvedText !== 'なし' && (
+                        <p className="text-indigo-600 text-[11px]">改善案: {j.improvedText}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-slate-400 text-[10px]">文面妥当性</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(displayMsgValidity)}`}>{displayMsgValidity}</span>
+                </div>
+              )
+            })()}
             {touch.editEvaluation && (
               <div className="flex gap-2">
                 <span className="text-slate-400 text-[10px] shrink-0">編集評価</span>
                 <span className={`text-[10px] font-medium ${touch.editEvaluation === '適切' ? 'text-emerald-600' : touch.editEvaluation === '悪化' ? 'text-rose-600' : 'text-slate-500'}`}>{touch.editEvaluation}</span>
-              </div>
-            )}
-            {touch.subJudgments && touch.subJudgments.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">追加判定</p>
-                {touch.subJudgments.map((sj, i) => (
-                  <div key={i} className="bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 flex flex-col gap-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-slate-500 font-medium border border-slate-200 rounded px-1.5 py-0.5">{sj.modelName}</span>
-                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(sj.judgment)}`}>{sj.judgment}</span>
-                    </div>
-                    {sj.judgmentReason && <p className="text-slate-600 text-[11px]">{sj.judgmentReason}</p>}
-                    {sj.improvementSuggestion && sj.improvementSuggestion !== 'なし' && (
-                      <p className="text-amber-600 text-[11px]">改善: {sj.improvementSuggestion}</p>
-                    )}
-                  </div>
-                ))}
               </div>
             )}
             {/* OS①文面再判定（スレッドなしタッチのみ） */}
@@ -2372,12 +2399,12 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                   </button>
                   <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] text-slate-400">使用モデル（任意）</label>
+                    <label className="text-[10px] text-slate-400">使用モデル（取り込むAIを選択）</label>
                     <div className="flex gap-1 flex-wrap items-center">
                       {['ChatGPT', 'Gemini', 'Claude'].map(m => (
                         <button key={m} type="button"
                           className={`text-[10px] px-2 py-0.5 rounded-md border transition ${touchJudgModelName === m ? 'border-violet-400 bg-violet-50 text-violet-700 font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                          onClick={() => setTouchJudgModelName(prev => prev === m ? '' : m)}
+                          onClick={() => setTouchJudgModelName(m)}
                         >{m}</button>
                       ))}
                       <input
@@ -2396,8 +2423,9 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     onChange={e => { setTouchJudgOutput(e.target.value); setTouchJudgError(null) }}
                   />
                   {touchJudgError && <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1">{touchJudgError}</p>}
+                  <p className="text-[10px] text-slate-400">複数AIで判定する場合：取り込み後にモデルを切り替えて続けて貼り付けできます</p>
                   <div className="flex gap-1.5">
-                    <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => { setTouchJudgOpen(false); setTouchJudgOutput(''); setTouchJudgError(null); setTouchJudgModelName('') }}>キャンセル</button>
+                    <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => { setTouchJudgOpen(false); setTouchJudgOutput(''); setTouchJudgError(null); setTouchJudgModelName('') }}>閉じる</button>
                     <button
                       className="btn-primary text-xs py-1.5 flex-1 justify-center"
                       style={{ background: '#4f46e5' }}

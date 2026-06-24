@@ -67,19 +67,54 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       toast.show('アカウント情報が見つかりませんでした。AIの出力形式を確認してください', 3000)
       return
     }
+    const targetId = uid()
+    const pid = parsed.track !== 'SKIP' ? uid() : null
     const newTarget: Target = {
       ...parsed,
-      id: uid(),
+      id: targetId,
       createdAt: new Date().toISOString(),
       aiOutput: text,
+      pipelineId: pid,
     } as Target
-    saveData(prev => ({ ...prev, targets: [...prev.targets, newTarget] }))
+    saveData(prev => {
+      const d = { ...prev, targets: [...prev.targets, newTarget] }
+      if (pid) {
+        d.pipeline = [...prev.pipeline, {
+          id: pid,
+          targetId,
+          caseId: newTarget.caseId || null,
+          os1Output: newTarget.aiOutput || null,
+          accountName: newTarget.accountName,
+          url: newTarget.url,
+          channel: newTarget.channel,
+          track: newTarget.track as 'FT' | 'NT' | 'SKIP',
+          hypothesis: newTarget.hypothesis,
+          startDate: newTarget.startDate || todayStr(),
+          currentStep: 'S1',
+          stepHistory: [{ step: 'S1', date: todayStr() }],
+          repCount: 0,
+          dmCount: 0,
+          lastContactDate: todayStr(),
+          analyses: [],
+          history: [],
+          sentMessages: [],
+          replies: [],
+          isOpen: true,
+        }]
+      }
+      return d
+    })
     setResultText('')
     localStorage.removeItem('os1_prefill')
     setPrefill(null)
-    toast.show(`「${newTarget.accountName}」をOS①リストに追加しました`)
-    setSelectedId(newTarget.id)
-    setPage(0)
+    if (pid) {
+      toast.show(`「${newTarget.accountName}」をOS②に追加しました`, 2000)
+      setTimeout(() => onGoToTab2(), 1000)
+    } else {
+      toast.show(`「${newTarget.accountName}」をOS①リストに追加しました（SKIP）`)
+      setSelectedId(newTarget.id)
+      setPage(0)
+    }
   }
 
   function handleDelete(id: string) {
