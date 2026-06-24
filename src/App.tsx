@@ -124,26 +124,6 @@ export default function App() {
     }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Pull-to-refresh (mobile)
-  useEffect(() => {
-    let startY = 0
-    let isPulling = false
-    const threshold = 80
-    function onTouchStart(e: TouchEvent) {
-      if (window.scrollY === 0) { startY = e.touches[0].clientY; isPulling = true }
-    }
-    function onTouchEnd(e: TouchEvent) {
-      if (!isPulling) return
-      if (e.changedTouches[0].clientY - startY > threshold) window.location.reload()
-      isPulling = false
-    }
-    window.addEventListener('touchstart', onTouchStart, { passive: true })
-    window.addEventListener('touchend', onTouchEnd)
-    return () => {
-      window.removeEventListener('touchstart', onTouchStart)
-      window.removeEventListener('touchend', onTouchEnd)
-    }
-  }, [])
 
   // OS②→OS③ 情報引き継ぎ
   function handleCloseCase(item: PipelineItem, result: string) {
@@ -251,6 +231,14 @@ export default function App() {
             {BUILD_LABEL}
           </span>
           <div className="flex items-center gap-2" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+            {/* Refresh */}
+            <button
+              className="btn-sec text-xs py-2 px-2.5"
+              onClick={() => window.location.reload()}
+              title="リフレッシュ"
+            >
+              <i className="fa-solid fa-rotate-right text-slate-500" />
+            </button>
             {/* Notification bell */}
             <button
               className="relative btn-sec text-xs py-2 px-2.5"
