@@ -12,6 +12,7 @@ import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
+import { buildBatchJudgmentPrompt, parseBatchJudgmentOutput } from '../../utils/batchJudgmentPrompt'
 import {
   getActiveNotifications, setDismissedUntil, createPendingAnalysis,
   markEmergencyAlertRead, buildEmergencyAlertDetail,
@@ -24,7 +25,7 @@ import {
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
   trackBadgeClass, stepsBarData, daysSince,
-  uid, todayStr, hasReaction, toReactionArr, reactionDisplay,
+  uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -325,6 +326,19 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
   const active = data.pipeline.filter(p => p.isOpen)
   const warnItems = active.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
+  const unverifiedTouches = data.pipeline
+    .filter(p => p.isOpen)
+    .flatMap(p => (p.touches || [])
+      .filter(t => (!t.messageValidity || t.messageValidity === '未判定') && !!t.actualSentText && !t.threadEntry)
+      .map(t => ({ touch: t, pipelineItem: p }))
+    )
+    .slice(0, 10)
+
+  const [batchJudgOpen, setBatchJudgOpen] = useState(false)
+  const [batchJudgOutput, setBatchJudgOutput] = useState('')
+  const [batchJudgCopyState, setBatchJudgCopyState] = useState<'idle' | 'copied'>('idle')
+  const [batchJudgError, setBatchJudgError] = useState<string | null>(null)
+  const [batchJudgSuccess, setBatchJudgSuccess] = useState(false)
 
   // カンバン列定義
   type KanbanColKey = 's1' | 's1l' | 's2' | 's3plus' | 'archived'
@@ -530,6 +544,55 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     toast.show('確認済みにしました')
   }
 
+  async function handleCopyBatchJudgPrompt() {
+    setBatchJudgError(null)
+    try {
+      const prompt = await buildBatchJudgmentPrompt(unverifiedTouches)
+      await navigator.clipboard.writeText(prompt)
+      setBatchJudgCopyState('copied')
+      setTimeout(() => setBatchJudgCopyState('idle'), 2000)
+    } catch {
+      setBatchJudgError('コピーに失敗しました')
+    }
+  }
+
+  function handleParseBatchJudg() {
+    setBatchJudgError(null)
+    const results = parseBatchJudgmentOutput(batchJudgOutput)
+    if (results.length === 0) {
+      setBatchJudgError('AI出力の形式が認識できませんでした。===RESULT_START=== から ===RESULT_END=== まで含めて貼り付けてください。')
+      return
+    }
+    const now = new Date().toISOString()
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => {
+        const touches = p.touches || []
+        const updated = touches.map(t => {
+          const pid = t.postId || t.id.slice(0, 8)
+          const result = results.find(r => r.postId === pid)
+          if (!result) return t
+          return {
+            ...t,
+            messageValidity: result.judgment,
+            judgmentReason: result.judgmentReason,
+            improvementSuggestion: result.improvementSuggestion,
+            improvedText: result.improvedText,
+            judgedAt: now,
+          }
+        })
+        return updated.some((t, i) => t !== touches[i]) ? { ...p, touches: updated } : p
+      }),
+    }))
+    setBatchJudgSuccess(true)
+    setTimeout(() => {
+      setBatchJudgOpen(false)
+      setBatchJudgSuccess(false)
+      setBatchJudgOutput('')
+    }, 1500)
+    toast.show(`${results.length}件の判定を保存しました`)
+  }
+
   return (
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
 
@@ -603,6 +666,74 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Batch Judgment Panel ─────────────────────────────────── */}
+      {unverifiedTouches.length > 0 && (
+        <div className="border border-violet-200 bg-violet-50 rounded-xl p-3 text-xs">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <i className="fa-solid fa-clipboard-check text-violet-500 shrink-0" />
+              <span className="font-semibold text-violet-800 shrink-0">未検証タッチ {unverifiedTouches.length}件</span>
+              <span className="text-violet-600 truncate hidden sm:block">送信済み・文面未判定</span>
+            </div>
+            <button
+              className="btn-sec text-[11px] py-1 px-3 text-violet-700 border-violet-300 shrink-0"
+              onClick={() => { setBatchJudgOpen(v => !v); setBatchJudgError(null); setBatchJudgSuccess(false) }}
+            >
+              {batchJudgOpen ? '閉じる' : 'バッチ判定'}
+            </button>
+          </div>
+
+          {batchJudgOpen && (
+            <div className="mt-3 flex flex-col gap-2">
+              <div className="bg-white border border-violet-100 rounded-lg p-2 flex flex-col gap-1">
+                {unverifiedTouches.map(({ touch, pipelineItem }) => (
+                  <div key={touch.id} className="flex items-center gap-2 text-[11px] py-0.5">
+                    <span className="font-mono text-[10px] text-violet-400 shrink-0 w-16 truncate">{touch.postId || touch.id.slice(0, 8)}</span>
+                    <span className="font-medium text-slate-700 shrink-0">{pipelineItem.accountName}</span>
+                    <span className="text-slate-400 truncate">{touch.actualSentText?.slice(0, 30)}…</span>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                className={`btn-sec text-xs py-2 justify-center ${batchJudgCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : 'text-violet-700 border-violet-300'}`}
+                onClick={handleCopyBatchJudgPrompt}
+              >
+                <i className={`fa-solid ${batchJudgCopyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1`} />
+                {batchJudgCopyState === 'copied' ? '✓ コピーしました' : `${unverifiedTouches.length}件まとめて判定プロンプトをコピー`}
+              </button>
+
+              {(batchJudgCopyState === 'copied' || batchJudgOutput) && (
+                <>
+                  <p className="text-[10px] text-slate-400">↓ AIに貼り付けて実行 → 出力をここに貼る</p>
+                  <textarea
+                    rows={4}
+                    className="input-base cs text-xs resize-y"
+                    placeholder="AIの判定出力をここに貼り付け（===RESULT_START=== から ===RESULT_END=== まで）"
+                    value={batchJudgOutput}
+                    onChange={e => { setBatchJudgOutput(e.target.value); setBatchJudgError(null) }}
+                  />
+                  <button
+                    className="btn-primary text-xs py-2 justify-center"
+                    style={{ background: '#4f46e5' }}
+                    onClick={handleParseBatchJudg}
+                  >
+                    <i className="fa-solid fa-bolt mr-1" />判定を取り込む
+                  </button>
+                </>
+              )}
+
+              {batchJudgError && (
+                <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{batchJudgError}</p>
+              )}
+              {batchJudgSuccess && (
+                <p className="text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1.5">✓ 判定を保存しました</p>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -857,23 +988,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tAiText, setTAiText] = useState('')
   const [tSentText, setTSentText] = useState('')
   const [tEditReason, setTEditReason] = useState('')
-  const [tMsgValidity, setTMsgValidity] = useState<TouchValidity>('未判定')
   const [tPostDateTime, setTPostDateTime] = useState<string | undefined>(undefined)
   const [tEngagementStats, setTEngagementStats] = useState<string | undefined>(undefined)
-
-  // judgment (文面再判定)
-  const [tJudgmentExpanded, setTJudgmentExpanded] = useState(false)
-  const [tJudgmentOutput, setTJudgmentOutput] = useState('')
-  const [tJudgmentCopyState, setTJudgmentCopyState] = useState<'idle' | 'copied'>('idle')
-  const [tJudgmentReason, setTJudgmentReason] = useState('')
-  const [tImprovementSuggestion, setTImprovementSuggestion] = useState('')
-  const [tImprovedText, setTImprovedText] = useState('')
-  const [tEditEvaluation, setTEditEvaluation] = useState('')
-  const [tEditComment, setTEditComment] = useState('')
-  const [tJudgedAt, setTJudgedAt] = useState<string | undefined>(undefined)
-  const [tJudgmentError, setTJudgmentError] = useState<string | null>(null)
-  const [tJudgmentModelName, setTJudgmentModelName] = useState('')
-  const [tJudgmentHistory, setTJudgmentHistory] = useState<SubJudgment[]>([])
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -897,10 +1013,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function resetForm() {
     setAiOutput(''); setSuggestionA(''); setSuggestionB(''); setPJudgmentA(''); setPJudgmentB('')
     setTPostText(''); setTPostRawText(''); setTPostType('通常投稿'); setTValidity('未評価')
-    setTAiText(''); setTSentText(''); setTEditReason(''); setTMsgValidity('未判定')
-    setTJudgmentExpanded(false); setTJudgmentOutput(''); setTJudgmentReason('')
-    setTImprovementSuggestion(''); setTImprovedText(''); setTEditEvaluation(''); setTEditComment(''); setTJudgedAt(undefined)
-    setTJudgmentError(null); setTJudgmentModelName(''); setTJudgmentHistory([]); setAutoFillError(null); setAutoFillWarning(null)
+    setTAiText(''); setTSentText(''); setTEditReason('')
+    setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
     setTPostDateTime(undefined); setTEngagementStats(undefined)
     setTTouchMode('rep')
@@ -971,60 +1085,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }
   }
 
-  async function handleCopyJudgmentPrompt() {
-    setTJudgmentError(null)
-    try {
-      const prompt = await buildJudgmentPrompt({
-        targetPostText: tPostText,
-        targetPostType: tPostType,
-        suggestedTextA: suggestionA || tAiText,
-        suggestedTextB: suggestionB,
-        actualSentText: tSentText,
-        editReason: tEditReason,
-      })
-      await navigator.clipboard.writeText(prompt)
-      setTJudgmentExpanded(true)
-      setTJudgmentCopyState('copied')
-      setTimeout(() => setTJudgmentCopyState('idle'), 2000)
-    } catch {
-      setTJudgmentError('コピーに失敗しました。')
-    }
-  }
-
-  function handleParseJudgment() {
-    setTJudgmentError(null)
-    const parsed = parseJudgmentOutput(tJudgmentOutput)
-    if (!parsed) {
-      setTJudgmentError('AI出力の形式が認識できませんでした。===JUDGMENT_START=== から ===JUDGMENT_END=== まで含めて貼り付けてください。')
-      return
-    }
-    const model = tJudgmentModelName || '不明'
-    const newEntry: SubJudgment = {
-      modelName: model,
-      judgment: parsed.judgment,
-      judgmentReason: parsed.judgmentReason,
-      improvementSuggestion: parsed.improvementSuggestion,
-      improvedText: parsed.improvedText,
-      judgedAt: new Date().toISOString(),
-    }
-    const isFirst = tJudgmentHistory.length === 0
-    setTJudgmentHistory(prev => {
-      const idx = prev.findIndex(j => j.modelName === model)
-      if (idx >= 0) { const next = [...prev]; next[idx] = newEntry; return next }
-      return [...prev, newEntry]
-    })
-    if (isFirst) {
-      setTMsgValidity(parsed.judgment)
-      setTJudgmentReason(parsed.judgmentReason)
-      setTEditEvaluation(parsed.editEvaluation)
-      setTEditComment(parsed.editComment)
-      setTImprovementSuggestion(parsed.improvementSuggestion)
-      setTImprovedText(parsed.improvedText)
-      setTJudgedAt(new Date().toISOString())
-    }
-    setTJudgmentOutput('')
-  }
-
   function handleAddTouch() {
     if (!tSentText.trim()) { toast.show('実際に送った文章は必須です', 2000); return }
     const now = new Date().toISOString()
@@ -1059,19 +1119,12 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         targetPostType: 'ストーリー',
         targetValidity: '◯',
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-        messageValidity: tMsgValidity,
+        messageValidity: '未判定',
+        postId: shortPostId(),
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
         threadEntry: 's1_story_reply',
-        judgmentReason: tJudgmentHistory[0]?.judgmentReason || tJudgmentReason,
-        editEvaluation: tEditEvaluation,
-        editComment: tEditComment,
-        improvementSuggestion: tJudgmentHistory[0]?.improvementSuggestion || tImprovementSuggestion,
-        improvedText: tJudgmentHistory[0]?.improvedText || tImprovedText,
-        judgedAt: tJudgmentHistory.length > 0 ? tJudgmentHistory[tJudgmentHistory.length - 1].judgedAt : tJudgedAt,
-        mainJudgmentModel: tJudgmentHistory[0]?.modelName || tJudgmentModelName || undefined,
-        subJudgments: tJudgmentHistory.length > 1 ? tJudgmentHistory.slice(1) : undefined,
       }
       pipelineUpdates = { currentStep: 'S3' as Step }
     } else {
@@ -1080,18 +1133,11 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         targetPostText: tPostText, targetPostRawText: tPostRawText || undefined,
         targetPostType: tPostType, targetValidity: tValidity,
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
-        messageValidity: tMsgValidity,
+        messageValidity: '未判定',
+        postId: shortPostId(),
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
-        judgmentReason: tJudgmentHistory[0]?.judgmentReason || tJudgmentReason,
-        editEvaluation: tEditEvaluation,
-        editComment: tEditComment,
-        improvementSuggestion: tJudgmentHistory[0]?.improvementSuggestion || tImprovementSuggestion,
-        improvedText: tJudgmentHistory[0]?.improvedText || tImprovedText,
-        judgedAt: tJudgmentHistory.length > 0 ? tJudgmentHistory[tJudgmentHistory.length - 1].judgedAt : tJudgedAt,
-        mainJudgmentModel: tJudgmentHistory[0]?.modelName || tJudgmentModelName || undefined,
-        subJudgments: tJudgmentHistory.length > 1 ? tJudgmentHistory.slice(1) : undefined,
       }
     }
 
@@ -1534,84 +1580,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="AIの提案から変更した理由" value={tEditReason} onChange={e => setTEditReason(e.target.value)} />
                 </div>
 
-                {/* 文面再判定セクション（DM以外のモード） */}
-                {tTouchMode !== 'dm' && (
-                  <div className="flex flex-col gap-2 pt-1">
-                    <button
-                      className={`btn-sec text-xs py-2 justify-center ${!tSentText.trim() ? 'opacity-40 pointer-events-none' : ''} ${tJudgmentCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                      disabled={!tSentText.trim()}
-                      onClick={handleCopyJudgmentPrompt}
-                    >
-                      <i className={`fa-solid ${tJudgmentCopyState === 'copied' ? 'fa-check' : 'fa-magnifying-glass'} mr-1`} />
-                      {tJudgmentCopyState === 'copied' ? '✓ コピーしました' : 'AIに文面を判定してもらう'}
-                    </button>
-
-                    {tJudgmentExpanded && (
-                      <div className="flex flex-col gap-2 bg-white border border-slate-100 rounded-xl p-3">
-                        <p className="text-[10px] text-slate-400">↓ ChatGPT等に貼り付けて実行 → 出力をここに貼る</p>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[10px] text-slate-400">使用モデル（任意）</label>
-                          <div className="flex gap-1 flex-wrap items-center">
-                            {['ChatGPT', 'Gemini', 'Claude'].map(m => (
-                              <button key={m} type="button"
-                                className={`text-[10px] px-2 py-0.5 rounded-md border transition ${tJudgmentModelName === m ? 'border-indigo-400 bg-indigo-50 text-indigo-700 font-semibold' : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}
-                                onClick={() => setTJudgmentModelName(m)}
-                              >{m}</button>
-                            ))}
-                            <input
-                              className="input-base cs text-[10px] py-0.5 flex-1 min-w-[70px]"
-                              placeholder="その他"
-                              value={['ChatGPT', 'Gemini', 'Claude'].includes(tJudgmentModelName) ? '' : tJudgmentModelName}
-                              onChange={e => setTJudgmentModelName(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <textarea
-                          rows={3}
-                          className="input-base cs text-xs resize-y"
-                          placeholder="AIの判定出力をここに貼り付け（===JUDGMENT_START=== から ===JUDGMENT_END=== まで）"
-                          value={tJudgmentOutput}
-                          onChange={e => { setTJudgmentOutput(e.target.value); setTJudgmentError(null) }}
-                        />
-                        <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleParseJudgment}>
-                          <i className="fa-solid fa-bolt mr-1" />判定を取り込む
-                        </button>
-                        {tJudgmentError && (
-                          <p className="text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-2 py-1.5">{tJudgmentError}</p>
-                        )}
-                      </div>
-                    )}
-
-                    {tJudgmentHistory.length > 0 && (
-                      <div className="flex flex-col gap-1.5">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">各AIの判定（{tJudgmentHistory.length}件）</p>
-                        {tJudgmentHistory.map((j, i) => (
-                          <div key={i} className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 flex flex-col gap-0.5">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-[10px] text-slate-500 font-medium border border-slate-200 rounded px-1.5 py-0.5">{j.modelName}</span>
-                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${validityBadge(j.judgment)}`}>{j.judgment}</span>
-                            </div>
-                            {j.judgmentReason && <p className="text-slate-600 text-[11px]">{j.judgmentReason}</p>}
-                            {j.improvementSuggestion && j.improvementSuggestion !== 'なし' && (
-                              <p className="text-amber-600 text-[11px]">改善: {j.improvementSuggestion}</p>
-                            )}
-                            {j.improvedText && j.improvedText !== 'なし' && (
-                              <p className="text-indigo-600 text-[11px]">改善案: {j.improvedText}</p>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-1">
-                      <label className="text-xs text-slate-500">文面妥当性</label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {MSG_VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tMsgValidity === v} onClick={() => setTMsgValidity(v)} />)}
-                      </div>
-                      {tJudgmentHistory.length > 0 && <p className="text-[10px] text-emerald-600">✓ {tJudgmentHistory.length}件のAI判定あり（手動変更も可）</p>}
-                    </div>
-                  </div>
-                )}
               </div>
 
               <div className="flex gap-2 mt-1">

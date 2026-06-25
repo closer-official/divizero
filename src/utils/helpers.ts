@@ -18,6 +18,10 @@ export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+export function shortPostId(): string {
+  return 'P' + Math.random().toString(36).slice(2, 8).toUpperCase()
+}
+
 export function daysSince(dateStr?: string | null): number {
   if (!dateStr) return 999;
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
