@@ -125,6 +125,13 @@ export default function App() {
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
+  // インバウンド起点 → Tab2直行
+  function handleCreateInboundPipeline(item: PipelineItem) {
+    saveData(prev => ({ ...prev, pipeline: [...prev.pipeline, item] }))
+    toast.show(`「${item.accountName}」をパイプラインに追加しました（インバウンド）`)
+    setTimeout(() => setActiveTab('tab2'), 300)
+  }
+
   // OS②→OS③ 情報引き継ぎ
   function handleCloseCase(item: PipelineItem, result: string) {
     const convText = buildTouchConvLog(item)
@@ -306,7 +313,7 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
-        {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} />}
+        {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
         {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}

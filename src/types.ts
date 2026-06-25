@@ -92,6 +92,10 @@ export interface Screening {
   handle: string;
   verdict: string;
   reason: string;
+  is_inbound?: boolean;
+  signal_type?: 'いいね' | 'フォロー' | 'ストーリー反応' | '突然DM' | 'リプ';
+  signal_date?: string;
+  signal_memo?: string;
 }
 
 export interface Target {
@@ -205,6 +209,7 @@ export interface PipelineItem {
   temperature?: number;
   last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
   last_reaction_at?: string;
+  inbound_signal?: { type: string; date: string; memo?: string };
 }
 
 export interface ClosedDeal {

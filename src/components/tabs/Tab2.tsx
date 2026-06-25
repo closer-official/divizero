@@ -202,6 +202,9 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
         {(item.temperature ?? 0) > 0 && (
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tempBadgeStyle(item.temperature ?? 0)}`}>温{item.temperature}</span>
         )}
+        {item.inbound_signal && (
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
+        )}
       </div>
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
@@ -1293,6 +1296,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
+          {item.inbound_signal && <span className="text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded shrink-0">{item.inbound_signal.type}</span>}
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
         {/* 再接触日（waiting / sleeping / archived） */}
