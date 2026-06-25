@@ -183,9 +183,11 @@ interface KanbanCardProps {
 }
 function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
   const touches = item.touches || []
-  const days = daysSince(item.lastContactDate || item.startDate)
   const latestOs2 = [...touches].reverse().find(t => t.os2Judgment)
   const displayJ = latestOs2?.os2Judgment || item.judgment
+  const daysUntil = item.recontact_date
+    ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    : null
   return (
     <div
       onClick={onClick}
@@ -203,12 +205,13 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
         <span>{touches.length}T</span>
-        {days > 0 && <span className={days >= 7 ? 'text-amber-500 font-medium' : ''}>{days}日前</span>}
+        {daysUntil !== null && (
+          <span className={daysUntil < 0 ? 'text-rose-500 font-medium' : daysUntil <= 3 ? 'text-amber-500 font-medium' : ''}>
+            {daysUntil < 0 ? `${Math.abs(daysUntil)}日超過` : `あと${daysUntil}日`}
+          </span>
+        )}
       </div>
       {displayJ && <p className={`text-[10px] mt-1 font-medium truncate ${judgmentColor(displayJ)}`}>{displayJ}</p>}
-      {(item.state === 'waiting' || item.state === 'sleeping' || item.state === 'archived') && item.recontact_date && (
-        <p className="text-[10px] text-amber-500 mt-0.5 truncate">↻ {item.recontact_date}</p>
-      )}
     </div>
   )
 }
@@ -1003,6 +1006,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     : item.lastContactDate || null
   const days = daysSince(lastTouchedAt || undefined)
   const totalDays = daysSince(item.startDate)
+  const daysUntilRecontact = item.recontact_date
+    ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    : null
 
   const latestOs2Touch = [...touches].reverse().find(t => t.os2Judgment)
   const displayJudgment = latestOs2Touch?.os2Judgment || item.judgment
@@ -1287,9 +1293,10 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
         {/* 再接触日（waiting / sleeping / archived） */}
-        {(item.state === 'waiting' || item.state === 'sleeping' || item.state === 'archived') && item.recontact_date && (
-          <p className={`text-[11px] font-semibold mt-1 ${item.state === 'archived' ? 'text-purple-600' : 'text-amber-600'}`}>
-            <i className="fa-solid fa-clock-rotate-left mr-1 text-[10px]" />再接触日: {item.recontact_date}
+        {daysUntilRecontact !== null && (item.state === 'waiting' || item.state === 'sleeping' || item.state === 'archived') && (
+          <p className={`text-[11px] font-semibold mt-1 ${daysUntilRecontact < 0 ? 'text-rose-600' : item.state === 'archived' ? 'text-purple-600' : 'text-amber-600'}`}>
+            <i className="fa-solid fa-clock-rotate-left mr-1 text-[10px]" />
+            {daysUntilRecontact < 0 ? `再接触 ${Math.abs(daysUntilRecontact)}日超過` : `再接触まであと${daysUntilRecontact}日`}
           </p>
         )}
         {item.hypothesis && <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>}
