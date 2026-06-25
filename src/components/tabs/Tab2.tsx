@@ -188,6 +188,7 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
   const daysUntil = item.recontact_date
     ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
+  const daysSinceLast = daysSince(item.lastContactDate || item.startDate)
   return (
     <div
       onClick={onClick}
@@ -205,11 +206,13 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
         <span>{touches.length}T</span>
-        {daysUntil !== null && (
+        {daysUntil !== null ? (
           <span className={daysUntil < 0 ? 'text-rose-500 font-medium' : daysUntil <= 3 ? 'text-amber-500 font-medium' : ''}>
             {daysUntil < 0 ? `${Math.abs(daysUntil)}日超過` : `あと${daysUntil}日`}
           </span>
-        )}
+        ) : daysSinceLast > 0 ? (
+          <span className={daysSinceLast >= 7 ? 'text-amber-500 font-medium' : ''}>{daysSinceLast}日前</span>
+        ) : null}
       </div>
       {displayJ && <p className={`text-[10px] mt-1 font-medium truncate ${judgmentColor(displayJ)}`}>{displayJ}</p>}
     </div>
