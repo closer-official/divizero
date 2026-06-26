@@ -180,8 +180,9 @@ interface KanbanCardProps {
   item: PipelineItem
   isActive: boolean
   onClick: () => void
+  onInlineReaction?: (touchId: string, r: TouchReaction) => void
 }
-function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
+function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardProps) {
   const touches = item.touches || []
   const latestOs2 = [...touches].reverse().find(t => t.os2Judgment)
   const displayJ = latestOs2?.os2Judgment || item.judgment
@@ -189,6 +190,8 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
     ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
   const daysSinceLast = daysSince(item.lastContactDate || item.startDate)
+  const awaitingTouch = [...touches].reverse().find(t => t.status === 'awaiting_reaction')
+
   return (
     <div
       onClick={onClick}
@@ -205,6 +208,7 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
         {item.inbound_signal && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
         )}
+        {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
       </div>
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
@@ -218,6 +222,21 @@ function KanbanCard({ item, isActive, onClick }: KanbanCardProps) {
         ) : null}
       </div>
       {displayJ && <p className={`text-[10px] mt-1 font-medium truncate ${judgmentColor(displayJ)}`}>{displayJ}</p>}
+      {/* ③ インラインリアクションボタン */}
+      {awaitingTouch && onInlineReaction && (
+        <div className="flex gap-1 mt-1.5" onClick={e => e.stopPropagation()}>
+          {(['いいね返り', 'テキスト返信', '無反応'] as TouchReaction[]).map(r => (
+            <button
+              key={r}
+              className="flex-1 text-[9px] font-bold py-0.5 rounded border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-300 text-slate-500 hover:text-indigo-600 transition"
+              onClick={() => onInlineReaction(awaitingTouch.id, r)}
+              title={r}
+            >
+              {r === 'いいね返り' ? '❤️' : r === 'テキスト返信' ? '💬' : '✕'}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -230,8 +249,9 @@ interface KanbanColumnProps {
   items: PipelineItem[]
   activeId: string | null
   onCardClick: (id: string) => void
+  onInlineReaction?: (pipelineId: string, touchId: string, r: TouchReaction) => void
 }
-function KanbanColumn({ label, colorClass, items, activeId, onCardClick }: KanbanColumnProps) {
+function KanbanColumn({ label, colorClass, items, activeId, onCardClick, onInlineReaction }: KanbanColumnProps) {
   const [visible, setVisible] = useState(KANBAN_PAGE)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -269,7 +289,8 @@ function KanbanColumn({ label, colorClass, items, activeId, onCardClick }: Kanba
         ) : (
           <>
             {shown.map(item => (
-              <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)} />
+              <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)}
+                onInlineReaction={onInlineReaction ? (touchId, r) => onInlineReaction(item.id, touchId, r) : undefined} />
             ))}
             {visible < items.length && (
               <div ref={sentinelRef} className="py-2 flex justify-center shrink-0">
@@ -293,10 +314,14 @@ interface Props {
   confirm: ConfirmAPI
   onGoToTab3: () => void
   onCloseCase: (item: PipelineItem, result: string) => void
+  openItemId?: string | null
+  onOpenItemConsumed?: () => void
 }
 
-export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase }: Props) {
+export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, openItemId, onOpenItemConsumed }: Props) {
   const [filter, setFilter] = useState('all')
+  const [stateFilter, setStateFilter] = useState('all')
+  const [channelFilter, setChannelFilter] = useState('all')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -320,6 +345,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [])
+
+  // ④ 再接触通知から直接案件を開く
+  useEffect(() => {
+    if (openItemId) {
+      setDrawerItemId(openItemId)
+      onOpenItemConsumed?.()
+    }
+  }, [openItemId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ドロワー開閉時にbodyスクロールを制御
   useEffect(() => {
@@ -348,6 +381,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [batchJudgCopyState, setBatchJudgCopyState] = useState<'idle' | 'copied'>('idle')
   const [batchJudgError, setBatchJudgError] = useState<string | null>(null)
   const [batchJudgSuccess, setBatchJudgSuccess] = useState(false)
+
+  // ① 本日やること
+  const [todayOpen, setTodayOpen] = useState(true)
+
+  // ② バルクタッチ記録
+  const [bulkTouchOpen, setBulkTouchOpen] = useState(false)
+  const [bulkPostText, setBulkPostText] = useState('')
+  const [bulkPostType, setBulkPostType] = useState<TouchPostType>('課題ツイート')
+  const [bulkDate, setBulkDate] = useState(todayStr())
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set())
 
   // カンバン列定義
   type KanbanColKey = 's1' | 's1l' | 's2' | 's3plus' | 'archived'
@@ -383,11 +426,15 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function filterActive(items: PipelineItem[]): PipelineItem[] {
-    if (filter === 'FT') return items.filter(p => p.track === 'FT')
-    if (filter === 'NT') return items.filter(p => p.track === 'NT')
-    if (filter === 'UT') return items.filter(p => p.track === 'UT')
-    if (filter === 'warn') return items.filter(p => warnIds.has(p.id))
-    return items
+    let result = items
+    if (filter === 'FT') result = result.filter(p => p.track === 'FT')
+    else if (filter === 'NT') result = result.filter(p => p.track === 'NT')
+    else if (filter === 'UT') result = result.filter(p => p.track === 'UT')
+    else if (filter === 'warn') result = result.filter(p => warnIds.has(p.id))
+    else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => t.status === 'awaiting_reaction'))
+    if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
+    if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
+    return result
   }
 
   function getColItems(key: KanbanColKey): PipelineItem[] {
@@ -565,6 +612,48 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     }
   }
 
+  function handleBulkTouchSubmit() {
+    if (!bulkPostText.trim()) { toast.show('投稿テキストを入力してください', 2000); return }
+    if (bulkSelectedIds.size === 0) { toast.show('対象アカウントを選択してください', 2000); return }
+    const now = bulkDate || todayStr()
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => {
+        if (!bulkSelectedIds.has(p.id)) return p
+        const newTouch: Touch = {
+          id: uid(), postId: shortPostId(), date: now,
+          targetPostText: bulkPostText.trim(), targetPostType: bulkPostType,
+          targetValidity: '未評価', aiSuggestedText: '', actualSentText: '',
+          editReason: '', messageValidity: '未判定', status: 'awaiting_reaction',
+          reactionType: '未記録', reactionNote: '',
+        }
+        return { ...p, touches: [...(p.touches || []), newTouch], lastContactDate: now }
+      }),
+    }))
+    toast.show(`${bulkSelectedIds.size}件にタッチを記録しました`, 2500)
+    setBulkTouchOpen(false)
+    setBulkPostText('')
+    setBulkSelectedIds(new Set())
+  }
+
+  function handleInlineReaction(pipelineId: string, touchId: string, reaction: TouchReaction) {
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => {
+        if (p.id !== pipelineId) return p
+        return {
+          ...p,
+          touches: (p.touches || []).map(t =>
+            t.id === touchId ? { ...t, reactionType: reaction, status: 'reacted' as const } : t
+          ),
+          last_reaction: reaction === '無反応' ? 'none' : reaction === 'いいね返り' ? 'heart' : 'temp20',
+          last_reaction_at: new Date().toISOString(),
+        }
+      }),
+    }))
+    toast.show(`反応を記録しました：${reaction}`, 1800)
+  }
+
   function handleParseBatchJudg() {
     setBatchJudgError(null)
     const results = parseBatchJudgmentOutput(batchJudgOutput)
@@ -602,8 +691,70 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     toast.show(`${results.length}件の判定を保存しました`)
   }
 
+  // ① 本日やること計算
+  const now48hAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
+  const todayTasks = active.filter(p => {
+    const awaitingOld = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
+    const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
+    return awaitingOld || recontactDue
+  })
+
   return (
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
+
+      {/* ── ① 本日やること ────────────────────────────────────── */}
+      {todayTasks.length > 0 && (
+        <div className="border border-indigo-200 bg-indigo-50 rounded-xl overflow-hidden">
+          <div
+            className="flex items-center justify-between px-4 py-2.5 cursor-pointer"
+            onClick={() => setTodayOpen(v => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <i className="fa-solid fa-sun text-amber-500" />
+              <span className="font-bold text-sm text-indigo-800">本日やること</span>
+              <span className="badge bg-indigo-200 text-indigo-800">{todayTasks.length}件</span>
+            </div>
+            <i className={`fa-solid fa-chevron-down text-indigo-400 text-xs transition-transform ${todayOpen ? 'rotate-180' : ''}`} />
+          </div>
+          {todayOpen && (
+            <div className="border-t border-indigo-200 divide-y divide-indigo-100">
+              {todayTasks.map(p => {
+                const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
+                const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-100 cursor-pointer transition"
+                    onClick={() => setDrawerItemId(p.id)}
+                  >
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-indigo-900 truncate">{p.accountName}</p>
+                      <p className="text-[11px] text-indigo-600">
+                        {awaitingTouch && <span className="mr-2"><i className="fa-solid fa-clock mr-1" />48h反応待ち確認</span>}
+                        {recontactDue && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
+                      </p>
+                    </div>
+                    {awaitingTouch && (
+                      <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        {(['いいね返り', 'テキスト返信', '無反応'] as TouchReaction[]).map(r => (
+                          <button
+                            key={r}
+                            className="text-[10px] font-bold py-1 px-2 rounded-lg border border-indigo-300 bg-white hover:bg-indigo-600 hover:text-white hover:border-indigo-600 text-indigo-600 transition"
+                            onClick={() => handleInlineReaction(p.id, awaitingTouch.id, r)}
+                          >
+                            {r === 'いいね返り' ? '❤️' : r === 'テキスト返信' ? '💬' : '✕無反応'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <i className="fa-solid fa-chevron-right text-indigo-300 text-xs shrink-0" />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Analysis Notifications ────────────────────────────── */}
       {notifications.length > 0 && (
@@ -746,25 +897,53 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         </div>
       )}
 
-      {/* Filter + analysis manual trigger */}
-      <div className="flex gap-2 flex-wrap items-center">
-        <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
-          <option value="all">全て ({active.length})</option>
-          <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
-          <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
-          <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
-          <option value="warn">警告のみ ({warnItems.length})</option>
-        </select>
-        <div className="ml-auto flex gap-1 shrink-0">
-          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
-            <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
-          </button>
-          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('case_pattern')} title="失注パターン分析">
-            <i className="fa-solid fa-chart-bar text-violet-500" /><span className="hidden sm:inline ml-1">失注分析</span>
-          </button>
-          <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('touch_trend')} title="文面傾向分析">
-            <i className="fa-solid fa-pen-nib text-indigo-500" /><span className="hidden sm:inline ml-1">文面分析</span>
-          </button>
+      {/* ⑨ Filter + ② バルクタッチ + analysis manual trigger */}
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2 flex-wrap items-center">
+          {/* トラックフィルタ */}
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => setFilter(e.target.value)}>
+            <option value="all">全て ({active.length})</option>
+            <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
+            <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
+            <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
+            <option value="warn">警告 ({warnItems.length})</option>
+            <option value="awaiting">反応待ち ({active.filter(p => (p.touches||[]).some(t=>t.status==='awaiting_reaction')).length})</option>
+          </select>
+          {/* stateフィルタ */}
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={stateFilter} onChange={e => setStateFilter(e.target.value)}>
+            <option value="all">全state</option>
+            <option value="active">active</option>
+            <option value="waiting">waiting</option>
+            <option value="sleeping">sleeping</option>
+            <option value="archived">archived</option>
+          </select>
+          {/* チャネルフィルタ */}
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={channelFilter} onChange={e => setChannelFilter(e.target.value)}>
+            <option value="all">全CH</option>
+            <option value="twitter">X</option>
+            <option value="instagram">IG</option>
+            <option value="threads">TH</option>
+          </select>
+          {(filter !== 'all' || stateFilter !== 'all' || channelFilter !== 'all') && (
+            <button className="text-[11px] text-slate-400 hover:text-slate-600 px-1.5 py-1" onClick={() => { setFilter('all'); setStateFilter('all'); setChannelFilter('all') }}>
+              <i className="fa-solid fa-xmark mr-0.5" />リセット
+            </button>
+          )}
+          <div className="ml-auto flex gap-1 shrink-0">
+            {/* ② バルクタッチ */}
+            <button className="btn-sec text-[11px] py-1.5 px-2 text-indigo-600 border-indigo-300" onClick={() => setBulkTouchOpen(true)} title="複数案件に同じタッチを一括記録">
+              <i className="fa-solid fa-layer-group text-indigo-500" /><span className="hidden sm:inline ml-1">バルク記録</span>
+            </button>
+            <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
+              <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
+            </button>
+            <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('case_pattern')} title="失注パターン分析">
+              <i className="fa-solid fa-chart-bar text-violet-500" /><span className="hidden sm:inline ml-1">失注分析</span>
+            </button>
+            <button className="btn-sec text-[11px] py-1.5 px-2" onClick={() => openManualAnalysis('touch_trend')} title="文面傾向分析">
+              <i className="fa-solid fa-pen-nib text-indigo-500" /><span className="hidden sm:inline ml-1">文面分析</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -784,6 +963,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               items={getColItems(col.key)}
               activeId={drawerItemId}
               onCardClick={id => setDrawerItemId(id)}
+              onInlineReaction={handleInlineReaction}
             />
           ))}
         </div>
@@ -848,6 +1028,87 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           </div>
         )
       })()}
+
+      {/* ── ② バルクタッチ記録モーダル ───────────────────────── */}
+      {bulkTouchOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 flex items-center gap-2 bg-indigo-50 border-b border-indigo-100">
+              <i className="fa-solid fa-layer-group text-indigo-600" />
+              <p className="font-bold text-sm text-indigo-800 flex-1">バルクタッチ記録</p>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setBulkTouchOpen(false); setBulkPostText(''); setBulkSelectedIds(new Set()) }}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto flex flex-col gap-4 flex-1">
+              <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
+                同じ投稿に複数アカウントへ接触したとき、まとめてタッチ記録できます。
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-700">接触した投稿の要約 <span className="text-rose-500">*</span></label>
+                <textarea rows={3} className="input-base text-sm resize-none" placeholder="投稿内容の要約を入力" value={bulkPostText} onChange={e => setBulkPostText(e.target.value)} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700">投稿種別</label>
+                  <select className="input-base text-sm" value={bulkPostType} onChange={e => setBulkPostType(e.target.value as TouchPostType)}>
+                    {POST_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-bold text-slate-700">接触日</label>
+                  <input type="date" className="input-base text-sm" value={bulkDate} onChange={e => setBulkDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-700">対象アカウント</label>
+                  <button
+                    className="text-[11px] text-indigo-500 hover:text-indigo-700"
+                    onClick={() => {
+                      const allIds = new Set(active.filter(p => p.isOpen).map(p => p.id))
+                      setBulkSelectedIds(bulkSelectedIds.size === allIds.size ? new Set() : allIds)
+                    }}
+                  >全選択 / 解除</button>
+                </div>
+                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                  {active.filter(p => p.isOpen).map(p => (
+                    <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={bulkSelectedIds.has(p.id)}
+                        onChange={e => {
+                          const next = new Set(bulkSelectedIds)
+                          if (e.target.checked) next.add(p.id); else next.delete(p.id)
+                          setBulkSelectedIds(next)
+                        }}
+                        className="accent-indigo-600"
+                      />
+                      <span className="text-sm font-medium text-slate-800 flex-1">{p.accountName}</span>
+                      <span className="text-[10px] text-slate-400">{p.track} · {p.currentStep}</span>
+                    </label>
+                  ))}
+                </div>
+                {bulkSelectedIds.size > 0 && (
+                  <p className="text-[11px] text-indigo-600">{bulkSelectedIds.size}件を選択中</p>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2">
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => { setBulkTouchOpen(false); setBulkPostText(''); setBulkSelectedIds(new Set()) }}>キャンセル</button>
+              <button className="btn-primary text-xs py-2 px-4" onClick={handleBulkTouchSubmit}>
+                <i className="fa-solid fa-check mr-1" />{bulkSelectedIds.size}件にタッチ記録
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Analysis Modal ────────────────────────────────────── */}
       {modalNotif && (

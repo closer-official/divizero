@@ -117,6 +117,31 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     }
   }
 
+  function handleBulkToPipeline() {
+    const eligible = data.targets.filter(t => t.track !== 'SKIP' && !t.pipelineId)
+    if (eligible.length === 0) return
+    saveData(prev => {
+      const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline] }
+      eligible.forEach(tgt => {
+        const pid = uid()
+        d.targets = d.targets.map(t => t.id === tgt.id ? { ...t, pipelineId: pid } : t)
+        d.pipeline.push({
+          id: pid, targetId: tgt.id,
+          caseId: tgt.caseId || null, os1Output: tgt.aiOutput || null,
+          accountName: tgt.accountName, url: tgt.url, channel: tgt.channel,
+          track: tgt.track as 'FT' | 'NT' | 'SKIP', hypothesis: tgt.hypothesis,
+          startDate: tgt.startDate || todayStr(),
+          currentStep: 'S1', stepHistory: [{ step: 'S1', date: todayStr() }],
+          repCount: 0, dmCount: 0, lastContactDate: todayStr(),
+          analyses: [], history: [], sentMessages: [], replies: [], isOpen: true,
+        })
+      })
+      return d
+    })
+    toast.show(`${eligible.length}件をOS②パイプラインに一括移行します…`, 2500)
+    setTimeout(() => onGoToTab2(), 2000)
+  }
+
   function handleBackToOS0(targetId: string) {
     const tgt = data.targets.find(x => x.id === targetId)
     if (!tgt) return
@@ -269,20 +294,30 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             </div>
 
             {prefill && (
-              <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2 text-xs">
-                <i className="fa-solid fa-arrow-right-to-bracket text-violet-500 shrink-0" />
+              <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5 text-xs">
+                <i className="fa-solid fa-arrow-right-to-bracket text-violet-500 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <span className="font-bold text-violet-800">OS⓪から引き継ぎ：</span>
                   <span className="text-violet-700">{prefill.displayName || prefill.handle}</span>
                   {prefill.displayName && prefill.handle && (
                     <span className="text-violet-400 ml-1">@{prefill.handle}</span>
                   )}
+                  <p className="text-violet-500 mt-1">
+                    <i className="fa-solid fa-circle-info mr-1" />
+                    OS⓪バッチ経由の場合はプロフィールテキストが含まれているので<span className="font-bold">スクショ不要</span>。AIにプロンプトのみ貼り付けてください。
+                  </p>
                 </div>
                 <button
                   className="shrink-0 text-violet-300 hover:text-violet-500 p-1"
                   onClick={() => { localStorage.removeItem('os1_prefill'); setPrefill(null) }}
                   title="クリア"
                 ><i className="fa-solid fa-xmark" /></button>
+              </div>
+            )}
+            {!prefill && (
+              <div className="text-[11px] text-slate-400 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                <i className="fa-solid fa-lightbulb mr-1 text-amber-400" />
+                <span className="font-semibold">効率化TIP：</span>OS⓪の「OS①待機へ」でプロフィールを貼り付けると、スクショなしでバッチ処理できます。
               </div>
             )}
 
@@ -315,11 +350,24 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         {/* Right: list */}
         <section className="lg:col-span-7 flex flex-col gap-3">
           <div className="card flex flex-col" style={{ minHeight: 520 }}>
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-2">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
                 <i className="fa-solid fa-filter text-violet-500" />スクリーニング済みリスト
                 <span className="badge bg-violet-100 text-violet-700">{data.targets.length}</span>
               </h3>
+              {(() => {
+                const eligible = data.targets.filter(t => t.track !== 'SKIP' && !t.pipelineId)
+                if (eligible.length === 0) return null
+                return (
+                  <button
+                    className="btn-primary text-xs py-1.5 px-3 shrink-0"
+                    onClick={handleBulkToPipeline}
+                    title={`SKIP以外の未移行${eligible.length}件をまとめてOS②へ`}
+                  >
+                    <i className="fa-solid fa-arrow-right mr-1" />全員OS②へ（{eligible.length}件）
+                  </button>
+                )
+              })()}
             </div>
             <div className="flex-1 overflow-y-auto cs" id="t1-list">
               {total === 0 ? (

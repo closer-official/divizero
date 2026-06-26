@@ -42,6 +42,7 @@ export default function App() {
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
   const [prefilledOS3, setPrefilledOS3] = useState<PrefilledOS3 | null>(null)
+  const [focusPipelineItemId, setFocusPipelineItemId] = useState<string | null>(null)
 
   // Toast
   const [toastMsg, setToastMsg] = useState('')
@@ -117,9 +118,11 @@ export default function App() {
       }))
     }
     if (recontactDue.length > 0) {
+      const firstId = recontactDue[0].id
       const msg = recontactDue.length === 1
-        ? `${recontactDue[0].accountName} の再接触日です`
+        ? `${recontactDue[0].accountName} の再接触日です — タップして開く`
         : `${recontactDue[0].accountName} ほか${recontactDue.length - 1}件の再接触日です`
+      setFocusPipelineItemId(firstId)
       setTimeout(() => showToast(msg, 6000), 800)
     }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -315,7 +318,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
         {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
-        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} />}
+        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
         {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
         {activeTab === 'tab5' && <Tab5 data={data} role={role} />}
@@ -340,6 +343,18 @@ export default function App() {
                 setTimeout(() => showToast('元に戻しました'), 100)
               }}
             >元に戻す</button>
+          </>
+        ) : focusPipelineItemId && toastMsg.includes('再接触日') ? (
+          <>
+            <i className="fa-solid fa-bell text-amber-400" />
+            <span className="flex-1">{toastMsg}</span>
+            <button
+              className="shrink-0 ml-1 text-amber-300 font-bold border border-amber-500 rounded px-2 py-0.5 text-[11px] hover:bg-amber-900 transition"
+              onClick={() => {
+                setActiveTab('tab2')
+                setToastVisible(false)
+              }}
+            >開く →</button>
           </>
         ) : (
           <>

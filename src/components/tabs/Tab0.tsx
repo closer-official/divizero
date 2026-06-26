@@ -62,7 +62,10 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     const prompt = mode === 'instagram' ? prompts.OS0_IG : mode === 'threads' ? prompts.OS0_TH : prompts.OS0_X
     if (!prompt) { toast.show('プロンプトを読み込み中です'); return }
     const excluded = data.excluded || []
-    const handles = excluded.map(e => e.handle).filter(Boolean).join('\n')
+    const cutoff90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+    const handles = excluded
+      .filter(e => !e.addedAt || new Date(e.addedAt) > cutoff90)
+      .map(e => e.handle).filter(Boolean).join('\n')
     let full: string
     const splitMarker = '\n\n【除外済みアカウント'
     const splitPoint = prompt.indexOf(splitMarker)
@@ -291,10 +294,9 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     copyText(full, () => toast.show(`${queued.length}人分のOS①プロンプトをコピーしました。AIに貼り付けてください`, 3000))
   }
 
-  function handleBatchSubmit() {
+  function handleBatchSubmit(queued: Screening[]) {
     const text = batchResult.trim()
     if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
-    const queued = (data.screenings || []).filter(s => s.rawProfileText)
     if (queued.length === 0) { toast.show('待機中のアカウントがありません', 2000); return }
 
     const segments = text.split(/(?=【アカウント情報】)/).filter(s => s.includes('【アカウント情報】'))
@@ -632,71 +634,88 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
 
       {/* ── OS①バッチ処理セクション ───────────────────────── */}
       {(() => {
-        const queued = (data.screenings || []).filter(s => s.rawProfileText)
-        if (queued.length === 0) return null
+        const allQueued = (data.screenings || []).filter(s => s.rawProfileText)
+        if (allQueued.length === 0) return null
+        const channels: Mode[] = ['twitter', 'instagram', 'threads']
+        const chLabel: Record<Mode, string> = { twitter: 'X', instagram: 'Instagram', threads: 'Threads' }
+        const chIcon: Record<Mode, string> = { twitter: 'fa-brands fa-x-twitter', instagram: 'fa-brands fa-instagram', threads: 'fa-brands fa-threads' }
+        const groups = channels.map(ch => ({ ch, items: allQueued.filter(s => s.channel === ch) })).filter(g => g.items.length > 0)
+
+        function buildGroupPrompt(items: typeof allQueued, ch: Mode): string {
+          const prompt = ch === 'instagram' ? prompts.OS1_IG : ch === 'threads' ? prompts.OS1_TH : prompts.OS1_X
+          if (!prompt) return ''
+          const profilesText = items.map((s, i) =>
+            `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}`
+          ).join('\n\n')
+          return prompt
+            + `\n\n---\n■ バッチ処理 ${items.length}件：上記フォーマットで各アカウントを順番に出力してください。\n\n`
+            + profilesText
+        }
+
         return (
           <section className="flex flex-col gap-3">
             <div className="card p-5 flex flex-col gap-4">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-slate-800 flex items-center gap-2">
-                    <i className="fa-solid fa-layer-group text-violet-500" />OS①バッチ処理
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <span className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                  <i className="fa-solid fa-layer-group text-violet-500" />OS①バッチ処理
+                </span>
+                <span className="badge bg-violet-100 text-violet-700">{allQueued.length}件待機中</span>
+                {allQueued.length >= 5 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                    <i className="fa-solid fa-bolt mr-0.5" />バッチ推奨
                   </span>
-                  <span className="badge bg-violet-100 text-violet-700">{queued.length}件待機中</span>
-                  {queued.length >= 5 && (
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                      <i className="fa-solid fa-bolt mr-0.5" />バッチ推奨
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
 
-              {/* 待機中アカウント一覧 */}
-              <div className="flex flex-wrap gap-2">
-                {queued.map((s, i) => (
-                  <div key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 text-xs">
-                    <span className="text-violet-400 font-mono">#{i + 1}</span>
-                    <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
-                    <span className="text-violet-400">{s.handle}</span>
+              {groups.map(({ ch, items }) => (
+                <div key={ch} className="border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <i className={`${chIcon[ch]} text-slate-500 text-sm`} />
+                    <span className="font-bold text-sm text-slate-700">{chLabel[ch]}</span>
+                    <span className="badge bg-violet-100 text-violet-700">{items.length}件</span>
                   </div>
-                ))}
-              </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* 左: プロンプトコピー */}
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-slate-500">
-                    <span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピーして外部AIで実行
-                  </p>
-                  <div className="text-[11px] text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                    現在のモード（{mode === 'instagram' ? 'Instagram' : mode === 'threads' ? 'Threads' : 'X'}）のOS①プロンプトに{queued.length}人分のプロフィールを付加します。
-                    {queued.some(s => s.channel !== mode) && (
-                      <span className="text-amber-600 ml-1">
-                        ※ チャネルが異なるアカウントが含まれています。
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map((s, i) => (
+                      <span key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-0.5 text-xs">
+                        <span className="text-violet-400 font-mono">#{i + 1}</span>
+                        <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
                       </span>
-                    )}
+                    ))}
                   </div>
-                  <button className="btn-sec w-full justify-center font-bold" onClick={handleCopyBatchPrompt}>
-                    <i className="fa-solid fa-copy text-violet-500" />{queued.length}人分のOS①プロンプトをコピー
-                  </button>
-                </div>
 
-                {/* 右: 結果貼り付け */}
-                <div className="flex flex-col gap-2">
-                  <p className="text-xs text-slate-500">
-                    <span className="font-bold text-slate-700">ステップ2：</span>AIの出力を貼り付けて一括登録
-                  </p>
-                  <textarea
-                    className="input-base h-24 cs text-xs"
-                    placeholder={`AIが出力した${queued.length}人分の【アカウント情報】〜【初回接触案】をそのまま貼り付け`}
-                    value={batchResult}
-                    onChange={e => setBatchResult(e.target.value)}
-                  />
-                  <button className="btn-primary w-full justify-center text-sm" onClick={handleBatchSubmit}>
-                    <i className="fa-solid fa-circle-check" />{queued.length}件を一括登録してOS②へ
-                  </button>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピー</p>
+                      <button
+                        className="btn-sec w-full justify-center font-bold"
+                        onClick={() => {
+                          const full = buildGroupPrompt(items, ch)
+                          if (!full) { toast.show('プロンプトを読み込み中です', 2000); return }
+                          copyText(full, () => toast.show(`${chLabel[ch]} ${items.length}人分のOS①プロンプトをコピーしました`, 3000))
+                        }}
+                      >
+                        <i className="fa-solid fa-copy text-violet-500" />{items.length}人分コピー（{chLabel[ch]}）
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ2：</span>AI出力を貼り付けて登録</p>
+                      <textarea
+                        className="input-base h-20 cs text-xs"
+                        placeholder={`${items.length}人分の【アカウント情報】〜を貼り付け`}
+                        value={batchResult}
+                        onChange={e => setBatchResult(e.target.value)}
+                      />
+                      <button
+                        className="btn-primary w-full justify-center text-sm"
+                        onClick={() => handleBatchSubmit(items)}
+                      >
+                        <i className="fa-solid fa-circle-check" />{items.length}件を登録してOS②へ
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
           </section>
         )
