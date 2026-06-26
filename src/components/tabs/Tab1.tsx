@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { AppData, Prompts, Target } from '../../types'
+import type { AppData, Prompts, Target, Screening } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
@@ -115,6 +115,33 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       setSelectedId(newTarget.id)
       setPage(0)
     }
+  }
+
+  function handleBackToOS0(targetId: string) {
+    const tgt = data.targets.find(x => x.id === targetId)
+    if (!tgt) return
+    const screening: Screening = {
+      id: uid(),
+      createdAt: new Date().toISOString(),
+      channel: tgt.channel,
+      displayName: tgt.accountName,
+      handle: tgt.url || tgt.accountName,
+      verdict: 'OS①差し戻し',
+      reason: 'OS①から差し戻し',
+    }
+    saveData(prev => {
+      const d = {
+        ...prev,
+        targets: prev.targets.filter(x => x.id !== targetId),
+        screenings: [...(prev.screenings || []), screening],
+        pipeline: tgt.pipelineId
+          ? (prev.pipeline || []).filter(p => p.id !== tgt.pipelineId)
+          : prev.pipeline,
+      }
+      return d
+    })
+    setSelectedId(null)
+    toast.show(`「${tgt.accountName}」をOS⓪に戻しました`)
   }
 
   function handleDelete(id: string) {
@@ -356,6 +383,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           toast={toast}
           confirm={confirm}
           onToPipeline={() => handleToPipeline(selectedTarget.id)}
+          onBackToOS0={() => handleBackToOS0(selectedTarget.id)}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -363,12 +391,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   )
 }
 
-function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onClose }: {
+function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToOS0, onClose }: {
   target: Target
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
   onToPipeline: () => void
+  onBackToOS0: () => void
   onClose: () => void
 }) {
   const profileUrl = buildProfileUrl(t.url, t.channel)
@@ -406,6 +435,13 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onClose }
               <i className="fa-solid fa-arrow-up-right-from-square text-xs" />プロフィール
             </a>
           )}
+          <button
+            className="btn-sec text-xs py-1.5 px-2.5 text-slate-500"
+            onClick={onBackToOS0}
+            title="OS⓪リストに戻す"
+          >
+            <i className="fa-solid fa-arrow-left text-slate-400 mr-0.5" />OS⓪に戻す
+          </button>
           {t.track !== 'SKIP' && (
             t.pipelineId
               ? <span className="text-[11px] text-indigo-500 font-semibold px-2"><i className="fa-solid fa-check mr-1" />OS②済</span>
