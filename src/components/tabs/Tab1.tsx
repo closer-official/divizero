@@ -6,6 +6,8 @@ import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
+type Mode = 'twitter' | 'instagram' | 'threads'
+
 interface Props {
   data: AppData
   saveData: (updater: (prev: AppData) => AppData) => void
@@ -15,8 +17,6 @@ interface Props {
   confirm: ConfirmAPI
   onGoToTab2: () => void
 }
-
-type Mode = 'twitter' | 'instagram' | 'threads'
 
 const TRACK_TIPS: Record<string, string> = {
   FT: 'ファストトラック：課題シグナルあり→DM直行',
@@ -31,6 +31,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const [resultText, setResultText] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
+  const [batchResult, setBatchResult] = useState('')
   const [prefill, setPrefill] = useState<Prefill | null>(() => {
     try {
       const s = localStorage.getItem('os1_prefill')
@@ -140,6 +141,88 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     })
     toast.show(`${eligible.length}件をOS②パイプラインに一括移行します…`, 2500)
     setTimeout(() => onGoToTab2(), 2000)
+  }
+
+  function buildBatchPrompt(items: Screening[], ch: Mode): string {
+    const prompt = ch === 'instagram' ? prompts.OS1_IG : ch === 'threads' ? prompts.OS1_TH : prompts.OS1_X
+    if (!prompt) return ''
+    const profilesText = items.map((s, i) =>
+      `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}`
+    ).join('\n\n')
+    return prompt
+      + `\n\n---\n■ バッチ処理 ${items.length}件：上記フォーマットで各アカウントを順番に出力してください。アカウントとアカウントの間は「【アカウント情報】」から始まる次の出力で区切られます。\n\n`
+      + profilesText
+  }
+
+  function handleBatchSubmit(queued: Screening[]) {
+    const text = batchResult.trim()
+    if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
+    if (queued.length === 0) { toast.show('待機中のアカウントがありません', 2000); return }
+
+    const segments = text.split(/(?=【アカウント情報】)/).filter(s => s.includes('【アカウント情報】'))
+    if (segments.length === 0) {
+      toast.show('AIの出力に【アカウント情報】が見つかりません。形式を確認してください', 3000)
+      return
+    }
+
+    let addedCount = 0
+    let pipelineCount = 0
+    const processedIds = new Set<string>()
+
+    saveData(prev => {
+      const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline], screenings: [...prev.screenings] }
+      segments.forEach((seg, i) => {
+        const screening = queued[i]
+        if (!screening) return
+        const ch = screening.channel as Mode
+        const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
+        if (!parsed.accountName && !parsed.url) return
+
+        const targetId = uid()
+        const pid = parsed.track !== 'SKIP' ? uid() : null
+        const newTarget: Target = {
+          ...parsed,
+          id: targetId,
+          createdAt: new Date().toISOString(),
+          aiOutput: seg,
+          rawInput: screening.rawProfileText,
+          pipelineId: pid,
+          channel: ch,
+        } as Target
+        d.targets.push(newTarget)
+
+        if (pid) {
+          d.pipeline.push({
+            id: pid, targetId,
+            caseId: newTarget.caseId || null,
+            os1Output: seg,
+            accountName: newTarget.accountName,
+            url: newTarget.url,
+            channel: ch,
+            track: newTarget.track as 'FT' | 'NT' | 'SKIP',
+            hypothesis: newTarget.hypothesis,
+            startDate: newTarget.startDate || todayStr(),
+            currentStep: 'S1',
+            stepHistory: [{ step: 'S1', date: todayStr() }],
+            repCount: 0, dmCount: 0,
+            lastContactDate: todayStr(),
+            analyses: [], history: [], sentMessages: [], replies: [],
+            isOpen: true,
+          })
+          pipelineCount++
+        }
+        processedIds.add(screening.id)
+        addedCount++
+      })
+      d.screenings = d.screenings.filter(s => !processedIds.has(s.id))
+      return d
+    })
+
+    setBatchResult('')
+    setTimeout(() => {
+      toast.show(`${addedCount}件を登録（OS②に${pipelineCount}件追加）`, 3000)
+      if (pipelineCount > 0) setTimeout(() => onGoToTab2(), 1200)
+    }, 0)
   }
 
   function handleBackToOS0(targetId: string) {
@@ -435,6 +518,82 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           onClose={() => setSelectedId(null)}
         />
       )}
+
+      {/* OS①バッチ処理セクション */}
+      {(() => {
+        const allQueued = (data.screenings || []).filter(s => s.rawProfileText)
+        if (allQueued.length === 0) return null
+        const channels: Mode[] = ['twitter', 'instagram', 'threads']
+        const chLabel: Record<Mode, string> = { twitter: 'X', instagram: 'Instagram', threads: 'Threads' }
+        const chIcon: Record<Mode, string> = { twitter: 'fa-brands fa-x-twitter', instagram: 'fa-brands fa-instagram', threads: 'fa-brands fa-threads' }
+        const groups = channels.map(ch => ({ ch, items: allQueued.filter(s => s.channel === ch) })).filter(g => g.items.length > 0)
+
+        return (
+          <section className="flex flex-col gap-3">
+            <div className="card p-5 flex flex-col gap-4">
+              <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
+                <span className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                  <i className="fa-solid fa-layer-group text-violet-500" />OS①バッチ処理
+                </span>
+                <span className="badge bg-violet-100 text-violet-700">{allQueued.length}件待機中</span>
+                {allQueued.length >= 5 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                    <i className="fa-solid fa-bolt mr-0.5" />バッチ推奨
+                  </span>
+                )}
+              </div>
+
+              {groups.map(({ ch, items }) => (
+                <div key={ch} className="border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <i className={`${chIcon[ch]} text-slate-500 text-sm`} />
+                    <span className="font-bold text-sm text-slate-700">{chLabel[ch]}</span>
+                    <span className="badge bg-violet-100 text-violet-700">{items.length}件</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {items.map((s, i) => (
+                      <span key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-0.5 text-xs">
+                        <span className="text-violet-400 font-mono">#{i + 1}</span>
+                        <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピー</p>
+                      <button
+                        className="btn-sec w-full justify-center font-bold"
+                        onClick={() => {
+                          const full = buildBatchPrompt(items, ch)
+                          if (!full) { toast.show('プロンプトを読み込み中です', 2000); return }
+                          copyText(full, () => toast.show(`${chLabel[ch]} ${items.length}人分のOS①プロンプトをコピーしました`, 3000))
+                        }}
+                      >
+                        <i className="fa-solid fa-copy text-violet-500" />{items.length}人分コピー（{chLabel[ch]}）
+                      </button>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ2：</span>AI出力を貼り付けて登録</p>
+                      <textarea
+                        className="input-base h-20 cs text-xs"
+                        placeholder={`${items.length}人分の【アカウント情報】〜を貼り付け`}
+                        value={batchResult}
+                        onChange={e => setBatchResult(e.target.value)}
+                      />
+                      <button
+                        className="btn-primary w-full justify-center text-sm"
+                        onClick={() => handleBatchSubmit(items)}
+                      >
+                        <i className="fa-solid fa-circle-check" />{items.length}件を登録してOS②へ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )
+      })()}
     </div>
   )
 }

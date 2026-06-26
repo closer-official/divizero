@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/26 Human-Check Loop全OS追加: 採点OS3ファイル除く19ファイルにAI人間性監査ブロック挿入";
+export const BUILD_LABEL = "06/26 OS①タブにバッチ処理セクション追加: OS⓪待機キューをTab1で直接確認・処理可能に";
