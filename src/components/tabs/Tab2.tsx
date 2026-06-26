@@ -1335,6 +1335,8 @@ interface CardProps {
 function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onExportMd }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
+  const [editingUrl, setEditingUrl] = useState(false)
+  const [urlInput, setUrlInput] = useState('')
   const addFormRef = useRef<HTMLDivElement>(null)
 
   // AI generation (touch prompt)
@@ -1755,6 +1757,40 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               )}
             </div>
           </div>
+
+          {/* URL入力（未設定 or 手動編集） */}
+          {role === 'admin' && (!item.url || editingUrl) && (
+            <div className="mx-4 mt-3 flex items-center gap-2">
+              <input
+                className="input-base text-xs flex-1 py-1.5"
+                placeholder="@username または https://... を入力"
+                value={editingUrl ? urlInput : (item.url || '')}
+                onChange={e => { setEditingUrl(true); setUrlInput(e.target.value) }}
+                onFocus={() => { if (!editingUrl) { setEditingUrl(true); setUrlInput(item.url || '') } }}
+              />
+              <button
+                className="btn-primary text-xs py-1.5 px-3 shrink-0"
+                onClick={() => {
+                  const v = urlInput.trim()
+                  if (!v) return
+                  saveData(prev => ({ ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, url: v } : p) }))
+                  setEditingUrl(false)
+                  toast.show('URLを保存しました')
+                }}
+              >
+                保存
+              </button>
+              {editingUrl && <button className="btn-sec text-xs py-1.5 px-2 shrink-0" onClick={() => setEditingUrl(false)}>✕</button>}
+            </div>
+          )}
+          {role === 'admin' && item.url && !editingUrl && (
+            <div className="mx-4 mt-2 flex items-center gap-1.5 text-[11px] text-slate-400">
+              <span className="truncate flex-1 font-mono">{item.url}</span>
+              <button className="shrink-0 hover:text-indigo-500 px-1" onClick={() => { setEditingUrl(true); setUrlInput(item.url || '') }} title="URLを編集">
+                <i className="fa-solid fa-pen text-[10px]" />
+              </button>
+            </div>
+          )}
 
           {/* latest OS② judgment */}
           {(displayJudgment || displayNextAction || displayReplyA || displayReplyB) && (

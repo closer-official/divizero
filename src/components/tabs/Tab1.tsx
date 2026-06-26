@@ -86,7 +86,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           caseId: newTarget.caseId || null,
           os1Output: newTarget.aiOutput || null,
           accountName: newTarget.accountName,
-          url: newTarget.url,
+          url: newTarget.url || prefill?.handle || '',
           channel: newTarget.channel,
           track: newTarget.track as 'FT' | 'NT' | 'SKIP',
           hypothesis: newTarget.hypothesis,
@@ -180,6 +180,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
 
         const targetId = uid()
         const pid = parsed.track !== 'SKIP' ? uid() : null
+        const urlFallback = parsed.url || screening.handle || ''
         const newTarget: Target = {
           ...parsed,
           id: targetId,
@@ -188,6 +189,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           rawInput: screening.rawProfileText,
           pipelineId: pid,
           channel: ch,
+          url: urlFallback,
         } as Target
         d.targets.push(newTarget)
 
@@ -197,7 +199,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             caseId: newTarget.caseId || null,
             os1Output: seg,
             accountName: newTarget.accountName,
-            url: newTarget.url,
+            url: urlFallback,
             channel: ch,
             track: newTarget.track as 'FT' | 'NT' | 'SKIP',
             hypothesis: newTarget.hypothesis,
