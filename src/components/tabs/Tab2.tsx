@@ -1658,6 +1658,17 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           {item.inbound_signal && <span className="text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded shrink-0">{item.inbound_signal.type}</span>}
+          {profileUrl && (
+            <a
+              href={profileUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="w-5 h-5 flex items-center justify-center text-slate-400 hover:text-indigo-500 shrink-0"
+              onClick={e => e.stopPropagation()}
+            >
+              <i className="fa-solid fa-arrow-up-right-from-square text-[10px]" />
+            </a>
+          )}
           <i className={`fa-solid fa-chevron-${expanded ? 'up' : 'down'} text-slate-300 text-xs shrink-0`} />
         </div>
         {/* 再接触日（waiting / sleeping / archived） */}
@@ -1703,9 +1714,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       {expanded && (
         <div className="border-t border-slate-100">
           {/* step bar + actions */}
-          <div className="px-4 py-2.5 flex items-center gap-2 bg-slate-50 border-b border-slate-100">
+          <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 bg-slate-50 border-b border-slate-100">
             <StepsBar currentStep={item.currentStep} />
-            <div className="ml-auto flex items-center gap-1 shrink-0">
+            <div className="ml-auto flex items-center gap-1">
               {/* チャネル変更 */}
               {role === 'admin' && (
                 <select

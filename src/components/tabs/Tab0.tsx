@@ -388,31 +388,25 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     onGoToTab1()
   }
 
-  function dedupeKey(handle: string): string {
-    // trailing slash除去・全角@対応・@除去・小文字化・URLパス除去
-    const s = (handle || '').trim().replace(/\/+$/, '').replace(/^[@＠]/, '').toLowerCase().replace(/^.*\//, '')
-    return s
+  function dedupeKey(s: Screening): string {
+    const raw = (s.handle || '').trim().replace(/\/+$/, '').replace(/^[@＠]/, '').toLowerCase().replace(/^.*\//, '')
+    return raw || (s.displayName || '').toLowerCase().trim()
   }
 
   function handleDeduplicateScreenings() {
     const screenings = data.screenings || []
-    const seen = new Map<string, string>() // key → 最初のid
+    const seen = new Map<string, string>()
     const dupIds = new Set<string>()
     const sorted = [...screenings].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
     for (const s of sorted) {
-      const h = dedupeKey(s.handle)
-      console.log('[重複チェック]', JSON.stringify(s.handle), '→', JSON.stringify(h))
-      if (!h) {
-        console.warn('[重複チェック] キーが空のためスキップ:', s.id, s.displayName)
-        continue
-      }
+      const h = dedupeKey(s)
+      if (!h) continue
       if (seen.has(h)) {
         dupIds.add(s.id)
       } else {
         seen.set(h, s.id)
       }
     }
-    console.log('[重複チェック] 処理件数:', screenings.length, '重複:', dupIds.size)
     if (dupIds.size === 0) {
       toast.show('重複はありませんでした', 2000)
       return
@@ -922,8 +916,11 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                 )}
               </div>
 
-              <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2">
+              <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2 flex-wrap">
                 <button className="btn-sec text-xs py-2 px-4" onClick={() => { setProfileModalId(null); setProfileText(''); setRtDetected([]) }}>キャンセル</button>
+                <button className="btn-sec text-xs py-2 px-4" onClick={() => handleGoToOS1(target.id, (target.channel as Mode) || 'twitter')}>
+                  <i className="fa-solid fa-camera mr-1" />スクショでOS①へ
+                </button>
                 <button className="btn-primary text-xs py-2 px-4" onClick={handleSaveToQueue} disabled={!profileText.trim()}>
                   <i className="fa-solid fa-check mr-1" />OS①待機に追加
                 </button>
