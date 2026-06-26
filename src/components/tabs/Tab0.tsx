@@ -98,16 +98,23 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       ngs.forEach(ng => addToExcluded(d, ng.handle, ng.displayName, ng.channel, 'OS⓪NG', ng.skipCode))
       const excluded = d.excluded || []
       const existingScreenings = d.screenings || []
-      const items = allPassing.filter(item =>
-        !excluded.some(e => normalizeHandle(e.handle) === normalizeHandle(item.handle)) &&
-        !existingScreenings.some(s => normalizeHandle(s.handle) === normalizeHandle(item.handle))
-      )
+      const existingTargets = prev.targets || []
+      const existingPipeline = prev.pipeline || []
+      const items = allPassing.filter(item => {
+        const h = normalizeHandle(item.handle)
+        return (
+          !excluded.some(e => normalizeHandle(e.handle) === h) &&
+          !existingScreenings.some(s => normalizeHandle(s.handle) === h) &&
+          !existingTargets.some(t => normalizeHandle(t.url) === h) &&
+          !existingPipeline.some(p => normalizeHandle(p.url) === h)
+        )
+      })
       const skippedCount = allPassing.length - items.length
       d.screenings = [...d.screenings, ...(items as typeof d.screenings)]
       const ngsCount = ngs.length
       let msg = `${items.length}件の通過アカウントをリストに追加しました`
       if (ngsCount > 0) msg += `（NG${ngsCount}件を除外リストに保存）`
-      if (skippedCount > 0) msg += `（${skippedCount}件はスキップ）`
+      if (skippedCount > 0) msg += `（${skippedCount}件はスキップ＝登録済み）`
       setTimeout(() => toast.show(msg, 3500), 0)
       return d
     })

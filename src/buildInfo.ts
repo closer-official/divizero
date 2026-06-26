@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/26 OS②改善: 新規登録を今日やること追加・並び順修正・未判定一括コピー";
+export const BUILD_LABEL = "06/26 OS⓪重複チェック強化: OS①/OS②登録済みアカウントを取り込み段階で弾く";
