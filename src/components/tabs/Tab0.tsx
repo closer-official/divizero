@@ -388,6 +388,35 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     onGoToTab1()
   }
 
+  function handleDeduplicateScreenings() {
+    const screenings = data.screenings || []
+    const seen = new Map<string, string>() // normalizedHandle → 最初のid
+    const dupIds = new Set<string>()
+    // createdAt昇順で処理し、最初に出たものを残す
+    const sorted = [...screenings].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    for (const s of sorted) {
+      const h = normalizeHandle(s.handle)
+      if (!h) continue
+      if (seen.has(h)) {
+        dupIds.add(s.id)
+      } else {
+        seen.set(h, s.id)
+      }
+    }
+    if (dupIds.size === 0) {
+      toast.show('重複はありませんでした', 2000)
+      return
+    }
+    confirm.show(
+      '重複削除の確認',
+      `同じハンドル名が${dupIds.size}件重複しています。古い方を残して新しい方を削除します（除外リストには追加しません）。`,
+      () => {
+        saveData(prev => ({ ...prev, screenings: prev.screenings.filter(s => !dupIds.has(s.id)) }))
+        toast.show(`重複${dupIds.size}件を削除しました`, 2500)
+      }
+    )
+  }
+
   function handleExcludedDelete(eid: string) {
     saveData(prev => ({ ...prev, excluded: (prev.excluded || []).filter(e => e.id !== eid) }))
     toast.show('除外を解除しました')
@@ -474,16 +503,26 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         {/* Right: list */}
         <section className="lg:col-span-7 flex flex-col gap-3">
           <div className="card flex flex-col" style={{ minHeight: 520 }}>
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
               <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
                 <i className="fa-solid fa-layer-group text-fuchsia-500" />一次選別済みリスト
+                <span className="badge bg-fuchsia-100 text-fuchsia-600">{(data.screenings || []).length}</span>
               </h3>
-              <button
-                className="btn-sec text-xs py-1.5 px-3 text-teal-700 border-teal-300"
-                onClick={() => setInboundOpen(true)}
-              >
-                <i className="fa-solid fa-arrow-down-to-line mr-1 text-teal-500" />インバウンド起点
-              </button>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  className="btn-sec text-xs py-1.5 px-2.5 text-amber-700 border-amber-300"
+                  onClick={handleDeduplicateScreenings}
+                  title="同一ハンドル名の重複を検出して削除"
+                >
+                  <i className="fa-solid fa-clone text-amber-500 mr-1" />重複チェック
+                </button>
+                <button
+                  className="btn-sec text-xs py-1.5 px-3 text-teal-700 border-teal-300"
+                  onClick={() => setInboundOpen(true)}
+                >
+                  <i className="fa-solid fa-arrow-down-to-line mr-1 text-teal-500" />インバウンド起点
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto cs">
               {screenings.length === 0 ? (
