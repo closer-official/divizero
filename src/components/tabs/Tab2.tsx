@@ -8,7 +8,7 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
 import { buildPhenomenonFuturePrompt, parsePhenomenonFutureOutput, type PhenomenonFutureResult } from '../../utils/phenomenonFuturePrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
-import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
+import { buildTouchPrompt, buildTouchPromptFromTemplate, parseTouchOutput } from '../../utils/touchPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
@@ -382,6 +382,12 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [batchJudgError, setBatchJudgError] = useState<string | null>(null)
   const [batchJudgSuccess, setBatchJudgSuccess] = useState(false)
 
+  // 行動判定プロンプト一括
+  const [batchTouchOpen, setBatchTouchOpen] = useState(false)
+  const [batchTouchAllCopyState, setBatchTouchAllCopyState] = useState<'idle' | 'copying' | 'copied'>('idle')
+  const [batchTouchItemStates, setBatchTouchItemStates] = useState<Record<string, 'idle' | 'copied'>>({})
+  const [batchTouchTemplate, setBatchTouchTemplate] = useState<string | null>(null)
+
   // ① 本日やること
   const [todayOpen, setTodayOpen] = useState(true)
 
@@ -618,6 +624,42 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       setTimeout(() => setBatchJudgCopyState('idle'), 2000)
     } catch {
       setBatchJudgError('コピーに失敗しました')
+    }
+  }
+
+  async function ensureBatchTouchTemplate(): Promise<string> {
+    if (batchTouchTemplate) return batchTouchTemplate
+    const t = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
+    setBatchTouchTemplate(t)
+    return t
+  }
+
+  async function handleBatchTouchCopyAll() {
+    setBatchTouchAllCopyState('copying')
+    try {
+      const template = await ensureBatchTouchTemplate()
+      const items = active
+      const parts = items.map((p, i) =>
+        `## ${i + 1}. ${p.accountName}\n\n` + buildTouchPromptFromTemplate(p, p.touches || [], template)
+      )
+      await navigator.clipboard.writeText(parts.join('\n\n---\n\n'))
+      setBatchTouchAllCopyState('copied')
+      setTimeout(() => setBatchTouchAllCopyState('idle'), 2500)
+    } catch {
+      toast.show('コピーに失敗しました', 2000)
+      setBatchTouchAllCopyState('idle')
+    }
+  }
+
+  async function handleBatchTouchCopyItem(p: PipelineItem) {
+    try {
+      const template = await ensureBatchTouchTemplate()
+      const prompt = buildTouchPromptFromTemplate(p, p.touches || [], template)
+      await navigator.clipboard.writeText(prompt)
+      setBatchTouchItemStates(s => ({ ...s, [p.id]: 'copied' }))
+      setTimeout(() => setBatchTouchItemStates(s => ({ ...s, [p.id]: 'idle' })), 2500)
+    } catch {
+      toast.show('コピーに失敗しました', 2000)
     }
   }
 
@@ -967,6 +1009,13 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <button className="btn-sec text-[11px] py-1.5 px-2 text-indigo-600 border-indigo-300" onClick={() => setBulkTouchOpen(true)} title="複数案件に同じタッチを一括記録">
               <i className="fa-solid fa-layer-group text-indigo-500" /><span className="hidden sm:inline ml-1">バルク記録</span>
             </button>
+            <button
+              className="btn-sec text-[11px] py-1.5 px-2 text-sky-700 border-sky-300"
+              onClick={() => { setBatchTouchOpen(true); setBatchTouchItemStates({}) }}
+              title="全員の行動判定プロンプトを一括コピー"
+            >
+              <i className="fa-solid fa-bolt text-sky-500" /><span className="hidden sm:inline ml-1">行動判定</span>
+            </button>
             <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
               <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
             </button>
@@ -1124,6 +1173,85 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </div>
             <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
               <button className="btn-sec text-xs py-2 px-4" onClick={() => setNextActionBatchOpen(false)}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 行動判定プロンプト一括コピーモーダル ──────────────── */}
+      {batchTouchOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 flex items-center gap-2 bg-sky-50 border-b border-sky-100">
+              <i className="fa-solid fa-bolt text-sky-600" />
+              <p className="font-bold text-sm text-sky-800 flex-1">行動判定プロンプト 一括コピー（{active.length}件）</p>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => setBatchTouchOpen(false)}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div className="px-4 pt-3 pb-2">
+              <button
+                className={`w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
+                  batchTouchAllCopyState === 'copied'
+                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                    : batchTouchAllCopyState === 'copying'
+                      ? 'bg-sky-100 border-sky-300 text-sky-500'
+                      : 'bg-sky-600 border-sky-600 text-white hover:bg-sky-700'
+                }`}
+                onClick={handleBatchTouchCopyAll}
+                disabled={batchTouchAllCopyState === 'copying'}
+              >
+                <i className={`fa-solid ${batchTouchAllCopyState === 'copied' ? 'fa-check' : batchTouchAllCopyState === 'copying' ? 'fa-spinner fa-spin' : 'fa-copy'}`} />
+                {batchTouchAllCopyState === 'copied'
+                  ? `✓ ${active.length}件まとめてコピーしました`
+                  : batchTouchAllCopyState === 'copying'
+                    ? '生成中...'
+                    : `全員分まとめてコピー（${active.length}件）`
+                }
+              </button>
+              <p className="text-[10px] text-slate-400 text-center mt-1.5">各人のプロンプトを --- 区切りで1テキストに結合してコピーします</p>
+            </div>
+
+            <div className="border-t border-slate-100 mx-4 mb-2" />
+
+            <p className="text-[11px] text-slate-500 px-4 pb-1">または個別にコピー：</p>
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+              {active.map((p, idx) => {
+                const copyState = batchTouchItemStates[p.id] || 'idle'
+                const isNew = (p.touches || []).length === 0
+                const lastTouch = [...(p.touches || [])].reverse()[0]
+                return (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
+                    <span className="text-xs font-mono text-slate-300 shrink-0 w-6 text-right">{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
+                      <p className="text-[11px] text-slate-400">
+                        {isNew
+                          ? <span className="text-emerald-600 font-bold"><i className="fa-solid fa-star mr-0.5" />初回</span>
+                          : <span>{lastTouch?.date?.slice(0, 10)} · タッチ{(p.touches || []).length}回</span>
+                        }
+                        <span className="ml-2 text-[10px]">{p.currentStep} / {p.track}</span>
+                      </p>
+                    </div>
+                    <button
+                      className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition shrink-0 ${
+                        copyState === 'copied'
+                          ? 'bg-emerald-500 border-emerald-500 text-white'
+                          : 'bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100'
+                      }`}
+                      onClick={() => handleBatchTouchCopyItem(p)}
+                    >
+                      <i className={`fa-solid ${copyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1`} />
+                      {copyState === 'copied' ? 'コピー済' : 'コピー'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => setBatchTouchOpen(false)}>閉じる</button>
             </div>
           </div>
         </div>

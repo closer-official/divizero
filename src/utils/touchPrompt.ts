@@ -39,9 +39,7 @@ function channelLabel(channel: string): string {
   return channel
 }
 
-export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Promise<string> {
-  const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
-
+export function buildTouchPromptFromTemplate(item: PipelineItem, touches: Touch[], template: string): string {
   const recentTouches = [...touches].reverse()
   const likeReturnCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
   const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
@@ -64,6 +62,11 @@ export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Pr
   }
 
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => replacements[key] ?? '')
+}
+
+export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Promise<string> {
+  const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
+  return buildTouchPromptFromTemplate(item, touches, template)
 }
 
 export function parseTouchOutput(raw: string): ParsedTouch | null {
