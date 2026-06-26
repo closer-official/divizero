@@ -388,21 +388,31 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     onGoToTab1()
   }
 
+  function dedupeKey(handle: string): string {
+    // trailing slash除去・全角@対応・@除去・小文字化・URLパス除去
+    const s = (handle || '').trim().replace(/\/+$/, '').replace(/^[@＠]/, '').toLowerCase().replace(/^.*\//, '')
+    return s
+  }
+
   function handleDeduplicateScreenings() {
     const screenings = data.screenings || []
-    const seen = new Map<string, string>() // normalizedHandle → 最初のid
+    const seen = new Map<string, string>() // key → 最初のid
     const dupIds = new Set<string>()
-    // createdAt昇順で処理し、最初に出たものを残す
-    const sorted = [...screenings].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    const sorted = [...screenings].sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''))
     for (const s of sorted) {
-      const h = normalizeHandle(s.handle)
-      if (!h) continue
+      const h = dedupeKey(s.handle)
+      console.log('[重複チェック]', JSON.stringify(s.handle), '→', JSON.stringify(h))
+      if (!h) {
+        console.warn('[重複チェック] キーが空のためスキップ:', s.id, s.displayName)
+        continue
+      }
       if (seen.has(h)) {
         dupIds.add(s.id)
       } else {
         seen.set(h, s.id)
       }
     }
+    console.log('[重複チェック] 処理件数:', screenings.length, '重複:', dupIds.size)
     if (dupIds.size === 0) {
       toast.show('重複はありませんでした', 2000)
       return
