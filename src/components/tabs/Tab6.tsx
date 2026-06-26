@@ -55,21 +55,20 @@ function parseOwnAnalysis(raw: string): Omit<OwnPostAnalysis, 'id' | 'createdAt'
   }
 }
 
-function parsePostGen(raw: string): { aim: string; posts: string[] } | null {
+function parsePostGen(raw: string): { aim: string; posts: Array<{ label: string; text: string }> } | null {
   const block = raw.match(/={1,3}POST_GEN_START={1,3}([\s\S]*?)={1,3}POST_GEN_END={1,3}/)?.[1]
   if (!block) return null
-  const pick = (label: string) => {
-    const m = block.match(new RegExp(`${label}\\s*[:：]\\s*([\\s\\S]+?)(?=\\n案\\d|$)`))
-    return m ? m[1].trim() : ''
+  const aimM = block.match(/狙い・テーマ\s*[:：]\s*([\s\S]+?)(?=\n案\d|$)/)
+  const aim = aimM ? aimM[1].trim() : ''
+  const posts: Array<{ label: string; text: string }> = []
+  const re = /案(\d+)([^：:\n]*)\s*[:：]\s*([\s\S]+?)(?=\n案\d|$)/g
+  let m
+  while ((m = re.exec(block)) !== null) {
+    const subtitle = (m[2] || '').trim().replace(/^[（(]|[）)]$/g, '')
+    const label = subtitle ? `案${m[1]}（${subtitle}）` : `案${m[1]}`
+    const text = m[3].trim()
+    if (text) posts.push({ label, text })
   }
-  const aim = pick('狙い・テーマ')
-  const posts = [
-    pick('案1（王道・共感）') || pick('案1'),
-    pick('案2（ノウハウ・解説）') || pick('案2'),
-    pick('案3（常識否定・啓発）') || pick('案3'),
-    pick('案4（失敗談・本音）') || pick('案4'),
-    pick('案5（短文・つぶやき）') || pick('案5'),
-  ].filter(Boolean)
   if (!aim && posts.length === 0) return null
   return { aim, posts }
 }
@@ -445,30 +444,100 @@ function OwnSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
 
 // ── GenerateSubTab ─────────────────────────────────────────────
 
+const STD_CASES = [
+  { label: '共感', role: '「これ私だ」を起こす。読者の現状を言語化する。感情：疲れ、違和感、モヤモヤ' },
+  { label: '問題再定義', role: '本人が気づいていない問題を発見させる。既存努力は否定しない。読者を責めない。' },
+  { label: '常識否定', role: '思い込みを壊す。ただし全否定禁止。敵を作らない。' },
+  { label: '理想未来', role: '欲求を作る。「そうなりたい」を起こす。売り込まない。理想を描く。' },
+  { label: '解決策＋不安除去', role: '安心感を与える。営業しない。押さない。「こんな考え方もある」くらい。' },
+]
+
+function buildPostGenPromptWithTypes(
+  baseTemplate: string,
+  myProfile: string,
+  types: OtherAnalysisResult[],
+  improvementPoint: string
+): string {
+  const SEP = '━━━━━━━━━━━━━━━━━━'
+  const preambleEnd = baseTemplate.indexOf(`${SEP}\n【案1】`)
+  const preamble = preambleEnd >= 0 ? baseTemplate.slice(0, preambleEnd) : ''
+  const afterStart = baseTemplate.indexOf(`${SEP}\n【文章ルール】`)
+  const afterRaw = afterStart >= 0 ? baseTemplate.slice(afterStart) : ''
+  const outputIdx = afterRaw.indexOf('【出力フォーマット】')
+  const commonRules = outputIdx >= 0 ? afterRaw.slice(0, outputIdx).trimEnd() : afterRaw.trimEnd()
+
+  const caseParts: string[] = []
+  const outputLines: string[] = []
+
+  types.forEach((t, i) => {
+    caseParts.push(
+`${SEP}
+【案${i + 1}（${t.typeName}型）】
+役割：他社分析で抽出した型を、自社ターゲット向けに転用する
+文章の構造：${t.structure}
+感情フック：${t.emotionHook}
+転用可能な要素：${t.transferable}`
+    )
+    outputLines.push(`案${i + 1}（${t.typeName}型）: `)
+  })
+
+  STD_CASES.slice(types.length).forEach((c, i) => {
+    const num = types.length + i + 1
+    caseParts.push(
+`${SEP}
+【案${num}（${c.label}）】
+役割：${c.role}`
+    )
+    outputLines.push(`案${num}（${c.label}）: `)
+  })
+
+  const outputFormat = `【出力フォーマット】※記号・ラベルを変更しないこと
+===POST_GEN_START===
+狙い・テーマ: （今回の投稿群で狙う感情の変化や目的）
+${outputLines.join('\n')}
+===POST_GEN_END===`
+
+  return [preamble.trimEnd(), caseParts.join('\n\n'), commonRules, outputFormat].join('\n\n')
+    .replace('{{myProfile}}', myProfile || '（未設定）')
+    .replace('{{templateName}}', types.map(t => t.typeName).join('、'))
+    .replace('{{templateStructure}}', types.map(t => t.structure).join('\n---\n'))
+    .replace('{{improvementPoint}}', improvementPoint || '（なし）')
+}
+
 function GenerateSubTab({ data, saveData, prompts, toast }: Tab6Props) {
   const [editingProfile, setEditingProfile] = useState(false)
   const [profileDraft, setProfileDraft] = useState(data.myProfile || '')
-  const [selectedType, setSelectedType] = useState<OtherAnalysisResult | null>(null)
+  const [selectedTypes, setSelectedTypes] = useState<OtherAnalysisResult[]>([])
   const [manualTemplate, setManualTemplate] = useState('')
   const [manualStructure, setManualStructure] = useState('')
   const [selectedImprovement, setSelectedImprovement] = useState('')
   const [genCopyState, setGenCopyState] = useState<'idle' | 'copied'>('idle')
   const [genOutput, setGenOutput] = useState('')
-  const [genParsed, setGenParsed] = useState<{ aim: string; posts: string[] } | null>(null)
+  const [genParsed, setGenParsed] = useState<{ aim: string; posts: Array<{ label: string; text: string }> } | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const [copyPostState, setCopyPostState] = useState<Record<number, boolean>>({})
 
   const analyzedStocks = (data.postStocks || []).filter(s => s.status === 'analyzed' && s.otherAnalysis)
   const ownAnalyses = data.ownPostAnalyses || []
 
+  function toggleType(t: OtherAnalysisResult) {
+    setSelectedTypes(prev => {
+      const exists = prev.some(x => x.typeName === t.typeName)
+      if (exists) return prev.filter(x => x.typeName !== t.typeName)
+      if (prev.length >= 3) return prev
+      return [...prev, t]
+    })
+  }
+
   function buildPrompt() {
     const tmpl = prompts.OS4_POST_GEN || ''
-    const templateName = selectedType ? selectedType.typeName : manualTemplate
-    const templateStructure = selectedType ? selectedType.structure : manualStructure
+    if (selectedTypes.length > 0) {
+      return buildPostGenPromptWithTypes(tmpl, data.myProfile || '', selectedTypes, selectedImprovement)
+    }
     return tmpl
       .replace('{{myProfile}}', data.myProfile || '（未設定）')
-      .replace('{{templateName}}', templateName || '（未選択）')
-      .replace('{{templateStructure}}', templateStructure || '（未入力）')
+      .replace('{{templateName}}', manualTemplate || '（未選択）')
+      .replace('{{templateStructure}}', manualStructure || '（未入力）')
       .replace('{{improvementPoint}}', selectedImprovement || '（なし）')
   }
 
@@ -528,45 +597,80 @@ function GenerateSubTab({ data, saveData, prompts, toast }: Tab6Props) {
 
       {/* 型の選択 */}
       <div className="card p-4 flex flex-col gap-3">
-        <p className="text-sm font-bold text-slate-700">使用する「型」を選択</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-bold text-slate-700 flex-1">使用する「型」を選択</p>
+          {selectedTypes.length > 0 && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{selectedTypes.length}件選択中</span>
+          )}
+        </div>
+
         {analyzedStocks.length > 0 ? (
           <>
-            <p className="text-[11px] text-slate-500">分析済みストックから選ぶ（または手動入力）</p>
-            <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto cs">
-              {analyzedStocks.map(s => (
-                <button
-                  key={s.id}
-                  className={`text-left px-3 py-2 rounded-xl border text-xs transition ${selectedType?.typeName === s.otherAnalysis!.typeName ? 'bg-indigo-50 border-indigo-300 text-indigo-800 font-semibold' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-200'}`}
-                  onClick={() => { setSelectedType(s.otherAnalysis!); setManualTemplate(''); setManualStructure('') }}
-                >
-                  {s.otherAnalysis!.typeName}
-                  <span className="text-[10px] text-slate-400 ml-2">{s.accountName}</span>
-                </button>
-              ))}
+            <p className="text-[11px] text-slate-500">
+              分析済みストックから最大3件チェック → 選んだ型が案1〜Nに使われ、残りは標準案に
+            </p>
+            <div className="flex flex-col gap-1.5 max-h-52 overflow-y-auto cs">
+              {analyzedStocks.map(s => {
+                const t = s.otherAnalysis!
+                const isSelected = selectedTypes.some(x => x.typeName === t.typeName)
+                const isDisabled = !isSelected && selectedTypes.length >= 3
+                return (
+                  <label
+                    key={s.id}
+                    className={`flex items-start gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition ${
+                      isSelected ? 'bg-indigo-50 border-indigo-300' : isDisabled ? 'bg-slate-50 border-slate-100 opacity-50' : 'bg-white border-slate-200 hover:border-indigo-200'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      disabled={isDisabled}
+                      onChange={() => toggleType(t)}
+                      className="mt-0.5 accent-indigo-600 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-semibold ${isSelected ? 'text-indigo-800' : 'text-slate-700'}`}>{t.typeName}</p>
+                      {isSelected && t.structure && (
+                        <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{t.structure}</p>
+                      )}
+                      <p className="text-[10px] text-slate-400">{s.accountName}</p>
+                    </div>
+                  </label>
+                )
+              })}
             </div>
-            <p className="text-[10px] text-slate-400 text-center">または手動入力↓</p>
+
+            {selectedTypes.length > 0 && (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2 text-[11px] text-emerald-800">
+                <i className="fa-solid fa-wand-magic-sparkles mr-1 text-emerald-500" />
+                <span className="font-semibold">型ベース生成モード：</span>
+                {selectedTypes.map((t, i) => (
+                  <span key={i}> 案{i+1}「{t.typeName}」</span>
+                ))}
+                {selectedTypes.length < 5 && (
+                  <span className="text-slate-400"> ＋ 案{selectedTypes.length+1}〜5は標準案</span>
+                )}
+                <button className="ml-2 text-[10px] text-slate-400 hover:text-slate-600 underline" onClick={() => setSelectedTypes([])}>解除</button>
+              </div>
+            )}
+
+            <p className="text-[10px] text-slate-400 text-center">型を選ばない場合は手動入力または標準5案で生成↓</p>
           </>
         ) : (
           <p className="text-xs text-slate-400">まだ分析済みストックがありません。「他社投稿ストック」タブで投稿を分析してください。</p>
         )}
-        {(!selectedType || analyzedStocks.length === 0) && (
+
+        {selectedTypes.length === 0 && (
           <>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500">型名</label>
+              <label className="text-xs text-slate-500">型名（任意）</label>
               <input className="input-base text-xs" value={manualTemplate} onChange={e => setManualTemplate(e.target.value)} placeholder="例:「常識の否定→実体験→新しい正解」型" />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-slate-500">文章の構造</label>
-              <textarea rows={3} className="input-base cs text-xs resize-y" value={manualStructure} onChange={e => setManualStructure(e.target.value)} placeholder="骨組みを箇条書きで" />
+              <label className="text-xs text-slate-500">文章の構造（任意）</label>
+              <textarea rows={3} className="input-base cs text-xs resize-y" value={manualStructure} onChange={e => setManualStructure(e.target.value)} placeholder="骨組みを箇条書きで（未入力なら標準5案で生成）" />
             </div>
           </>
-        )}
-        {selectedType && (
-          <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-xs flex flex-col gap-1">
-            <p className="font-bold text-indigo-700">{selectedType.typeName}</p>
-            <p className="text-slate-600 whitespace-pre-wrap">{selectedType.structure}</p>
-            <button className="text-[10px] text-slate-400 hover:text-slate-600 self-start" onClick={() => setSelectedType(null)}>選択解除</button>
-          </div>
         )}
       </div>
 
@@ -591,7 +695,12 @@ function GenerateSubTab({ data, saveData, prompts, toast }: Tab6Props) {
           onClick={handleCopyGenPrompt}
         >
           <i className={`fa-solid ${genCopyState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
-          {genCopyState === 'copied' ? '✓ コピーしました' : '投稿生成プロンプトをコピー'}
+          {genCopyState === 'copied'
+            ? '✓ コピーしました'
+            : selectedTypes.length > 0
+              ? `型ベース投稿生成プロンプトをコピー（${selectedTypes.length}型 ＋ 標準案）`
+              : '投稿生成プロンプトをコピー'
+          }
         </button>
         <p className="text-[10px] text-slate-400 text-center">↓ 外部AIに貼り付けて実行 → 出力をここに貼る</p>
         <textarea
@@ -621,14 +730,17 @@ function GenerateSubTab({ data, saveData, prompts, toast }: Tab6Props) {
               </div>
             )}
             {genParsed.posts.map((post, i) => {
-              const labels = ['王道・共感', 'ノウハウ・解説', '常識否定・啓発', '失敗談・本音', '短文・つぶやき']
+              const isKata = selectedTypes.some(t => post.label.includes(t.typeName))
               return (
-                <div key={i} className="bg-white border border-slate-200 rounded-xl p-3 flex flex-col gap-2">
+                <div key={i} className={`border rounded-xl p-3 flex flex-col gap-2 ${isKata ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`}>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">案{i + 1} {labels[i]}</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isKata ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-50 text-indigo-600'}`}>
+                      {isKata && <i className="fa-solid fa-wand-magic-sparkles mr-1" />}
+                      {post.label}
+                    </span>
                     <button
                       className={`ml-auto btn-sec text-[10px] py-1 px-2 ${copyPostState[i] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
-                      onClick={() => copyText(post, () => {
+                      onClick={() => copyText(post.text, () => {
                         setCopyPostState(prev => ({ ...prev, [i]: true }))
                         setTimeout(() => setCopyPostState(prev => ({ ...prev, [i]: false })), 1500)
                       })}
@@ -636,7 +748,7 @@ function GenerateSubTab({ data, saveData, prompts, toast }: Tab6Props) {
                       {copyPostState[i] ? '✓ コピー' : 'コピー'}
                     </button>
                   </div>
-                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{post}</p>
+                  <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">{post.text}</p>
                 </div>
               )
             })}
