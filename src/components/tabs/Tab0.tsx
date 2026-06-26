@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { AppData, Prompts, Screening, PipelineItem } from '../../types'
+import type { AppData, Prompts, Screening, Target, PipelineItem } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
-import { parseOS0, parseOS0NG } from '../../utils/parser'
+import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, uid, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -30,13 +30,19 @@ interface Props {
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 
-export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline }: Props) {
+export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline }: Props) {  // _onGoToTab2 is used in batch submit
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os0_mode') as Mode) || 'twitter')
   const [input, setInput] = useState('')
   const [result, setResult] = useState('')
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+
+  // OS①バッチ処理
+  const [profileModalId, setProfileModalId] = useState<string | null>(null)
+  const [profileText, setProfileText] = useState('')
+  const [rtDetected, setRtDetected] = useState<string[]>([])
+  const [batchResult, setBatchResult] = useState('')
 
   // インバウンドモーダル
   const [inboundOpen, setInboundOpen] = useState(false)
@@ -200,6 +206,164 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     setInboundOpen(false)
     resetInbound()
   }
+
+  // ── OS①バッチ処理ヘルパー ────────────────────────────
+
+  function detectNewHandles(text: string, ownHandle: string): string[] {
+    const mentions = [...text.matchAll(/@[\w.]+/g)].map(m => normalizeHandle(m[0]))
+    const ownNorm = normalizeHandle(ownHandle)
+    const existing = new Set([
+      ...(data.screenings || []).map(s => normalizeHandle(s.handle)),
+      ...(data.targets || []).map(t => normalizeHandle(t.url)),
+      ...(data.pipeline || []).map(p => normalizeHandle(p.url)),
+      ...(data.excluded || []).map(e => normalizeHandle(e.handle)),
+    ])
+    return [...new Set(mentions)].filter(h => h && h !== ownNorm && !existing.has(h))
+  }
+
+  function handleOpenProfileModal(id: string) {
+    const s = data.screenings.find(x => x.id === id)
+    setProfileModalId(id)
+    setProfileText(s?.rawProfileText || '')
+    setRtDetected(s?.rawProfileText ? detectNewHandles(s.rawProfileText, s.handle) : [])
+  }
+
+  function handleProfileTextChange(text: string) {
+    setProfileText(text)
+    const s = data.screenings.find(x => x.id === profileModalId)
+    setRtDetected(s ? detectNewHandles(text, s.handle) : [])
+  }
+
+  function handleSaveToQueue() {
+    const id = profileModalId
+    if (!id || !profileText.trim()) { toast.show('プロフィールテキストを貼り付けてください', 2000); return }
+    const queuedCount = (data.screenings || []).filter(s => s.rawProfileText).length
+    const isNew = !(data.screenings.find(x => x.id === id)?.rawProfileText)
+    saveData(prev => ({
+      ...prev,
+      screenings: prev.screenings.map(s => s.id === id
+        ? { ...s, rawProfileText: profileText.trim(), os1QueuedAt: new Date().toISOString() }
+        : s),
+    }))
+    setProfileModalId(null)
+    setProfileText('')
+    setRtDetected([])
+    const newCount = queuedCount + (isNew ? 1 : 0)
+    if (newCount >= 5 && isNew) {
+      toast.show(`OS①待機が${newCount}件に達しました。バッチ処理できます！`, 3500)
+    } else {
+      toast.show(`OS①待機に追加しました（現在${newCount}件）`, 2000)
+    }
+  }
+
+  function handleRemoveFromQueue(id: string) {
+    saveData(prev => ({
+      ...prev,
+      screenings: prev.screenings.map(s => s.id === id
+        ? { ...s, rawProfileText: undefined, os1QueuedAt: undefined }
+        : s),
+    }))
+  }
+
+  function handleAddRtToOS0(handle: string, ch: Mode) {
+    const h = handle.startsWith('@') ? handle : '@' + handle
+    const s: Screening = {
+      id: uid(), createdAt: new Date().toISOString(),
+      channel: ch, displayName: '', handle: h,
+      verdict: '引用RT/RT検出', reason: 'RT・引用RTから自動検出',
+    }
+    saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), s] }))
+    setRtDetected(prev => prev.filter(x => x !== handle))
+    toast.show(`@${handle} をOS⓪リストに追加しました`, 2000)
+  }
+
+  function handleCopyBatchPrompt() {
+    const queued = (data.screenings || []).filter(s => s.rawProfileText)
+    if (queued.length === 0) { toast.show('OS①待機中のアカウントがありません', 2000); return }
+    const prompt = mode === 'instagram' ? prompts.OS1_IG : mode === 'threads' ? prompts.OS1_TH : prompts.OS1_X
+    if (!prompt) { toast.show('プロンプトを読み込み中です', 2000); return }
+    const profilesText = queued.map((s, i) =>
+      `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}`
+    ).join('\n\n')
+    const full = prompt
+      + `\n\n---\n■ バッチ処理 ${queued.length}件：上記フォーマットで各アカウントを順番に出力してください。アカウントとアカウントの間は「【アカウント情報】」から始まる次の出力で区切られます。\n\n`
+      + profilesText
+    copyText(full, () => toast.show(`${queued.length}人分のOS①プロンプトをコピーしました。AIに貼り付けてください`, 3000))
+  }
+
+  function handleBatchSubmit() {
+    const text = batchResult.trim()
+    if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
+    const queued = (data.screenings || []).filter(s => s.rawProfileText)
+    if (queued.length === 0) { toast.show('待機中のアカウントがありません', 2000); return }
+
+    const segments = text.split(/(?=【アカウント情報】)/).filter(s => s.includes('【アカウント情報】'))
+    if (segments.length === 0) {
+      toast.show('AIの出力に【アカウント情報】が見つかりません。形式を確認してください', 3000)
+      return
+    }
+
+    let addedCount = 0
+    let pipelineCount = 0
+    const processedIds = new Set<string>()
+
+    saveData(prev => {
+      const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline], screenings: [...prev.screenings] }
+      segments.forEach((seg, i) => {
+        const screening = queued[i]
+        if (!screening) return
+        const ch = screening.channel as Mode
+        const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
+        if (!parsed.accountName && !parsed.url) return
+
+        const targetId = uid()
+        const pid = parsed.track !== 'SKIP' ? uid() : null
+        const newTarget: Target = {
+          ...parsed,
+          id: targetId,
+          createdAt: new Date().toISOString(),
+          aiOutput: seg,
+          rawInput: screening.rawProfileText,
+          pipelineId: pid,
+          channel: ch,
+        } as Target
+        d.targets.push(newTarget)
+
+        if (pid) {
+          d.pipeline.push({
+            id: pid, targetId,
+            caseId: newTarget.caseId || null,
+            os1Output: seg,
+            accountName: newTarget.accountName,
+            url: newTarget.url,
+            channel: ch,
+            track: newTarget.track as 'FT' | 'NT' | 'SKIP',
+            hypothesis: newTarget.hypothesis,
+            startDate: newTarget.startDate || todayStr(),
+            currentStep: 'S1',
+            stepHistory: [{ step: 'S1', date: todayStr() }],
+            repCount: 0, dmCount: 0,
+            lastContactDate: todayStr(),
+            analyses: [], history: [], sentMessages: [], replies: [],
+            isOpen: true,
+          })
+          pipelineCount++
+        }
+        processedIds.add(screening.id)
+        addedCount++
+      })
+      d.screenings = d.screenings.filter(s => !processedIds.has(s.id))
+      return d
+    })
+
+    setBatchResult('')
+    setTimeout(() => {
+      toast.show(`${addedCount}件を登録（OS②に${pipelineCount}件追加）`, 3000)
+      if (pipelineCount > 0) setTimeout(() => _onGoToTab2(), 1200)
+    }, 0)
+  }
+
+  // ── 既存ハンドラ ───────────────────────────────────────
 
   function handleGoToOS1(id: string, channel: Mode) {
     const item = data.screenings.find(x => x.id === id)
@@ -365,12 +529,37 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                       <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-xs py-1.5 px-2.5 shrink-0">
                         <i className="fa-solid fa-arrow-up-right-from-square text-xs" />開く
                       </a>
-                      <button
-                        className="btn-sec text-xs py-1.5 px-2 shrink-0"
-                        onClick={() => handleGoToOS1(item.id, (item.channel as Mode) || 'twitter')}
-                      >
-                        <i className="fa-solid fa-arrow-right text-violet-500 mr-0.5" /><span className="hidden sm:inline">OS①へ</span>
-                      </button>
+                      {item.rawProfileText ? (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                            <i className="fa-solid fa-clock mr-0.5" />OS①待機中
+                          </span>
+                          <button
+                            className="w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-slate-500 hover:bg-slate-100 transition shrink-0"
+                            onClick={() => handleOpenProfileModal(item.id)}
+                            title="プロフィール文を編集"
+                          ><i className="fa-solid fa-pen text-[9px]" /></button>
+                          <button
+                            className="w-6 h-6 flex items-center justify-center rounded text-slate-300 hover:text-rose-400 hover:bg-rose-50 transition shrink-0"
+                            onClick={() => handleRemoveFromQueue(item.id)}
+                            title="待機を解除"
+                          ><i className="fa-solid fa-xmark text-[9px]" /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            className="btn-sec text-xs py-1.5 px-2 shrink-0"
+                            onClick={() => handleOpenProfileModal(item.id)}
+                          >
+                            <i className="fa-solid fa-clipboard-list text-violet-500 mr-0.5" /><span className="hidden sm:inline">OS①待機へ</span>
+                          </button>
+                          <button
+                            className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-300 hover:text-violet-500 hover:bg-violet-50 transition shrink-0"
+                            onClick={() => handleGoToOS1(item.id, (item.channel as Mode) || 'twitter')}
+                            title="OS①に今すぐ移動（単独処理）"
+                          ><i className="fa-solid fa-arrow-right text-xs" /></button>
+                        </div>
+                      )}
                       <button
                         className="w-9 h-9 flex items-center justify-center rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50 active:bg-rose-100 transition shrink-0"
                         onClick={() => handleDelete(item.id)}
@@ -440,6 +629,78 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
           </div>
         </section>
       </div>
+
+      {/* ── OS①バッチ処理セクション ───────────────────────── */}
+      {(() => {
+        const queued = (data.screenings || []).filter(s => s.rawProfileText)
+        if (queued.length === 0) return null
+        return (
+          <section className="flex flex-col gap-3">
+            <div className="card p-5 flex flex-col gap-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                    <i className="fa-solid fa-layer-group text-violet-500" />OS①バッチ処理
+                  </span>
+                  <span className="badge bg-violet-100 text-violet-700">{queued.length}件待機中</span>
+                  {queued.length >= 5 && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      <i className="fa-solid fa-bolt mr-0.5" />バッチ推奨
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* 待機中アカウント一覧 */}
+              <div className="flex flex-wrap gap-2">
+                {queued.map((s, i) => (
+                  <div key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 text-xs">
+                    <span className="text-violet-400 font-mono">#{i + 1}</span>
+                    <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
+                    <span className="text-violet-400">{s.handle}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* 左: プロンプトコピー */}
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-slate-500">
+                    <span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピーして外部AIで実行
+                  </p>
+                  <div className="text-[11px] text-slate-400 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                    現在のモード（{mode === 'instagram' ? 'Instagram' : mode === 'threads' ? 'Threads' : 'X'}）のOS①プロンプトに{queued.length}人分のプロフィールを付加します。
+                    {queued.some(s => s.channel !== mode) && (
+                      <span className="text-amber-600 ml-1">
+                        ※ チャネルが異なるアカウントが含まれています。
+                      </span>
+                    )}
+                  </div>
+                  <button className="btn-sec w-full justify-center font-bold" onClick={handleCopyBatchPrompt}>
+                    <i className="fa-solid fa-copy text-violet-500" />{queued.length}人分のOS①プロンプトをコピー
+                  </button>
+                </div>
+
+                {/* 右: 結果貼り付け */}
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-slate-500">
+                    <span className="font-bold text-slate-700">ステップ2：</span>AIの出力を貼り付けて一括登録
+                  </p>
+                  <textarea
+                    className="input-base h-24 cs text-xs"
+                    placeholder={`AIが出力した${queued.length}人分の【アカウント情報】〜【初回接触案】をそのまま貼り付け`}
+                    value={batchResult}
+                    onChange={e => setBatchResult(e.target.value)}
+                  />
+                  <button className="btn-primary w-full justify-center text-sm" onClick={handleBatchSubmit}>
+                    <i className="fa-solid fa-circle-check" />{queued.length}件を一括登録してOS②へ
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        )
+      })()}
 
       {/* ── インバウンドモーダル ─────────────────────────── */}
       {inboundOpen && (
@@ -530,6 +791,72 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
           </div>
         </div>
       )}
+
+      {/* ── プロフィール貼り付けモーダル ───────────────────── */}
+      {profileModalId && (() => {
+        const target = data.screenings.find(s => s.id === profileModalId)
+        if (!target) return null
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+            <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="p-4 flex items-center gap-2 bg-violet-50 border-b border-violet-100">
+                <i className="fa-solid fa-clipboard-list text-violet-600" />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-sm text-violet-800">OS①待機に追加：{target.displayName || target.handle}</p>
+                  <p className="text-[11px] text-violet-500">{target.handle} · プロフィール原文と投稿をコピペしてください</p>
+                </div>
+                <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setProfileModalId(null); setProfileText(''); setRtDetected([]) }}>
+                  <i className="fa-solid fa-xmark" />
+                </button>
+              </div>
+
+              <div className="p-4 overflow-y-auto flex flex-col gap-3 flex-1">
+                <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
+                  Xのプロフィールページ全体＋投稿一覧（RT・引用RTも含む）をそのままコピペしてください。
+                </div>
+                <textarea
+                  className="input-base h-56 cs text-xs"
+                  placeholder={`${target.displayName || target.handle} のプロフィール原文・投稿・RTなどをそのまま貼り付け`}
+                  value={profileText}
+                  onChange={e => handleProfileTextChange(e.target.value)}
+                  autoFocus
+                />
+
+                {/* RT/引用RT検出 */}
+                {rtDetected.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-amber-800">
+                      <i className="fa-solid fa-retweet mr-1" />RT・引用RT先のアカウントを検出（{rtDetected.length}件）
+                    </p>
+                    <p className="text-[11px] text-amber-600">まだOS⓪リストにないアカウントです。追加しますか？</p>
+                    <div className="flex flex-col gap-1">
+                      {rtDetected.map(h => (
+                        <div key={h} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
+                          <span className="text-xs font-mono text-slate-700">@{h}</span>
+                          <button
+                            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition"
+                            onClick={() => handleAddRtToOS0(h, (target.channel as Mode) || 'twitter')}
+                          >
+                            <i className="fa-solid fa-plus mr-0.5" />OS⓪に追加
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2">
+                <button className="btn-sec text-xs py-2 px-4" onClick={() => { setProfileModalId(null); setProfileText(''); setRtDetected([]) }}>キャンセル</button>
+                <button className="btn-primary text-xs py-2 px-4" onClick={handleSaveToQueue} disabled={!profileText.trim()}>
+                  <i className="fa-solid fa-check mr-1" />OS①待機に追加
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/26 インバウンド起点フロー追加: Tab0モーダル・突然DM直行・Tab2バッジ・OS②プロンプト連携";
+export const BUILD_LABEL = "06/26 OS⓪→OS①バッチ処理追加: プロフィール貼り付け→待機キュー→5人一括OS①→OS②";

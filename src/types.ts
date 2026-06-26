@@ -96,6 +96,8 @@ export interface Screening {
   signal_type?: 'いいね' | 'フォロー' | 'ストーリー反応' | '突然DM' | 'リプ';
   signal_date?: string;
   signal_memo?: string;
+  rawProfileText?: string;
+  os1QueuedAt?: string;
 }
 
 export interface Target {
