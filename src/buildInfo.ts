@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/26 効率化9項目実装: 本日やること/バルクタッチ/インライン反応/フィルタ/バッチ分割/一括OS②/通知リンク/除外90日/フロー整理";
+export const BUILD_LABEL = "06/26 Human-Check Loop全OS追加: 採点OS3ファイル除く19ファイルにAI人間性監査ブロック挿入";
