@@ -1719,6 +1719,29 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <div className="px-4 py-2.5 flex flex-wrap items-center gap-2 bg-slate-50 border-b border-slate-100">
             <StepsBar currentStep={item.currentStep} />
             <div className="ml-auto flex items-center gap-1">
+              {/* トラック変更 */}
+              {role === 'admin' && (
+                <select
+                  className="input-base text-[10px] py-1 px-2"
+                  style={{ maxWidth: 60 }}
+                  value={item.track}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => {
+                    saveData(prev => ({
+                      ...prev,
+                      pipeline: prev.pipeline.map(p =>
+                        p.id === item.id ? { ...p, track: e.target.value as import('../../types').Track } : p
+                      ),
+                    }))
+                    toast.show('トラックを変更しました')
+                  }}
+                >
+                  <option value="FT">FT</option>
+                  <option value="NT">NT</option>
+                  <option value="UT">UT</option>
+                  <option value="SKIP">SKIP</option>
+                </select>
+              )}
               {/* チャネル変更 */}
               {role === 'admin' && (
                 <select
