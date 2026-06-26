@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/26 OS①タブにバッチ処理セクション追加: OS⓪待機キューをTab1で直接確認・処理可能に";
+export const BUILD_LABEL = "06/26 OS②改善: 新規登録を今日やること追加・並び順修正・未判定一括コピー";

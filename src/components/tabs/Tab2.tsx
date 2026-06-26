@@ -385,6 +385,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   // ① 本日やること
   const [todayOpen, setTodayOpen] = useState(true)
 
+  // ③ 未判定一括コピー
+  const [nextActionBatchOpen, setNextActionBatchOpen] = useState(false)
+  const [nextActionCopyStates, setNextActionCopyStates] = useState<Record<string, 'idle' | 'copied'>>({})
+
   // ② バルクタッチ記録
   const [bulkTouchOpen, setBulkTouchOpen] = useState(false)
   const [bulkPostText, setBulkPostText] = useState('')
@@ -411,6 +415,11 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const warnIds = new Set(warnItems.map(w => w.id))
 
   function urgencySort(a: PipelineItem, b: PipelineItem): number {
+    // 0. no touches (brand new) → top, newest first
+    const aNew = (a.touches || []).length === 0
+    const bNew = (b.touches || []).length === 0
+    if (aNew !== bNew) return aNew ? -1 : 1
+    if (aNew && bNew) return new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime()
     // 1. 30d warn (forced close) > 7d warn > none
     const aWarn = warnIds.has(a.id) ? (daysSince(a.startDate) >= 30 ? 2 : 1) : 0
     const bWarn = warnIds.has(b.id) ? (daysSince(b.startDate) >= 30 ? 2 : 1) : 0
@@ -696,7 +705,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const todayTasks = active.filter(p => {
     const awaitingOld = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
     const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
-    return awaitingOld || recontactDue
+    const isNew = (p.touches || []).length === 0  // 新規登録（未接触）
+    return awaitingOld || recontactDue || isNew
+  })
+
+  // 未判定一括コピー対象: active かつ次アクション未決定
+  // (タッチなし OR 最終タッチが reacted で recontact_date 未設定)
+  const needsNextAction = active.filter(p => {
+    const touches = p.touches || []
+    if (touches.length === 0) return true
+    const lastTouch = [...touches].reverse()[0]
+    return lastTouch.status === 'reacted' && !p.recontact_date
   })
 
   return (
@@ -721,6 +740,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               {todayTasks.map(p => {
                 const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
                 const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
+                const isNew = (p.touches || []).length === 0
                 return (
                   <div
                     key={p.id}
@@ -730,8 +750,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                       <p className="font-semibold text-sm text-indigo-900 truncate">{p.accountName}</p>
                       <p className="text-[11px] text-indigo-600">
+                        {isNew && <span className="mr-2 font-bold text-emerald-600"><i className="fa-solid fa-star mr-1" />初回接触</span>}
                         {awaitingTouch && <span className="mr-2"><i className="fa-solid fa-clock mr-1" />48h反応待ち確認</span>}
-                        {recontactDue && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
+                        {recontactDue && !isNew && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
                       </p>
                     </div>
                     {awaitingTouch && (
@@ -930,6 +951,18 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </button>
           )}
           <div className="ml-auto flex gap-1 shrink-0">
+            {/* ③ 未判定一括コピー */}
+            {needsNextAction.length > 0 && (
+              <button
+                className="btn-sec text-[11px] py-1.5 px-2 text-emerald-700 border-emerald-300"
+                onClick={() => setNextActionBatchOpen(true)}
+                title="次アクション未決定の全件を順番にタッチ生成プロンプトコピー"
+              >
+                <i className="fa-solid fa-copy text-emerald-500" />
+                <span className="hidden sm:inline ml-1">未判定{needsNextAction.length}件コピー</span>
+                <span className="sm:hidden ml-1">{needsNextAction.length}</span>
+              </button>
+            )}
             {/* ② バルクタッチ */}
             <button className="btn-sec text-[11px] py-1.5 px-2 text-indigo-600 border-indigo-300" onClick={() => setBulkTouchOpen(true)} title="複数案件に同じタッチを一括記録">
               <i className="fa-solid fa-layer-group text-indigo-500" /><span className="hidden sm:inline ml-1">バルク記録</span>
@@ -1028,6 +1061,73 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           </div>
         )
       })()}
+
+      {/* ── ③ 未判定一括コピーモーダル ──────────────────────── */}
+      {nextActionBatchOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 flex items-center gap-2 bg-emerald-50 border-b border-emerald-100">
+              <i className="fa-solid fa-copy text-emerald-600" />
+              <p className="font-bold text-sm text-emerald-800 flex-1">未判定一括コピー（{needsNextAction.length}件）</p>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => setNextActionBatchOpen(false)}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500 px-4 pt-3 pb-1">
+              次アクション未決定の案件一覧です。各件の「コピー」を押してAIに貼り付け、タッチ生成を実行してください。
+            </p>
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
+              {needsNextAction.map((p, idx) => {
+                const isNew = (p.touches || []).length === 0
+                const lastTouch = [...(p.touches || [])].reverse()[0]
+                const copyState = nextActionCopyStates[p.id] || 'idle'
+                return (
+                  <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
+                    <span className="text-xs font-mono text-slate-300 shrink-0 w-6 text-right">{idx + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
+                      <p className="text-[11px] text-slate-400 truncate">
+                        {isNew
+                          ? <span className="text-emerald-600 font-bold"><i className="fa-solid fa-star mr-0.5" />初回接触</span>
+                          : <span><i className="fa-solid fa-rotate mr-0.5" />反応後・次アクション未決定（{lastTouch?.date?.slice(0, 10)}）</span>
+                        }
+                        <span className="ml-2">{p.currentStep} / {p.track}</span>
+                      </p>
+                    </div>
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        className="btn-sec text-xs py-1.5 px-2.5"
+                        onClick={() => setDrawerItemId(p.id)}
+                      >
+                        <i className="fa-solid fa-arrow-up-right-from-square text-xs" />開く
+                      </button>
+                      <button
+                        className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition ${copyState === 'copied' ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'}`}
+                        onClick={async () => {
+                          try {
+                            const prompt = await buildTouchPrompt(p, p.touches || [])
+                            await navigator.clipboard.writeText(prompt)
+                            setNextActionCopyStates(s => ({ ...s, [p.id]: 'copied' }))
+                            setTimeout(() => setNextActionCopyStates(s => ({ ...s, [p.id]: 'idle' })), 2500)
+                          } catch {
+                            toast.show('コピーに失敗しました', 2000)
+                          }
+                        }}
+                      >
+                        <i className={`fa-solid ${copyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1`} />
+                        {copyState === 'copied' ? 'コピー済' : 'コピー'}
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => setNextActionBatchOpen(false)}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ② バルクタッチ記録モーダル ───────────────────────── */}
       {bulkTouchOpen && (
