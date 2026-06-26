@@ -371,6 +371,7 @@ export type Prompts = {
   PHENOMENON_FUTURE?: string;
   LOG_OCR?: string;
   S1_ACTION?: string;
+  S1_ACTION_BATCH?: string;
   DM_JUDGE?: string;
   OS4_OTHER_ANALYSIS?: string;
   OS4_OWN_ANALYSIS?: string;

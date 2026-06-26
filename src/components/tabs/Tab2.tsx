@@ -8,7 +8,8 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS2 } from '../../utils/parser'
 import { buildPhenomenonFuturePrompt, parsePhenomenonFutureOutput, type PhenomenonFutureResult } from '../../utils/phenomenonFuturePrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
-import { buildTouchPrompt, buildTouchPromptFromTemplate, parseTouchOutput } from '../../utils/touchPrompt'
+import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
+import { buildBatchS1ActionPrompt, parseBatchS1ActionOutput, type BatchS1ActionItem } from '../../utils/batchS1ActionPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
@@ -382,11 +383,12 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [batchJudgError, setBatchJudgError] = useState<string | null>(null)
   const [batchJudgSuccess, setBatchJudgSuccess] = useState(false)
 
-  // 行動判定プロンプト一括
-  const [batchTouchOpen, setBatchTouchOpen] = useState(false)
-  const [batchTouchAllCopyState, setBatchTouchAllCopyState] = useState<'idle' | 'copying' | 'copied'>('idle')
-  const [batchTouchItemStates, setBatchTouchItemStates] = useState<Record<string, 'idle' | 'copied'>>({})
-  const [batchTouchTemplate, setBatchTouchTemplate] = useState<string | null>(null)
+  // 行動判定プロンプト一括（S1バッチ）
+  const [batchS1Open, setBatchS1Open] = useState(false)
+  const [batchS1CopyState, setBatchS1CopyState] = useState<'idle' | 'copied'>('idle')
+  const [batchS1Output, setBatchS1Output] = useState('')
+  const [batchS1ApplyState, setBatchS1ApplyState] = useState<'idle' | 'applied'>('idle')
+  const [batchS1Error, setBatchS1Error] = useState<string | null>(null)
 
   // ① 本日やること
   const [todayOpen, setTodayOpen] = useState(true)
@@ -627,40 +629,66 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     }
   }
 
-  async function ensureBatchTouchTemplate(): Promise<string> {
-    if (batchTouchTemplate) return batchTouchTemplate
-    const t = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
-    setBatchTouchTemplate(t)
-    return t
+  function handleBatchS1Copy() {
+    if (!prompts.S1_ACTION_BATCH) { toast.show('プロンプトを読み込み中です', 2000); return }
+    if (pendingS1Touches.length === 0) { toast.show('行動判定が必要なタッチはありません', 2000); return }
+    const prompt = buildBatchS1ActionPrompt(pendingS1Touches, prompts.S1_ACTION_BATCH)
+    navigator.clipboard.writeText(prompt).then(() => {
+      setBatchS1CopyState('copied')
+      setTimeout(() => setBatchS1CopyState('idle'), 2500)
+    }).catch(() => toast.show('コピーに失敗しました', 2000))
   }
 
-  async function handleBatchTouchCopyAll() {
-    setBatchTouchAllCopyState('copying')
-    try {
-      const template = await ensureBatchTouchTemplate()
-      const items = active
-      const parts = items.map((p, i) =>
-        `## ${i + 1}. ${p.accountName}\n\n` + buildTouchPromptFromTemplate(p, p.touches || [], template)
-      )
-      await navigator.clipboard.writeText(parts.join('\n\n---\n\n'))
-      setBatchTouchAllCopyState('copied')
-      setTimeout(() => setBatchTouchAllCopyState('idle'), 2500)
-    } catch {
-      toast.show('コピーに失敗しました', 2000)
-      setBatchTouchAllCopyState('idle')
+  function handleBatchS1Apply() {
+    setBatchS1Error(null)
+    if (!batchS1Output.trim()) { setBatchS1Error('AI出力を貼り付けてください'); return }
+    const results = parseBatchS1ActionOutput(batchS1Output, pendingS1Touches)
+    if (results.length === 0) {
+      setBatchS1Error('AI出力の形式が認識できませんでした。===S1_RESULT_START=== を含む出力を貼り付けてください。')
+      return
     }
-  }
-
-  async function handleBatchTouchCopyItem(p: PipelineItem) {
-    try {
-      const template = await ensureBatchTouchTemplate()
-      const prompt = buildTouchPromptFromTemplate(p, p.touches || [], template)
-      await navigator.clipboard.writeText(prompt)
-      setBatchTouchItemStates(s => ({ ...s, [p.id]: 'copied' }))
-      setTimeout(() => setBatchTouchItemStates(s => ({ ...s, [p.id]: 'idle' })), 2500)
-    } catch {
-      toast.show('コピーに失敗しました', 2000)
+    const byPipeline: Record<string, typeof results> = {}
+    for (const r of results) {
+      if (!byPipeline[r.pipelineId]) byPipeline[r.pipelineId] = []
+      byPipeline[r.pipelineId].push(r)
     }
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => {
+        const pResults = byPipeline[p.id]
+        if (!pResults || pResults.length === 0) return p
+        let extra: Partial<PipelineItem> = {}
+        for (const r of pResults) {
+          if (r.judgment === '休眠') {
+            const d = new Date(); d.setDate(d.getDate() + 30)
+            extra = { state: 'sleeping', recontact_date: d.toISOString().slice(0, 10) }
+          } else if (r.judgment === '保管') {
+            const d = new Date(); d.setDate(d.getDate() + 180)
+            extra = { state: 'archived', recontact_date: d.toISOString().slice(0, 10) }
+          }
+        }
+        return {
+          ...p,
+          ...extra,
+          touches: (p.touches || []).map(t => {
+            const r = pResults.find(res => res.touchId === t.id)
+            if (!r) return t
+            return {
+              ...t,
+              reactionJudgment: r.judgment,
+              reactionNextStep: r.nextStep,
+              reactionWarning: r.warning,
+              reactionReplyA: r.replyA,
+              reactionReplyB: r.replyB,
+            }
+          }),
+        }
+      }),
+    }))
+    setBatchS1ApplyState('applied')
+    setBatchS1Output('')
+    toast.show(`${results.length}件の行動判定を記録しました`)
+    setTimeout(() => { setBatchS1ApplyState('idle'); setBatchS1Open(false) }, 1500)
   }
 
   function handleBulkTouchSubmit() {
@@ -759,6 +787,25 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     const lastTouch = [...touches].reverse()[0]
     return lastTouch.status === 'reacted' && !p.recontact_date
   })
+
+  // S1行動判定が未完了のタッチ一覧（一括バッチ対象）
+  const pendingS1Touches: BatchS1ActionItem[] = (() => {
+    const items: BatchS1ActionItem[] = []
+    let idx = 1
+    for (const p of data.pipeline) {
+      if (!p.isOpen) continue
+      for (const t of (p.touches || [])) {
+        if (
+          t.status !== 'awaiting_reaction' &&
+          (!t.threadEntry || t.threadEntry === 's1_story_reply') &&
+          !t.reactionJudgment
+        ) {
+          items.push({ index: idx++, pipelineId: p.id, touchId: t.id, pipelineItem: p, touch: t })
+        }
+      }
+    }
+    return items
+  })()
 
   return (
     <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
@@ -1009,13 +1056,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <button className="btn-sec text-[11px] py-1.5 px-2 text-indigo-600 border-indigo-300" onClick={() => setBulkTouchOpen(true)} title="複数案件に同じタッチを一括記録">
               <i className="fa-solid fa-layer-group text-indigo-500" /><span className="hidden sm:inline ml-1">バルク記録</span>
             </button>
-            <button
-              className="btn-sec text-[11px] py-1.5 px-2 text-sky-700 border-sky-300"
-              onClick={() => { setBatchTouchOpen(true); setBatchTouchItemStates({}) }}
-              title="全員の行動判定プロンプトを一括コピー"
-            >
-              <i className="fa-solid fa-bolt text-sky-500" /><span className="hidden sm:inline ml-1">行動判定</span>
-            </button>
+            {pendingS1Touches.length > 0 && (
+              <button
+                className="btn-sec text-[11px] py-1.5 px-2 text-sky-700 border-sky-300"
+                onClick={() => setBatchS1Open(true)}
+                title="S1行動判定プロンプトを一括コピー・取り込み"
+              >
+                <i className="fa-solid fa-bolt text-sky-500" />
+                <span className="hidden sm:inline ml-1">行動判定{pendingS1Touches.length}件</span>
+                <span className="sm:hidden ml-1">{pendingS1Touches.length}</span>
+              </button>
+            )}
             <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
               <i className="fa-solid fa-file-arrow-down text-slate-400" /><span className="hidden sm:inline ml-1">MD出力</span>
             </button>
@@ -1178,80 +1229,90 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         </div>
       )}
 
-      {/* ── 行動判定プロンプト一括コピーモーダル ──────────────── */}
-      {batchTouchOpen && (
+      {/* ── S1行動判定 一括バッチモーダル ──────────────── */}
+      {batchS1Open && (
         <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
             <div className="p-4 flex items-center gap-2 bg-sky-50 border-b border-sky-100">
               <i className="fa-solid fa-bolt text-sky-600" />
-              <p className="font-bold text-sm text-sky-800 flex-1">行動判定プロンプト 一括コピー（{active.length}件）</p>
-              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => setBatchTouchOpen(false)}>
+              <p className="font-bold text-sm text-sky-800 flex-1">行動判定 一括処理（{pendingS1Touches.length}件）</p>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setBatchS1Open(false); setBatchS1Output(''); setBatchS1Error(null) }}>
                 <i className="fa-solid fa-xmark" />
               </button>
             </div>
 
-            <div className="px-4 pt-3 pb-2">
-              <button
-                className={`w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
-                  batchTouchAllCopyState === 'copied'
-                    ? 'bg-emerald-500 border-emerald-500 text-white'
-                    : batchTouchAllCopyState === 'copying'
-                      ? 'bg-sky-100 border-sky-300 text-sky-500'
+            <div className="overflow-y-auto flex-1 flex flex-col gap-0">
+              {/* STEP 1 */}
+              <div className="px-4 pt-4 pb-3">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">STEP 1 — プロンプトをコピーしてAIに渡す</p>
+                <button
+                  className={`w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
+                    batchS1CopyState === 'copied'
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
                       : 'bg-sky-600 border-sky-600 text-white hover:bg-sky-700'
-                }`}
-                onClick={handleBatchTouchCopyAll}
-                disabled={batchTouchAllCopyState === 'copying'}
-              >
-                <i className={`fa-solid ${batchTouchAllCopyState === 'copied' ? 'fa-check' : batchTouchAllCopyState === 'copying' ? 'fa-spinner fa-spin' : 'fa-copy'}`} />
-                {batchTouchAllCopyState === 'copied'
-                  ? `✓ ${active.length}件まとめてコピーしました`
-                  : batchTouchAllCopyState === 'copying'
-                    ? '生成中...'
-                    : `全員分まとめてコピー（${active.length}件）`
-                }
-              </button>
-              <p className="text-[10px] text-slate-400 text-center mt-1.5">各人のプロンプトを --- 区切りで1テキストに結合してコピーします</p>
-            </div>
+                  }`}
+                  onClick={handleBatchS1Copy}
+                >
+                  <i className={`fa-solid ${batchS1CopyState === 'copied' ? 'fa-check' : 'fa-copy'}`} />
+                  {batchS1CopyState === 'copied'
+                    ? `✓ ${pendingS1Touches.length}件まとめてコピーしました`
+                    : `まとめてコピー（${pendingS1Touches.length}件）`
+                  }
+                </button>
+              </div>
 
-            <div className="border-t border-slate-100 mx-4 mb-2" />
+              {/* STEP 2 */}
+              <div className="px-4 pb-4 border-t border-slate-100 pt-3">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">STEP 2 — AI出力を貼り付けて取り込む</p>
+                <textarea
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-sky-300 bg-slate-50"
+                  rows={5}
+                  placeholder={"===S1_RESULT_START=== 1 ===\n判定: ...\n===S1_RESULT_END=== 1 ===\n\n===S1_RESULT_START=== 2 ===\n..."}
+                  value={batchS1Output}
+                  onChange={e => { setBatchS1Output(e.target.value); setBatchS1Error(null) }}
+                />
+                {batchS1Error && (
+                  <p className="text-[11px] text-rose-600 mt-1.5 bg-rose-50 rounded-lg px-3 py-2">{batchS1Error}</p>
+                )}
+                <button
+                  className={`mt-2 w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
+                    batchS1ApplyState === 'applied'
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                  onClick={handleBatchS1Apply}
+                  disabled={batchS1ApplyState === 'applied'}
+                >
+                  <i className={`fa-solid ${batchS1ApplyState === 'applied' ? 'fa-check' : 'fa-file-import'}`} />
+                  {batchS1ApplyState === 'applied' ? '取り込み完了' : '判定を取り込む'}
+                </button>
+              </div>
 
-            <p className="text-[11px] text-slate-500 px-4 pb-1">または個別にコピー：</p>
-            <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
-              {active.map((p, idx) => {
-                const copyState = batchTouchItemStates[p.id] || 'idle'
-                const isNew = (p.touches || []).length === 0
-                const lastTouch = [...(p.touches || [])].reverse()[0]
-                return (
-                  <div key={p.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50">
-                    <span className="text-xs font-mono text-slate-300 shrink-0 w-6 text-right">{idx + 1}</span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
-                      <p className="text-[11px] text-slate-400">
-                        {isNew
-                          ? <span className="text-emerald-600 font-bold"><i className="fa-solid fa-star mr-0.5" />初回</span>
-                          : <span>{lastTouch?.date?.slice(0, 10)} · タッチ{(p.touches || []).length}回</span>
-                        }
-                        <span className="ml-2 text-[10px]">{p.currentStep} / {p.track}</span>
-                      </p>
+              {/* 対象一覧 */}
+              <div className="border-t border-slate-100">
+                <p className="text-[11px] text-slate-400 px-4 py-2 font-medium">対象タッチ（{pendingS1Touches.length}件）</p>
+                <div className="divide-y divide-slate-50">
+                  {pendingS1Touches.map(item => (
+                    <div key={`${item.pipelineId}-${item.touchId}`} className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="text-[11px] font-bold text-slate-400 w-5 shrink-0">{item.index}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-xs text-slate-800 truncate">{item.pipelineItem.accountName}</p>
+                        <p className="text-[10px] text-slate-400 truncate">
+                          {item.touch.targetPostType || '投稿種別不明'}
+                          {item.touch.reactionNote
+                            ? <span className="ml-1 text-violet-500">・返信あり</span>
+                            : <span className="ml-1"> — {reactionDisplay(item.touch.reactionType)}</span>
+                          }
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition shrink-0 ${
-                        copyState === 'copied'
-                          ? 'bg-emerald-500 border-emerald-500 text-white'
-                          : 'bg-sky-50 border-sky-300 text-sky-700 hover:bg-sky-100'
-                      }`}
-                      onClick={() => handleBatchTouchCopyItem(p)}
-                    >
-                      <i className={`fa-solid ${copyState === 'copied' ? 'fa-check' : 'fa-copy'} mr-1`} />
-                      {copyState === 'copied' ? 'コピー済' : 'コピー'}
-                    </button>
-                  </div>
-                )
-              })}
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
-              <button className="btn-sec text-xs py-2 px-4" onClick={() => setBatchTouchOpen(false)}>閉じる</button>
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => { setBatchS1Open(false); setBatchS1Output(''); setBatchS1Error(null) }}>閉じる</button>
             </div>
           </div>
         </div>

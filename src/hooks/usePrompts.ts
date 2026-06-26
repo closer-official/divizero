@@ -16,6 +16,7 @@ export async function loadPrompts(): Promise<Prompts> {
     PHENOMENON_FUTURE: '/prompts/OS_現象未来_latest.md',
     LOG_OCR: '/prompts/OS_会話ログOCR_latest.md',
     S1_ACTION: '/prompts/OS_S1リアクション後行動判定_latest.md',
+    S1_ACTION_BATCH: '/prompts/OS_S1行動判定_バッチ_latest.md',
     DM_JUDGE: '/prompts/OS_DM文面判定_latest.md',
     OS4_OTHER_ANALYSIS: '/prompts/OS4_他社投稿分析_latest.md',
     OS4_OWN_ANALYSIS: '/prompts/OS4_自社投稿分析_latest.md',
