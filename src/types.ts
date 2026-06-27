@@ -132,6 +132,8 @@ export interface Target {
   pipelineId?: string | null;
   rawInput?: string;
   aiOutput?: string;
+  salesExpectation?: number;
+  salesExpectationReason?: string;
 }
 
 export interface SentMessage {

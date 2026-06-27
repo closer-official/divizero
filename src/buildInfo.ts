@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/27 待機日数復活・salesExpectation手動入力UI追加・バッチパーサー更新";
+export const BUILD_LABEL = "06/27 OS②営業期待値AI再判定ボタン追加: os1Output自動解析→フォールバックにミニプロンプトフロー";

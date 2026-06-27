@@ -42,6 +42,11 @@ export function parseOS1(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
+  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
+  const salesExpRaw = field(salesExpBlock, 'スコア');
+  const salesExpMatch = salesExpRaw.match(/(\d+)/);
+  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
+  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -51,7 +56,8 @@ export function parseOS1(text: string) {
     partnerFlag, nextAction, dmRoute, startDate: field(text, '接触開始日'),
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
-    dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote, channel: 'twitter' as const,
+    dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote,
+    channel: 'twitter' as const, salesExpectation, salesExpectationReason,
   };
 }
 
@@ -77,6 +83,11 @@ export function parseOS1Instagram(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
+  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
+  const salesExpRaw = field(salesExpBlock, 'スコア');
+  const salesExpMatch = salesExpRaw.match(/(\d+)/);
+  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
+  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -88,7 +99,7 @@ export function parseOS1Instagram(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     storyA: saM ? cleanMsg(saM[1]) : '', storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote, dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
-    dmNote, channel: 'instagram' as const,
+    dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason,
   };
 }
 
@@ -110,6 +121,11 @@ export function parseOS1Threads(text: string) {
   const dmRoute = field(text, '連動IG') || field(text, 'DM導線');
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
+  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
+  const salesExpRaw = field(salesExpBlock, 'スコア');
+  const salesExpMatch = salesExpRaw.match(/(\d+)/);
+  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
+  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
   return {
     caseId: field(text, '案件ID'),
     accountName: field(text, 'アカウント名') || field(text, 'アカウント名（表示名）'),
@@ -121,7 +137,7 @@ export function parseOS1Threads(text: string) {
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
-    dmNote, channel: 'threads' as const,
+    dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason,
   };
 }
 

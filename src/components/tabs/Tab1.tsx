@@ -135,6 +135,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           currentStep: 'S1', stepHistory: [{ step: 'S1', date: todayStr() }],
           repCount: 0, dmCount: 0, lastContactDate: todayStr(),
           analyses: [], history: [], sentMessages: [], replies: [], isOpen: true,
+          salesExpectation: tgt.salesExpectation,
+          salesExpectationReason: tgt.salesExpectationReason,
         })
       })
       return d
@@ -210,6 +212,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             lastContactDate: todayStr(),
             analyses: [], history: [], sentMessages: [], replies: [],
             isOpen: true,
+            salesExpectation: newTarget.salesExpectation,
+            salesExpectationReason: newTarget.salesExpectationReason,
           })
           pipelineCount++
         }
@@ -308,6 +312,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         sentMessages: [],
         replies: [],
         isOpen: true,
+        salesExpectation: tgt.salesExpectation,
+        salesExpectationReason: tgt.salesExpectationReason,
       })
       return d
     })

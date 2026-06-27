@@ -5,7 +5,7 @@ import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn,
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
-import { parseOS2 } from '../../utils/parser'
+import { parseOS2, block, field } from '../../utils/parser'
 import { buildPhenomenonFuturePrompt, parsePhenomenonFutureOutput, type PhenomenonFutureResult } from '../../utils/phenomenonFuturePrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
@@ -1542,6 +1542,10 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [editingSalesExp, setEditingSalesExp] = useState(false)
   const [salesExpInput, setSalesExpInput] = useState('')
   const [salesExpReasonInput, setSalesExpReasonInput] = useState('')
+  const [salesExpAiOpen, setSalesExpAiOpen] = useState(false)
+  const [salesExpAiCopyState, setSalesExpAiCopyState] = useState<'idle' | 'copied'>('idle')
+  const [salesExpAiOutput, setSalesExpAiOutput] = useState('')
+  const [salesExpAiError, setSalesExpAiError] = useState<string | null>(null)
   const addFormRef = useRef<HTMLDivElement>(null)
 
   // AI generation (touch prompt)
@@ -2068,9 +2072,41 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     </span>
                   </div>
                 ) : (
-                  <p className="text-[11px] text-amber-600 font-medium">
-                    ⚠ 営業期待値が未設定です。「営業期待値を編集」から手動入力してください。
-                  </p>
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-[11px] text-amber-600 font-medium">⚠ 営業期待値が未設定です</p>
+                    {role === 'admin' && (
+                      <button
+                        className="self-start text-[10px] font-bold text-violet-600 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-1 rounded-lg transition flex items-center gap-1"
+                        onClick={() => {
+                          // Try auto-parse from stored OS1 output first
+                          if (item.os1Output) {
+                            const salesExpBlock = block(item.os1Output, '営業期待値スコア（0〜40）')
+                            if (salesExpBlock) {
+                              const salesExpRaw = field(salesExpBlock, 'スコア')
+                              const salesExpMatch = salesExpRaw.match(/(\d+)/)
+                              if (salesExpMatch) {
+                                const score = Math.min(40, Math.max(0, parseInt(salesExpMatch[1], 10)))
+                                const reason = field(salesExpBlock, '根拠')
+                                setSalesExpInput(String(score))
+                                setSalesExpReasonInput(reason)
+                                setSalesExpAiOpen(false)
+                                setEditingSalesExp(true)
+                                toast.show(`OS①出力から${score}点を検出しました。確認して保存してください。`)
+                                return
+                              }
+                            }
+                          }
+                          // Fall back to mini re-judgment prompt flow
+                          setSalesExpAiOpen(v => !v)
+                          setSalesExpAiOutput('')
+                          setSalesExpAiError(null)
+                        }}
+                      >
+                        <i className="fa-solid fa-wand-magic-sparkles text-[9px]" />
+                        AIで自動判定する
+                      </button>
+                    )}
+                  </div>
                 )}
                 {item.salesExpectationReason && (
                   <div>
@@ -2080,6 +2116,84 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 )}
               </>
             )}
+
+            {/* 営業期待値 AI再判定パネル */}
+            {!editingSalesExp && salesExpAiOpen && item.salesExpectation === undefined && (() => {
+              const miniPrompt = `以下の案件情報を元に、OS①の営業期待値（0〜40点）を採点してください。
+
+アカウント名：${item.accountName}
+チャネル：${item.channel}
+トラック：${item.track}
+事前仮説：${item.hypothesis || '未設定'}
+
+【採点基準】
+40点：課題が明確・予算あり・決定権あり（即クローズ見込み）
+35点：仮説に高適合・課題顕在化・ファストトラック相当
+25点：仮説あり・課題は潜在的（通常育成ルート）
+15点：仮説があいまい・要再判断
+0点：仮説なし・合わない
+
+以下のフォーマットで出力してください（他は書かないこと）：
+スコア：N点
+根拠：（採点理由を2〜3文で記載）`
+              return (
+                <div className="flex flex-col gap-2 bg-violet-50 border border-violet-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold text-violet-700">営業期待値AI再判定</p>
+                    <button
+                      className="text-[10px] text-slate-400 hover:text-slate-600"
+                      onClick={() => { setSalesExpAiOpen(false); setSalesExpAiError(null); setSalesExpAiOutput('') }}
+                    >✕ 閉じる</button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">①下のプロンプトをコピー → 外部AI（Gemini等）で実行 → ②出力を貼り付け → ③「判定を適用」</p>
+                  <button
+                    className={`self-start btn-sec text-[10px] py-1 px-2 flex items-center gap-1 transition ${salesExpAiCopyState === 'copied' ? 'text-green-600 border-green-400' : ''}`}
+                    onClick={() => {
+                      copyText(miniPrompt, () => {
+                        setSalesExpAiCopyState('copied')
+                        setTimeout(() => setSalesExpAiCopyState('idle'), 2000)
+                      })
+                    }}
+                  >
+                    <i className={`fa-${salesExpAiCopyState === 'copied' ? 'solid fa-check' : 'regular fa-copy'} text-[9px]`} />
+                    {salesExpAiCopyState === 'copied' ? 'コピーしました' : 'プロンプトをコピー'}
+                  </button>
+                  <textarea
+                    rows={3}
+                    className="input-base cs text-[11px] resize-y"
+                    placeholder={'AIの出力を貼り付けてください\n（例）スコア：30点\n根拠：...'}
+                    value={salesExpAiOutput}
+                    onChange={e => { setSalesExpAiOutput(e.target.value); setSalesExpAiError(null) }}
+                  />
+                  {salesExpAiError && (
+                    <p className="text-[10px] text-rose-600">{salesExpAiError}</p>
+                  )}
+                  <button
+                    className="btn-primary text-xs py-1.5 justify-center"
+                    style={{ background: '#7c3aed' }}
+                    disabled={!salesExpAiOutput.trim()}
+                    onClick={() => {
+                      const scoreRaw = field(salesExpAiOutput, 'スコア')
+                      const scoreMatch = scoreRaw.match(/(\d+)/)
+                      if (!scoreMatch) {
+                        setSalesExpAiError('「スコア：N点」の形式が見つかりません。AI出力を確認してください。')
+                        return
+                      }
+                      const score = Math.min(40, Math.max(0, parseInt(scoreMatch[1], 10)))
+                      const reason = field(salesExpAiOutput, '根拠')
+                      setSalesExpInput(String(score))
+                      setSalesExpReasonInput(reason)
+                      setSalesExpAiOpen(false)
+                      setSalesExpAiOutput('')
+                      setEditingSalesExp(true)
+                      toast.show(`${score}点を検出しました。確認して保存してください。`)
+                    }}
+                  >
+                    <i className="fa-solid fa-check mr-1" />判定を適用して編集フォームへ
+                  </button>
+                </div>
+              )
+            })()}
 
             {/* 営業期待値 — 編集モード */}
             {editingSalesExp && (
