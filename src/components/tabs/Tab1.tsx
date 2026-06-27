@@ -24,7 +24,20 @@ const TRACK_TIPS: Record<string, string> = {
   SKIP: '接触対象外（除外フィルター該当）'
 }
 
-type Prefill = { displayName: string; handle: string; channel: string }
+type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }
+
+function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }): string {
+  const actionsList = item.inbound_actions?.length
+    ? item.inbound_actions
+    : item.signal_type ? [item.signal_type] : []
+  const actionsStr = actionsList.join('、')
+  if (!actionsStr || (!item.is_inbound && !actionsList.length)) return ''
+  let ctx = `\n\n【インバウンド情報（重要）】\nこの相手からは既にアクション（${actionsStr}）が来ています。接触ハードルが低いため、これを含味して仮説構築および初回アプローチ案を生成してください。`
+  if (actionsStr.includes('DM')) {
+    ctx += `\n※注意：相手から既にDMが届いているため、初手のアプローチは「公開リプ」ではなく「DMへの返信」になります。初回リプ案A・Bの出力枠を利用して、相手のDMに対する自然な返信案（1対1の親しみやすいトーン）を生成してください。`
+  }
+  return ctx
+}
 
 export default function Tab1({ data, saveData, prompts, role, toast, confirm, onGoToTab2 }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os_screening_mode') as Mode) || 'twitter')
@@ -54,7 +67,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     else if (mode === 'threads') prompt = prompts.OS1_TH
     else prompt = prompts.OS1_X
     if (!prompt) { toast.show('プロンプトを読み込み中です'); return }
-    copyText(prompt, () => toast.show('分析プロンプトをコピーしました。AIにスクショと一緒に貼り付けてください'))
+    const inboundCtx = prefill ? buildInboundContext(prefill) : ''
+    copyText(prompt + inboundCtx, () => toast.show('分析プロンプトをコピーしました。AIにスクショと一緒に貼り付けてください'))
   }
 
   function handleSubmit() {
@@ -148,9 +162,10 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   function buildBatchPrompt(items: Screening[], ch: Mode): string {
     const prompt = ch === 'instagram' ? prompts.OS1_IG : ch === 'threads' ? prompts.OS1_TH : prompts.OS1_X
     if (!prompt) return ''
-    const profilesText = items.map((s, i) =>
-      `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}`
-    ).join('\n\n')
+    const profilesText = items.map((s, i) => {
+      const inboundCtx = buildInboundContext(s)
+      return `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}${inboundCtx}`
+    }).join('\n\n')
     return prompt
       + `\n\n---\n■ バッチ処理 ${items.length}件：上記フォーマットで各アカウントを順番に出力してください。アカウントとアカウントの間は「【アカウント情報】」から始まる次の出力で区切られます。\n\n`
       + profilesText

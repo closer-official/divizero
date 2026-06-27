@@ -375,6 +375,9 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         displayName: item.displayName || '',
         handle: item.handle || '',
         channel,
+        is_inbound: item.is_inbound,
+        inbound_actions: item.inbound_actions,
+        signal_type: item.signal_type,
       }))
     }
     saveData(prev => ({ ...prev, screenings: prev.screenings.filter(x => x.id !== id) }))
