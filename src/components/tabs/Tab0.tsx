@@ -225,40 +225,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     if (!target) return
 
     const signalArray = Array.from(ibSignals) as SignalType[]
-    const isDirect = profileIsInbound && ibSignals.has('突然DM')
-
-    // 突然DM: OS②に直接追加（プロフィールテキスト不要）
-    if (isDirect) {
-      const primarySignal = signalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
-      const pipelineItem: PipelineItem = {
-        id: uid(),
-        accountName: target.displayName || target.handle,
-        url: target.handle,
-        channel: target.channel,
-        track: 'NT',
-        startDate: todayStr(),
-        currentStep: 'S2',
-        stepHistory: [{ step: 'S2', date: todayStr() }],
-        repCount: 0, dmCount: 0,
-        lastContactDate: ibDate,
-        analyses: [], history: [], sentMessages: [], replies: [], touches: [],
-        isOpen: true,
-        state: 'active',
-        temperature: SIGNAL_TEMP[primarySignal],
-        isInbound: true,
-        inboundActions: signalArray,
-        inbound_signal: { type: primarySignal, date: ibDate, memo: ibMemo.trim() || undefined },
-      }
-      saveData(prev => ({
-        ...prev,
-        screenings: prev.screenings.filter(s => s.id !== id),
-        pipeline: [...prev.pipeline, pipelineItem],
-      }))
-      toast.show(`「${target.displayName || target.handle}」をOS②パイプラインに追加しました`, 2500)
-      resetProfileModal()
-      setTimeout(() => _onGoToTab2(), 800)
-      return
-    }
 
     if (!profileText.trim()) { toast.show('プロフィールテキストを貼り付けてください', 2000); return }
 
@@ -821,7 +787,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       {profileModalId && (() => {
         const target = data.screenings.find(s => s.id === profileModalId)
         if (!target) return null
-        const isDirect = profileIsInbound && ibSignals.has('突然DM')
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
             <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -872,9 +837,9 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                             </label>
                           ))}
                         </div>
-                        {isDirect && (
+                        {ibSignals.has('突然DM') && (
                           <p className="text-[11px] text-teal-700 bg-teal-100 border border-teal-200 rounded-lg px-2.5 py-1.5">
-                            <i className="fa-solid fa-bolt mr-1" />突然DMを含むため、OS①をスキップしてOS②（パイプライン）に直接追加します
+                            <i className="fa-solid fa-bolt mr-1" />突然DMを含む場合もOS①で仮説・評価を行います。インバウンド温度はOS②移行時に加算されます。
                           </p>
                         )}
                       </div>
@@ -893,62 +858,55 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                   )}
                 </div>
 
-                {/* プロフィールテキスト（突然DM直行の場合は非表示） */}
-                {!isDirect && (
-                  <>
-                    <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                      <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
-                      Xのプロフィールページ全体＋投稿一覧（RT・引用RTも含む）をそのままコピペしてください。
-                    </div>
-                    <textarea
-                      className="input-base h-48 cs text-xs"
-                      placeholder={`${target.displayName || target.handle} のプロフィール原文・投稿・RTなどをそのまま貼り付け`}
-                      value={profileText}
-                      onChange={e => handleProfileTextChange(e.target.value)}
-                      autoFocus={!profileIsInbound}
-                    />
+                {/* プロフィールテキスト */}
+                <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
+                  Xのプロフィールページ全体＋投稿一覧（RT・引用RTも含む）をそのままコピペしてください。
+                </div>
+                <textarea
+                  className="input-base h-48 cs text-xs"
+                  placeholder={`${target.displayName || target.handle} のプロフィール原文・投稿・RTなどをそのまま貼り付け`}
+                  value={profileText}
+                  onChange={e => handleProfileTextChange(e.target.value)}
+                  autoFocus={!profileIsInbound}
+                />
 
-                    {/* RT/引用RT検出 */}
-                    {rtDetected.length > 0 && (
-                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-2">
-                        <p className="text-xs font-bold text-amber-800">
-                          <i className="fa-solid fa-retweet mr-1" />RT・引用RT先のアカウントを検出（{rtDetected.length}件）
-                        </p>
-                        <p className="text-[11px] text-amber-600">まだOS⓪リストにないアカウントです。追加しますか？</p>
-                        <div className="flex flex-col gap-1">
-                          {rtDetected.map(h => (
-                            <div key={h} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
-                              <span className="text-xs font-mono text-slate-700">@{h}</span>
-                              <button
-                                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition"
-                                onClick={() => handleAddRtToOS0(h, (target.channel as Mode) || 'twitter')}
-                              >
-                                <i className="fa-solid fa-plus mr-0.5" />OS⓪に追加
-                              </button>
-                            </div>
-                          ))}
+                {/* RT/引用RT検出 */}
+                {rtDetected.length > 0 && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-2">
+                    <p className="text-xs font-bold text-amber-800">
+                      <i className="fa-solid fa-retweet mr-1" />RT・引用RT先のアカウントを検出（{rtDetected.length}件）
+                    </p>
+                    <p className="text-[11px] text-amber-600">まだOS⓪リストにないアカウントです。追加しますか？</p>
+                    <div className="flex flex-col gap-1">
+                      {rtDetected.map(h => (
+                        <div key={h} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
+                          <span className="text-xs font-mono text-slate-700">@{h}</span>
+                          <button
+                            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition"
+                            onClick={() => handleAddRtToOS0(h, (target.channel as Mode) || 'twitter')}
+                          >
+                            <i className="fa-solid fa-plus mr-0.5" />OS⓪に追加
+                          </button>
                         </div>
-                      </div>
-                    )}
-                  </>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 
               <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2 flex-wrap">
                 <button className="btn-sec text-xs py-2 px-4" onClick={resetProfileModal}>キャンセル</button>
-                {!isDirect && (
-                  <button className="btn-sec text-xs py-2 px-4" onClick={() => handleGoToOS1(target.id, (target.channel as Mode) || 'twitter')}>
-                    <i className="fa-solid fa-camera mr-1" />スクショでOS①へ
-                  </button>
-                )}
+                <button className="btn-sec text-xs py-2 px-4" onClick={() => handleGoToOS1(target.id, (target.channel as Mode) || 'twitter')}>
+                  <i className="fa-solid fa-camera mr-1" />スクショでOS①へ
+                </button>
                 <button
                   className="btn-primary text-xs py-2 px-4"
-                  style={isDirect ? { background: '#0d9488' } : undefined}
                   onClick={handleSaveToQueue}
-                  disabled={!isDirect && !profileText.trim()}
+                  disabled={!profileText.trim()}
                 >
-                  <i className={`fa-solid ${isDirect ? 'fa-arrow-right' : 'fa-check'} mr-1`} />
-                  {isDirect ? 'OS②に直接追加' : profileIsInbound ? 'OS①待機に追加（IB記録）' : 'OS①待機に追加'}
+                  <i className="fa-solid fa-check mr-1" />
+                  {profileIsInbound ? 'OS①待機に追加（IB記録）' : 'OS①待機に追加'}
                 </button>
               </div>
             </div>
