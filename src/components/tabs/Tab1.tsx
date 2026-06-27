@@ -24,7 +24,7 @@ const TRACK_TIPS: Record<string, string> = {
   SKIP: '接触対象外（除外フィルター該当）'
 }
 
-type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string; signal_date?: string }
+type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string; signal_date?: string; signal_memo?: string }
 
 function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }): string {
   const actionsList = item.inbound_actions?.length
@@ -117,6 +117,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           isOpen: true,
           salesExpectation: newTarget.salesExpectation,
           salesExpectationReason: newTarget.salesExpectationReason,
+          isInbound: prefill?.is_inbound || false,
+          inboundActions: prefill?.inbound_actions?.length ? prefill.inbound_actions : (prefill?.signal_type ? [prefill.signal_type] : []),
+          inbound_signal: prefill?.is_inbound && prefill?.signal_type ? {
+            type: prefill.signal_type,
+            date: prefill.signal_date || todayStr(),
+            memo: prefill.signal_memo,
+          } : undefined,
           touches: prefill?.is_inbound ? [buildInitialInboundTouch(prefill, todayStr())] : [],
         }]
       }
@@ -232,6 +239,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             isOpen: true,
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
+            isInbound: screening.is_inbound || false,
+            inboundActions: screening.inbound_actions?.length ? screening.inbound_actions : (screening.signal_type ? [screening.signal_type] : []),
+            inbound_signal: screening.is_inbound && screening.signal_type ? {
+              type: screening.signal_type,
+              date: screening.signal_date || todayStr(),
+              memo: screening.signal_memo,
+            } : undefined,
             touches: screening.is_inbound ? [buildInitialInboundTouch(screening, todayStr())] : [],
           })
           pipelineCount++

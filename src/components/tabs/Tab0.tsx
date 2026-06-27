@@ -382,6 +382,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         inbound_actions: item.inbound_actions,
         signal_type: item.signal_type,
         signal_date: item.signal_date,
+        signal_memo: item.signal_memo,
       }))
     }
     saveData(prev => ({ ...prev, screenings: prev.screenings.filter(x => x.id !== id) }))

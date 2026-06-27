@@ -2155,16 +2155,16 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 トラック：${item.track}
 事前仮説：${item.hypothesis || '未設定'}
 
-【採点基準】
-40点：課題が明確・予算あり・決定権あり（即クローズ見込み）
-35点：仮説に高適合・課題顕在化・ファストトラック相当
-25点：仮説あり・課題は潜在的（通常育成ルート）
-15点：仮説があいまい・要再判断
-0点：仮説なし・合わない
+【採点基準】（OS①定義に準拠・厳守）
+40点：教育者 ＋ 受講生あり ＋ LINE販売 ＋ 無形商材
+35点：教育者 ＋ 受講生あり ＋ 導線あり
+25点：教育者 ＋ 商品あり（受講生確認できず）
+15点：サービスあり（教育要素なし）
+0点：対象外（店舗型・完全無形商材なし）
 
 以下のフォーマットで出力してください（他は書かないこと）：
 スコア：N点
-根拠：（採点理由を2〜3文で記載）`
+根拠：（教育者か・受講生あり/なし・販売導線の種類・商品種別を箇条書きで）`
               return (
                 <div className="flex flex-col gap-2 bg-violet-50 border border-violet-200 rounded-xl p-3">
                   <div className="flex items-center justify-between">

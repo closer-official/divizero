@@ -127,7 +127,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
@@ -137,9 +137,12 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     `仮説: ${item.hypothesis || '未設定'}`,
     `現在ステップ: ${item.currentStep}`,
     `接触開始: ${item.startDate || '-'}`,
-    '',
-    `【タッチ履歴（${touches.length}回）】`,
   ];
+  if (item.salesExpectation !== undefined) {
+    lines.push(`営業期待値スコア: ${item.salesExpectation}点 / 40点（OS①確定値・変動しない）`);
+    if (item.salesExpectationReason) lines.push(`スコア根拠: ${item.salesExpectationReason}`);
+  }
+  lines.push('', `【タッチ履歴（${touches.length}回）】`);
   touches.forEach((t, i) => {
     lines.push('');
     lines.push(`--- タッチ${i + 1} (${t.date.slice(0, 10)}) ---`);

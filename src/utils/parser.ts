@@ -35,6 +35,25 @@ function resolveSkipJudge(contactJudgeBlock: string, fullText: string): '通過'
   return (skipReasonIsReal || (firstLineSKIP && !skipReasonVal)) ? 'SKIP' : '通過';
 }
 
+function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string } {
+  const expBlock = block(text, '営業期待値スコア（0〜40）');
+  let scoreRaw = expBlock ? field(expBlock, 'スコア') : '';
+  const reasonRaw = expBlock ? field(expBlock, '根拠') : '';
+  if (!scoreRaw) {
+    const logBlock = block(text, '案件ログ転記用');
+    if (logBlock) scoreRaw = field(logBlock, '営業期待値スコア');
+  }
+  if (!scoreRaw) {
+    const m = text.match(/営業期待値スコア[：:]\s*(\d+)/);
+    if (m) scoreRaw = m[1];
+  }
+  const scoreMatch = scoreRaw.match(/(\d+)/);
+  return {
+    salesExpectation: scoreMatch ? parseInt(scoreMatch[1], 10) : undefined,
+    salesExpectationReason: reasonRaw || undefined,
+  };
+}
+
 export function parseOS1(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
   const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
@@ -54,11 +73,7 @@ export function parseOS1(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
-  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
-  const salesExpRaw = field(salesExpBlock, 'スコア');
-  const salesExpMatch = salesExpRaw.match(/(\d+)/);
-  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
-  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
+  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -95,11 +110,7 @@ export function parseOS1Instagram(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
-  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
-  const salesExpRaw = field(salesExpBlock, 'スコア');
-  const salesExpMatch = salesExpRaw.match(/(\d+)/);
-  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
-  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
+  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -133,11 +144,7 @@ export function parseOS1Threads(text: string) {
   const dmRoute = field(text, '連動IG') || field(text, 'DM導線');
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
-  const salesExpBlock = block(text, '営業期待値スコア（0〜40）');
-  const salesExpRaw = field(salesExpBlock, 'スコア');
-  const salesExpMatch = salesExpRaw.match(/(\d+)/);
-  const salesExpectation = salesExpMatch ? parseInt(salesExpMatch[1], 10) : undefined;
-  const salesExpectationReason = field(salesExpBlock, '根拠') || undefined;
+  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
   return {
     caseId: field(text, '案件ID'),
     accountName: field(text, 'アカウント名') || field(text, 'アカウント名（表示名）'),

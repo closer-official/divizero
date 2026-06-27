@@ -31,6 +31,8 @@ export interface PrefilledOS3 {
   convText: string
   result: string
   pipelineId?: string
+  salesExpectation?: number
+  salesExpectationReason?: string
 }
 
 export default function App() {
@@ -146,6 +148,8 @@ export default function App() {
       convText,
       result,
       pipelineId: item.id,
+      salesExpectation: item.salesExpectation,
+      salesExpectationReason: item.salesExpectationReason,
     }
     toast.show(`「${item.accountName}」をクローズしました。OS③（案件検証）に引き継ぎます…`, 2500)
     setTimeout(() => {
