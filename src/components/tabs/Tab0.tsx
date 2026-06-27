@@ -16,6 +16,8 @@ const SIGNAL_TEMP: Record<SignalType, number> = {
   'いいね': 20,
 }
 
+const SIGNAL_OPTS: SignalType[] = ['いいね', 'フォロー', 'ストーリー反応', 'リプ', '突然DM']
+
 interface Props {
   data: AppData
   saveData: (updater: (prev: AppData) => AppData) => void
@@ -30,7 +32,7 @@ interface Props {
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 
-export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline }: Props) {  // _onGoToTab2 is used in batch submit
+export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline: _onCreateInboundPipeline }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os0_mode') as Mode) || 'twitter')
   const [input, setInput] = useState('')
   const [result, setResult] = useState('')
@@ -44,16 +46,29 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [rtDetected, setRtDetected] = useState<string[]>([])
   const [batchResult, setBatchResult] = useState('')
 
-  // インバウンドモーダル
-  const [inboundOpen, setInboundOpen] = useState(false)
-  const [ibTab, setIbTab] = useState<'single' | 'bulk'>('single')
-  const [ibChannel, setIbChannel] = useState<Mode>('twitter')
-  const [ibName, setIbName] = useState('')
-  const [ibHandle, setIbHandle] = useState('')
+  // プロフィールモーダル内インバウンド情報
+  const [profileIsInbound, setProfileIsInbound] = useState(false)
   const [ibSignals, setIbSignals] = useState<Set<SignalType>>(new Set(['フォロー']))
   const [ibDate, setIbDate] = useState(todayStr())
   const [ibMemo, setIbMemo] = useState('')
-  const [ibBulkText, setIbBulkText] = useState('')
+
+  function toggleSignal(s: SignalType) {
+    setIbSignals(prev => {
+      const next = new Set(prev)
+      if (next.has(s)) { next.delete(s) } else { next.add(s) }
+      return next
+    })
+  }
+
+  function resetProfileModal() {
+    setProfileModalId(null)
+    setProfileText('')
+    setRtDetected([])
+    setProfileIsInbound(false)
+    setIbSignals(new Set(['フォロー']))
+    setIbDate(todayStr())
+    setIbMemo('')
+  }
 
   function setModeAndSave(m: Mode) {
     setMode(m)
@@ -72,12 +87,10 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     const splitMarker = '\n\n【除外済みアカウント'
     const splitPoint = prompt.indexOf(splitMarker)
     if (splitPoint !== -1) {
-      // v2: 入力データを除外セクションの前に挿入し、ハンドルを末尾に追記
       const beforeExcluded = prompt.slice(0, splitPoint)
       const excludedPart = prompt.slice(splitPoint)
       full = beforeExcluded + (input ? '\n' + input : '') + excludedPart + (handles ? '\n' + handles : '')
     } else {
-      // 旧バージョン: セクションごと末尾に追記
       const excludedSection = handles
         ? `\n\n【除外済みアカウント（再判定不要）】\n以下のアカウントは過去に接触済み・SKIP・除外済みです。▼判定一覧に含まれていた場合は無条件で✕（除外済み）としてください：\n${handles}`
         : ''
@@ -166,142 +179,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     setEditingId(null)
   }
 
-  function resetInbound() {
-    setIbName(''); setIbHandle(''); setIbSignals(new Set(['フォロー'])); setIbDate(todayStr()); setIbMemo('')
-    setIbChannel('twitter'); setIbTab('single'); setIbBulkText('')
-  }
-
-  function parseBulkLine(line: string): { displayName: string; handle: string } | null {
-    const trimmed = line.trim()
-    if (!trimmed) return null
-    const m = trimmed.match(/@([\w.]+)/)
-    if (!m) return null
-    const handle = m[0]
-    const displayName = trimmed.slice(0, trimmed.indexOf(handle)).trim()
-    return { displayName, handle }
-  }
-
-  function handleSaveInbound() {
-    if (!ibName.trim() || !ibHandle.trim()) { toast.show('アカウント名とハンドルは必須です', 2000); return }
-    if (ibSignals.size === 0) { toast.show('シグナル種別を1つ以上選択してください', 2000); return }
-    const handle = ibHandle.trim().startsWith('@') ? ibHandle.trim() : '@' + ibHandle.trim()
-    const signalArray = Array.from(ibSignals) as SignalType[]
-    const primarySignal = signalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
-    const maxTemp = SIGNAL_TEMP[primarySignal]
-    if (ibSignals.has('突然DM')) {
-      const item: PipelineItem = {
-        id: uid(),
-        accountName: ibName.trim(),
-        url: handle,
-        channel: ibChannel,
-        track: 'NT',
-        startDate: todayStr(),
-        currentStep: 'S2',
-        stepHistory: [{ step: 'S2', date: todayStr() }],
-        repCount: 0,
-        dmCount: 0,
-        lastContactDate: ibDate,
-        analyses: [],
-        history: [],
-        sentMessages: [],
-        replies: [],
-        touches: [],
-        isOpen: true,
-        state: 'active',
-        temperature: maxTemp,
-        isInbound: true,
-        inboundActions: signalArray,
-        inbound_signal: { type: primarySignal, date: ibDate, memo: ibMemo.trim() || undefined },
-      }
-      onCreateInboundPipeline(item)
-    } else {
-      const screening: Screening = {
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        channel: ibChannel,
-        displayName: ibName.trim(),
-        handle,
-        verdict: 'インバウンド',
-        reason: `${signalArray.join('・')}${ibMemo.trim() ? ' — ' + ibMemo.trim() : ''}`,
-        is_inbound: true,
-        signal_type: primarySignal,
-        signal_date: ibDate,
-        signal_memo: ibMemo.trim() || undefined,
-        inbound_actions: signalArray,
-      }
-      saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), screening] }))
-      toast.show(`「${ibName.trim()}」をインバウンド起点としてリストに追加しました`)
-    }
-    setInboundOpen(false)
-    resetInbound()
-  }
-
-  function handleBulkSaveInbound() {
-    if (ibSignals.size === 0) { toast.show('シグナル種別を1つ以上選択してください', 2000); return }
-    const parsed = ibBulkText.split('\n').map(parseBulkLine).filter((x): x is { displayName: string; handle: string } => x !== null)
-    if (parsed.length === 0) { toast.show('有効なアカウントが見つかりませんでした（@handleが必要です）', 2500); return }
-    const signalArray = Array.from(ibSignals) as SignalType[]
-    const primarySignal = signalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
-    const maxTemp = SIGNAL_TEMP[primarySignal]
-    const isDirect = ibSignals.has('突然DM')
-    const existingHandles = new Set([
-      ...(data.screenings || []).map(s => normalizeHandle(s.handle)),
-      ...(data.targets || []).map(t => normalizeHandle(t.url)),
-      ...(data.pipeline || []).map(p => normalizeHandle(p.url)),
-      ...(data.excluded || []).map(e => normalizeHandle(e.handle)),
-    ])
-    const toAdd = parsed.filter(({ handle }) => !existingHandles.has(normalizeHandle(handle)))
-    const skippedCount = parsed.length - toAdd.length
-    if (toAdd.length === 0) {
-      toast.show('すべて登録済みのためスキップしました', 2500)
-      setInboundOpen(false)
-      resetInbound()
-      return
-    }
-    if (isDirect) {
-      const newItems: PipelineItem[] = toAdd.map(({ displayName, handle }) => ({
-        id: uid(),
-        accountName: displayName || handle,
-        url: handle,
-        channel: ibChannel,
-        track: 'NT' as const,
-        startDate: todayStr(),
-        currentStep: 'S2' as const,
-        stepHistory: [{ step: 'S2' as const, date: todayStr() }],
-        repCount: 0, dmCount: 0,
-        lastContactDate: ibDate,
-        analyses: [], history: [], sentMessages: [], replies: [], touches: [],
-        isOpen: true,
-        state: 'active' as const,
-        temperature: maxTemp,
-        isInbound: true,
-        inboundActions: signalArray,
-        inbound_signal: { type: primarySignal, date: ibDate, memo: ibMemo.trim() || undefined },
-      }))
-      saveData(prev => ({ ...prev, pipeline: [...prev.pipeline, ...newItems] }))
-      toast.show(`${toAdd.length}件をOS②パイプラインに追加${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`, 2500)
-    } else {
-      const newScreenings: Screening[] = toAdd.map(({ displayName, handle }) => ({
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        channel: ibChannel,
-        displayName,
-        handle,
-        verdict: 'インバウンド',
-        reason: `${signalArray.join('・')}${ibMemo.trim() ? ' — ' + ibMemo.trim() : ''}`,
-        is_inbound: true,
-        signal_type: primarySignal,
-        signal_date: ibDate,
-        signal_memo: ibMemo.trim() || undefined,
-        inbound_actions: signalArray,
-      }))
-      saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), ...newScreenings] }))
-      toast.show(`${toAdd.length}件をインバウンドリストに追加${skippedCount > 0 ? `（${skippedCount}件スキップ）` : ''}`, 2500)
-    }
-    setInboundOpen(false)
-    resetInbound()
-  }
-
   // ── OS①バッチ処理ヘルパー ────────────────────────────
 
   function detectNewHandles(text: string, ownHandle: string): string[] {
@@ -321,6 +198,18 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     setProfileModalId(id)
     setProfileText(s?.rawProfileText || '')
     setRtDetected(s?.rawProfileText ? detectNewHandles(s.rawProfileText, s.handle) : [])
+    // インバウンド情報をスクリーニングから復元
+    if (s?.is_inbound) {
+      setProfileIsInbound(true)
+      setIbSignals(new Set((s.inbound_actions ?? [s.signal_type].filter(Boolean)) as SignalType[]))
+      setIbDate(s.signal_date ?? todayStr())
+      setIbMemo(s.signal_memo ?? '')
+    } else {
+      setProfileIsInbound(false)
+      setIbSignals(new Set(['フォロー']))
+      setIbDate(todayStr())
+      setIbMemo('')
+    }
   }
 
   function handleProfileTextChange(text: string) {
@@ -331,18 +220,69 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
 
   function handleSaveToQueue() {
     const id = profileModalId
-    if (!id || !profileText.trim()) { toast.show('プロフィールテキストを貼り付けてください', 2000); return }
+    if (!id) return
+    const target = data.screenings.find(s => s.id === id)
+    if (!target) return
+
+    const signalArray = Array.from(ibSignals) as SignalType[]
+    const isDirect = profileIsInbound && ibSignals.has('突然DM')
+
+    // 突然DM: OS②に直接追加（プロフィールテキスト不要）
+    if (isDirect) {
+      const primarySignal = signalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
+      const pipelineItem: PipelineItem = {
+        id: uid(),
+        accountName: target.displayName || target.handle,
+        url: target.handle,
+        channel: target.channel,
+        track: 'NT',
+        startDate: todayStr(),
+        currentStep: 'S2',
+        stepHistory: [{ step: 'S2', date: todayStr() }],
+        repCount: 0, dmCount: 0,
+        lastContactDate: ibDate,
+        analyses: [], history: [], sentMessages: [], replies: [], touches: [],
+        isOpen: true,
+        state: 'active',
+        temperature: SIGNAL_TEMP[primarySignal],
+        isInbound: true,
+        inboundActions: signalArray,
+        inbound_signal: { type: primarySignal, date: ibDate, memo: ibMemo.trim() || undefined },
+      }
+      saveData(prev => ({
+        ...prev,
+        screenings: prev.screenings.filter(s => s.id !== id),
+        pipeline: [...prev.pipeline, pipelineItem],
+      }))
+      toast.show(`「${target.displayName || target.handle}」をOS②パイプラインに追加しました`, 2500)
+      resetProfileModal()
+      setTimeout(() => _onGoToTab2(), 800)
+      return
+    }
+
+    if (!profileText.trim()) { toast.show('プロフィールテキストを貼り付けてください', 2000); return }
+
     const queuedCount = (data.screenings || []).filter(s => s.rawProfileText).length
     const isNew = !(data.screenings.find(x => x.id === id)?.rawProfileText)
+
+    const inboundData: Partial<Screening> = profileIsInbound && signalArray.length > 0 ? (() => {
+      const primarySignal = signalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
+      return {
+        is_inbound: true,
+        signal_type: primarySignal,
+        signal_date: ibDate,
+        signal_memo: ibMemo.trim() || undefined,
+        inbound_actions: signalArray,
+      }
+    })() : {}
+
     saveData(prev => ({
       ...prev,
       screenings: prev.screenings.map(s => s.id === id
-        ? { ...s, rawProfileText: profileText.trim(), os1QueuedAt: new Date().toISOString() }
+        ? { ...s, rawProfileText: profileText.trim(), os1QueuedAt: new Date().toISOString(), ...inboundData }
         : s),
     }))
-    setProfileModalId(null)
-    setProfileText('')
-    setRtDetected([])
+    resetProfileModal()
     const newCount = queuedCount + (isNew ? 1 : 0)
     if (newCount >= 5 && isNew) {
       toast.show(`OS①待機が${newCount}件に達しました。バッチ処理できます！`, 3500)
@@ -370,20 +310,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), s] }))
     setRtDetected(prev => prev.filter(x => x !== handle))
     toast.show(`@${handle} をOS⓪リストに追加しました`, 2000)
-  }
-
-  function handleCopyBatchPrompt() {
-    const queued = (data.screenings || []).filter(s => s.rawProfileText)
-    if (queued.length === 0) { toast.show('OS①待機中のアカウントがありません', 2000); return }
-    const prompt = mode === 'instagram' ? prompts.OS1_IG : mode === 'threads' ? prompts.OS1_TH : prompts.OS1_X
-    if (!prompt) { toast.show('プロンプトを読み込み中です', 2000); return }
-    const profilesText = queued.map((s, i) =>
-      `=== 対象${i + 1}：${s.displayName}（${s.handle}）===\n${s.rawProfileText || ''}`
-    ).join('\n\n')
-    const full = prompt
-      + `\n\n---\n■ バッチ処理 ${queued.length}件：上記フォーマットで各アカウントを順番に出力してください。アカウントとアカウントの間は「【アカウント情報】」から始まる次の出力で区切られます。\n\n`
-      + profilesText
-    copyText(full, () => toast.show(`${queued.length}人分のOS①プロンプトをコピーしました。AIに貼り付けてください`, 3000))
   }
 
   function handleBatchSubmit(queued: Screening[]) {
@@ -424,6 +350,22 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         d.targets.push(newTarget)
 
         if (pid) {
+          // インバウンドデータをスクリーニングから引き継ぐ
+          const ibSignalArray = (screening.inbound_actions ?? []) as SignalType[]
+          const ibPrimary = ibSignalArray.length > 0
+            ? ibSignalArray.reduce((a, b) => SIGNAL_TEMP[a] >= SIGNAL_TEMP[b] ? a : b)
+            : null
+          const inboundFields = screening.is_inbound && ibPrimary ? {
+            isInbound: true as const,
+            inboundActions: ibSignalArray,
+            inbound_signal: {
+              type: ibPrimary,
+              date: screening.signal_date ?? todayStr(),
+              memo: screening.signal_memo,
+            },
+            temperature: SIGNAL_TEMP[ibPrimary],
+          } : {}
+
           d.pipeline.push({
             id: pid, targetId,
             caseId: newTarget.caseId || null,
@@ -440,6 +382,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
             lastContactDate: todayStr(),
             analyses: [], history: [], sentMessages: [], replies: [],
             isOpen: true,
+            ...inboundFields,
           })
           pipelineCount++
         }
@@ -605,12 +548,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                 >
                   <i className="fa-solid fa-clone text-amber-500 mr-1" />重複チェック
                 </button>
-                <button
-                  className="btn-sec text-xs py-1.5 px-3 text-teal-700 border-teal-300"
-                  onClick={() => setInboundOpen(true)}
-                >
-                  <i className="fa-solid fa-arrow-down-to-line mr-1 text-teal-500" />インバウンド起点
-                </button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto cs">
@@ -626,7 +563,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                   const isUT = item.verdict.includes('UT候補')
                   const verdictBadge = (
                     <div className="flex gap-1 shrink-0">
-                      {item.is_inbound && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">{item.signal_type ?? 'IB'}</span>}
+                      {item.is_inbound && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700"><i className="fa-solid fa-arrow-down-to-line mr-0.5" />{item.signal_type ?? 'IB'}</span>}
                       {!item.is_inbound && isTeikei && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-fuchsia-100 text-fuchsia-700">提携</span>}
                       {!item.is_inbound && isUT && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">UT</span>}
                       {!item.is_inbound && !isTeikei && !isUT && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">通過</span>}
@@ -808,6 +745,11 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                     <i className={`${chIcon[ch]} text-slate-500 text-sm`} />
                     <span className="font-bold text-sm text-slate-700">{chLabel[ch]}</span>
                     <span className="badge bg-violet-100 text-violet-700">{items.length}件</span>
+                    {items.some(s => s.is_inbound) && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">
+                        <i className="fa-solid fa-arrow-down-to-line mr-0.5" />インバウンド含む
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-1.5">
@@ -815,6 +757,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                       <span key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-0.5 text-xs">
                         <span className="text-violet-400 font-mono">#{i + 1}</span>
                         <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
+                        {s.is_inbound && <span className="text-teal-500 text-[9px]"><i className="fa-solid fa-arrow-down-to-line" /></span>}
                       </span>
                     ))}
                   </div>
@@ -856,146 +799,11 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         )
       })()}
 
-      {/* ── インバウンドモーダル ─────────────────────────── */}
-      {inboundOpen && (() => {
-        const signalOpts: SignalType[] = ['いいね', 'フォロー', 'ストーリー反応', '突然DM', 'リプ']
-        const hasDM = ibSignals.has('突然DM')
-        const toggleSignal = (s: SignalType) => setIbSignals(prev => {
-          const next = new Set(prev)
-          if (next.has(s)) { next.delete(s) } else { next.add(s) }
-          return next
-        })
-        return (
-          <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-            <div className="bg-white w-full max-w-md rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-              {/* ヘッダー */}
-              <div className="p-4 flex items-center gap-2 bg-teal-50 border-b border-teal-100">
-                <i className="fa-solid fa-arrow-down-to-line text-teal-600" />
-                <p className="font-bold text-sm text-teal-800 flex-1">インバウンド起点を記録</p>
-                <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setInboundOpen(false); resetInbound() }}>
-                  <i className="fa-solid fa-xmark" />
-                </button>
-              </div>
-
-              {/* タブ切替 */}
-              <div className="flex border-b border-slate-100">
-                {(['single', 'bulk'] as const).map(t => (
-                  <button
-                    key={t}
-                    className={`flex-1 text-xs font-bold py-2.5 transition border-b-2 ${ibTab === t ? 'border-teal-500 text-teal-700 bg-teal-50/50' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-                    onClick={() => setIbTab(t)}
-                  >
-                    {t === 'single' ? '📝 単件登録' : '📋 一括登録'}
-                  </button>
-                ))}
-              </div>
-
-              <div className="p-4 overflow-y-auto flex flex-col gap-4 flex-1">
-                {/* チャネル（共通） */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700">チャネル</label>
-                  <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5 self-start">
-                    {(['twitter', 'instagram', 'threads'] as Mode[]).map(m => (
-                      <button key={m} type="button" onClick={() => setIbChannel(m)}
-                        className={`text-xs font-bold px-2.5 py-1 rounded-md transition ${ibChannel === m ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400'}`}>
-                        {m === 'twitter' ? 'X' : m === 'instagram' ? 'Instagram' : 'Threads'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* シグナル種別（複数選択・共通） */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs font-bold text-slate-700">シグナル種別（複数選択可）</label>
-                  <div className="flex flex-wrap gap-2">
-                    {signalOpts.map(s => (
-                      <label key={s} className="flex items-center gap-1.5 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          className="accent-teal-600 w-4 h-4"
-                          checked={ibSignals.has(s)}
-                          onChange={() => toggleSignal(s)}
-                        />
-                        <span className={`text-xs font-semibold ${ibSignals.has(s) ? 'text-teal-700' : 'text-slate-500'}`}>
-                          {s}
-                          <span className="ml-1 opacity-60 font-normal">
-                            {s === '突然DM' ? `温${SIGNAL_TEMP[s]}・直行` : `温${SIGNAL_TEMP[s]}`}
-                          </span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                  {hasDM && (
-                    <p className="text-[11px] text-teal-700 bg-teal-50 border border-teal-200 rounded-lg px-2.5 py-1.5">
-                      <i className="fa-solid fa-bolt mr-1" />突然DMを含むため、OS①をスキップしてOS②（パイプライン）に直接追加します
-                    </p>
-                  )}
-                </div>
-
-                {/* 単件登録フォーム */}
-                {ibTab === 'single' && (
-                  <>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold text-slate-700">アカウント名</label>
-                      <input className="input-base text-sm" placeholder="表示名" value={ibName} onChange={e => setIbName(e.target.value)} />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-bold text-slate-700">ハンドル</label>
-                      <input className="input-base text-sm" placeholder="@handle" value={ibHandle} onChange={e => setIbHandle(e.target.value)} />
-                    </div>
-                  </>
-                )}
-
-                {/* 一括登録フォーム */}
-                {ibTab === 'bulk' && (
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-bold text-slate-700">一括入力（1行1アカウント）</label>
-                    <p className="text-[11px] text-slate-400">形式: <code className="bg-slate-100 px-1 rounded">田中太郎 @tanaka123</code> または <code className="bg-slate-100 px-1 rounded">@handle</code>（@のない行はスキップ）</p>
-                    <textarea
-                      rows={6}
-                      className="input-base cs text-xs resize-y font-mono"
-                      placeholder={"田中太郎 @tanaka123\n山田花子 @yamada456\n@saito789\n..."}
-                      value={ibBulkText}
-                      onChange={e => setIbBulkText(e.target.value)}
-                    />
-                    {ibBulkText.trim() && (() => {
-                      const count = ibBulkText.split('\n').map(parseBulkLine).filter(Boolean).length
-                      return <p className="text-[11px] text-teal-600 font-semibold">{count}件を認識（@のある行のみ）</p>
-                    })()}
-                  </div>
-                )}
-
-                {/* 検知日・メモ（共通） */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700">検知日</label>
-                  <input type="date" className="input-base text-sm" value={ibDate} onChange={e => setIbDate(e.target.value)} />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-700">メモ（任意）</label>
-                  <textarea rows={2} className="input-base text-sm resize-none" placeholder="どんな投稿にいいねしたか、DMの内容など" value={ibMemo} onChange={e => setIbMemo(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2">
-                <button className="btn-sec text-xs py-2 px-4" onClick={() => { setInboundOpen(false); resetInbound() }}>キャンセル</button>
-                <button
-                  className="btn-primary text-xs py-2 px-4"
-                  style={{ background: '#0d9488' }}
-                  onClick={ibTab === 'single' ? handleSaveInbound : handleBulkSaveInbound}
-                >
-                  <i className="fa-solid fa-check mr-1" />
-                  {ibTab === 'bulk' ? '一括追加' : hasDM ? 'OS②に直接追加' : 'リストに追加'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      })()}
-
       {/* ── プロフィール貼り付けモーダル ───────────────────── */}
       {profileModalId && (() => {
         const target = data.screenings.find(s => s.id === profileModalId)
         if (!target) return null
+        const isDirect = profileIsInbound && ibSignals.has('突然DM')
         return (
           <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
             <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
@@ -1005,55 +813,124 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                   <p className="font-bold text-sm text-violet-800">OS①待機に追加：{target.displayName || target.handle}</p>
                   <p className="text-[11px] text-violet-500">{target.handle} · プロフィール原文と投稿をコピペしてください</p>
                 </div>
-                <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setProfileModalId(null); setProfileText(''); setRtDetected([]) }}>
+                <button className="text-slate-400 hover:text-slate-700 p-1" onClick={resetProfileModal}>
                   <i className="fa-solid fa-xmark" />
                 </button>
               </div>
 
-              <div className="p-4 overflow-y-auto flex flex-col gap-3 flex-1">
-                <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
-                  <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
-                  Xのプロフィールページ全体＋投稿一覧（RT・引用RTも含む）をそのままコピペしてください。
-                </div>
-                <textarea
-                  className="input-base h-56 cs text-xs"
-                  placeholder={`${target.displayName || target.handle} のプロフィール原文・投稿・RTなどをそのまま貼り付け`}
-                  value={profileText}
-                  onChange={e => handleProfileTextChange(e.target.value)}
-                  autoFocus
-                />
-
-                {/* RT/引用RT検出 */}
-                {rtDetected.length > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-2">
-                    <p className="text-xs font-bold text-amber-800">
-                      <i className="fa-solid fa-retweet mr-1" />RT・引用RT先のアカウントを検出（{rtDetected.length}件）
-                    </p>
-                    <p className="text-[11px] text-amber-600">まだOS⓪リストにないアカウントです。追加しますか？</p>
-                    <div className="flex flex-col gap-1">
-                      {rtDetected.map(h => (
-                        <div key={h} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
-                          <span className="text-xs font-mono text-slate-700">@{h}</span>
-                          <button
-                            className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition"
-                            onClick={() => handleAddRtToOS0(h, (target.channel as Mode) || 'twitter')}
-                          >
-                            <i className="fa-solid fa-plus mr-0.5" />OS⓪に追加
-                          </button>
-                        </div>
-                      ))}
+              <div className="p-4 overflow-y-auto flex flex-col gap-4 flex-1">
+                {/* インバウンド起点トグル */}
+                <div className="flex flex-col gap-2">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none group">
+                    <div className={`w-9 h-5 rounded-full transition-colors flex items-center px-0.5 ${profileIsInbound ? 'bg-teal-500' : 'bg-slate-200'}`}
+                      onClick={() => setProfileIsInbound(v => !v)}>
+                      <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform ${profileIsInbound ? 'translate-x-4' : 'translate-x-0'}`} />
                     </div>
-                  </div>
+                    <span className={`text-xs font-bold ${profileIsInbound ? 'text-teal-700' : 'text-slate-500'}`}>
+                      <i className="fa-solid fa-arrow-down-to-line mr-1" />インバウンド起点として記録する
+                    </span>
+                    {!profileIsInbound && (
+                      <span className="text-[11px] text-slate-400">（相手から先にアクションがあった場合）</span>
+                    )}
+                  </label>
+
+                  {profileIsInbound && (
+                    <div className="bg-teal-50 border border-teal-200 rounded-xl p-3 flex flex-col gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[11px] font-bold text-slate-600">シグナル種別（複数選択可）</label>
+                        <div className="flex flex-wrap gap-2.5">
+                          {SIGNAL_OPTS.map(s => (
+                            <label key={s} className="flex items-center gap-1.5 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                className="accent-teal-600 w-3.5 h-3.5"
+                                checked={ibSignals.has(s)}
+                                onChange={() => toggleSignal(s)}
+                              />
+                              <span className={`text-xs font-semibold ${ibSignals.has(s) ? 'text-teal-800' : 'text-slate-500'}`}>
+                                {s}
+                                <span className="ml-0.5 text-[10px] opacity-60 font-normal">温{SIGNAL_TEMP[s]}</span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        {isDirect && (
+                          <p className="text-[11px] text-teal-700 bg-teal-100 border border-teal-200 rounded-lg px-2.5 py-1.5">
+                            <i className="fa-solid fa-bolt mr-1" />突然DMを含むため、OS①をスキップしてOS②（パイプライン）に直接追加します
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="flex flex-col gap-1 flex-1">
+                          <label className="text-[11px] font-bold text-slate-600">検知日</label>
+                          <input type="date" className="input-base text-sm" value={ibDate} onChange={e => setIbDate(e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[11px] font-bold text-slate-600">メモ（任意）</label>
+                        <textarea rows={2} className="input-base text-xs resize-none" placeholder="どんな投稿にいいねしたか、DMの内容など"
+                          value={ibMemo} onChange={e => setIbMemo(e.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* プロフィールテキスト（突然DM直行の場合は非表示） */}
+                {!isDirect && (
+                  <>
+                    <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                      <i className="fa-solid fa-circle-info mr-1 text-slate-400" />
+                      Xのプロフィールページ全体＋投稿一覧（RT・引用RTも含む）をそのままコピペしてください。
+                    </div>
+                    <textarea
+                      className="input-base h-48 cs text-xs"
+                      placeholder={`${target.displayName || target.handle} のプロフィール原文・投稿・RTなどをそのまま貼り付け`}
+                      value={profileText}
+                      onChange={e => handleProfileTextChange(e.target.value)}
+                      autoFocus={!profileIsInbound}
+                    />
+
+                    {/* RT/引用RT検出 */}
+                    {rtDetected.length > 0 && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex flex-col gap-2">
+                        <p className="text-xs font-bold text-amber-800">
+                          <i className="fa-solid fa-retweet mr-1" />RT・引用RT先のアカウントを検出（{rtDetected.length}件）
+                        </p>
+                        <p className="text-[11px] text-amber-600">まだOS⓪リストにないアカウントです。追加しますか？</p>
+                        <div className="flex flex-col gap-1">
+                          {rtDetected.map(h => (
+                            <div key={h} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
+                              <span className="text-xs font-mono text-slate-700">@{h}</span>
+                              <button
+                                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 text-amber-800 hover:bg-amber-200 transition"
+                                onClick={() => handleAddRtToOS0(h, (target.channel as Mode) || 'twitter')}
+                              >
+                                <i className="fa-solid fa-plus mr-0.5" />OS⓪に追加
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
               <div className="bg-slate-50 px-4 py-3 flex justify-end gap-2 flex-wrap">
-                <button className="btn-sec text-xs py-2 px-4" onClick={() => { setProfileModalId(null); setProfileText(''); setRtDetected([]) }}>キャンセル</button>
-                <button className="btn-sec text-xs py-2 px-4" onClick={() => handleGoToOS1(target.id, (target.channel as Mode) || 'twitter')}>
-                  <i className="fa-solid fa-camera mr-1" />スクショでOS①へ
-                </button>
-                <button className="btn-primary text-xs py-2 px-4" onClick={handleSaveToQueue} disabled={!profileText.trim()}>
-                  <i className="fa-solid fa-check mr-1" />OS①待機に追加
+                <button className="btn-sec text-xs py-2 px-4" onClick={resetProfileModal}>キャンセル</button>
+                {!isDirect && (
+                  <button className="btn-sec text-xs py-2 px-4" onClick={() => handleGoToOS1(target.id, (target.channel as Mode) || 'twitter')}>
+                    <i className="fa-solid fa-camera mr-1" />スクショでOS①へ
+                  </button>
+                )}
+                <button
+                  className="btn-primary text-xs py-2 px-4"
+                  style={isDirect ? { background: '#0d9488' } : undefined}
+                  onClick={handleSaveToQueue}
+                  disabled={!isDirect && !profileText.trim()}
+                >
+                  <i className={`fa-solid ${isDirect ? 'fa-arrow-right' : 'fa-check'} mr-1`} />
+                  {isDirect ? 'OS②に直接追加' : profileIsInbound ? 'OS①待機に追加（IB記録）' : 'OS①待機に追加'}
                 </button>
               </div>
             </div>
