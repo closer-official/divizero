@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/27 インバウンド複数アクション対応: types拡張・一括登録UI・S1/OS2プロンプトにインバウンドコンテキスト追加";
+export const BUILD_LABEL = "06/27 OS①SKIP誤判定修正・SKIP解除復旧ボタン追加・インバウンド一括登録・タッチリアクション編集機能";

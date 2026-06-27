@@ -231,6 +231,36 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     }, 0)
   }
 
+  function handleForceToOS2(targetId: string) {
+    const tgt = data.targets.find(x => x.id === targetId)
+    if (!tgt || tgt.pipelineId) return
+    const pid = uid()
+    saveData(prev => {
+      const d = {
+        ...prev,
+        targets: prev.targets.map(t => t.id === targetId ? { ...t, track: 'NT' as const, pipelineId: pid } : t),
+        pipeline: [...prev.pipeline],
+      }
+      d.pipeline.push({
+        id: pid, targetId,
+        caseId: tgt.caseId || null, os1Output: tgt.aiOutput || null,
+        accountName: tgt.accountName, url: tgt.url, channel: tgt.channel,
+        track: 'NT' as const,
+        hypothesis: tgt.hypothesis,
+        startDate: tgt.startDate || todayStr(),
+        currentStep: 'S1', stepHistory: [{ step: 'S1' as const, date: todayStr() }],
+        repCount: 0, dmCount: 0, lastContactDate: todayStr(),
+        analyses: [], history: [], sentMessages: [], replies: [],
+        isOpen: true,
+        salesExpectation: tgt.salesExpectation,
+        salesExpectationReason: tgt.salesExpectationReason,
+      })
+      return d
+    })
+    toast.show(`「${tgt.accountName}」のSKIPを解除してOS②へ移行しました`, 2000)
+    setTimeout(() => onGoToTab2(), 1500)
+  }
+
   function handleBackToOS0(targetId: string) {
     const tgt = data.targets.find(x => x.id === targetId)
     if (!tgt) return
@@ -523,6 +553,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           confirm={confirm}
           onToPipeline={() => handleToPipeline(selectedTarget.id)}
           onBackToOS0={() => handleBackToOS0(selectedTarget.id)}
+          onForceToOS2={() => handleForceToOS2(selectedTarget.id)}
           onClose={() => setSelectedId(null)}
         />
       )}
@@ -606,13 +637,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   )
 }
 
-function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToOS0, onClose }: {
+function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToOS0, onForceToOS2, onClose }: {
   target: Target
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
   onToPipeline: () => void
   onBackToOS0: () => void
+  onForceToOS2: () => void
   onClose: () => void
 }) {
   const profileUrl = buildProfileUrl(t.url, t.channel)
@@ -698,9 +730,22 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToO
       </div>
 
       {t.track === 'SKIP' ? (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs flex flex-col gap-2">
           <p className="text-amber-700 font-semibold"><i className="fa-solid fa-ban mr-1" />SKIP理由</p>
-          <p className="text-amber-800 mt-1">{t.skipReason || '-'}</p>
+          <p className="text-amber-800">{t.skipReason || '（理由なし）'}</p>
+          {t.pipelineId ? (
+            <span className="text-[11px] text-indigo-500 font-semibold self-start"><i className="fa-solid fa-check mr-1" />OS②移行済み（SKIP解除済）</span>
+          ) : (
+            <div className="flex items-start gap-2 pt-1 border-t border-amber-200">
+              <p className="text-[11px] text-slate-500 flex-1">SKIP理由が「該当なし」など誤判定の場合、強制的にOS②へ移行できます（NTトラックで登録）。</p>
+              <button
+                className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition"
+                onClick={onForceToOS2}
+              >
+                <i className="fa-solid fa-arrow-right mr-1" />SKIPを解除してOS②へ
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-3">

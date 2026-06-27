@@ -23,9 +23,21 @@ export function uid(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+function resolveSkipJudge(contactJudgeBlock: string, fullText: string): '通過' | 'SKIP' {
+  const firstLine = contactJudgeBlock.split('\n')[0].trim();
+  const skipReasonVal = field(fullText, 'SKIP理由');
+  // SKIP理由に「該当なし/なし」以外の実質的な内容がある → SKIP
+  const skipReasonIsReal = !!skipReasonVal
+    && skipReasonVal.trim().length > 2
+    && !/^(該当なし|なし|無し|接触する|—|-)/.test(skipReasonVal.trim());
+  // 先頭行が "SKIP理由：..." ではなく "SKIP" 単体 → 補助的に SKIP 判定
+  const firstLineSKIP = /^SKIP\b/.test(firstLine) && !/^SKIP理由/.test(firstLine);
+  return (skipReasonIsReal || (firstLineSKIP && !skipReasonVal)) ? 'SKIP' : '通過';
+}
+
 export function parseOS1(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
-  const skipJudge = contactJudgeBlock.split('\n')[0].match(/SKIP/) ? 'SKIP' : '通過';
+  const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
   const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
@@ -63,7 +75,7 @@ export function parseOS1(text: string) {
 
 export function parseOS1Instagram(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
-  const skipJudge = contactJudgeBlock.split('\n')[0].match(/SKIP/) ? 'SKIP' : '通過';
+  const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
   const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
@@ -105,7 +117,7 @@ export function parseOS1Instagram(text: string) {
 
 export function parseOS1Threads(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
-  const skipJudge = contactJudgeBlock.split('\n')[0].match(/SKIP/) ? 'SKIP' : '通過';
+  const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
   const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
