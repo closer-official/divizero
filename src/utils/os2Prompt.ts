@@ -51,6 +51,7 @@ export function buildOS2ConversationPrompt(
     `【チャネル】${item.channel}`,
     `【トラック】${item.track}`,
     ...(item.inbound_signal ? [`【起点】インバウンド（${item.inbound_signal.type}）- ${item.inbound_signal.date}${item.inbound_signal.memo ? ' / ' + item.inbound_signal.memo : ''}`] : []),
+    `【営業期待値スコア】${item.salesExpectation ?? '未設定'}点（OS①確定値）`,
     `【事前仮説】${item.hypothesis ?? '未設定'}`,
     `【接触開始日】${item.startDate ?? '不明'}`,
     `【現在ステップ】${item.currentStep}`,

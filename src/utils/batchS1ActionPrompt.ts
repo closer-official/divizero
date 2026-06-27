@@ -19,6 +19,8 @@ export interface BatchS1ActionResult {
   warning: string
   replyA?: string
   replyB?: string
+  dmScore?: string
+  dmMoveReason?: string
 }
 
 function buildCaseSection(item: BatchS1ActionItem): string {
@@ -31,6 +33,7 @@ function buildCaseSection(item: BatchS1ActionItem): string {
 チャネル：${p.channel}
 トラック：${p.track}
 事前仮説：${p.hypothesis || '未設定'}
+営業期待値スコア：${p.salesExpectation ?? '未設定'}点
 
 ■ 接触した投稿
 投稿種別：${t.targetPostType || '—'}
@@ -102,6 +105,8 @@ export function parseBatchS1ActionOutput(
     const replyA = pick('返信案A')
     const replyB = pick('返信案B')
 
+    const dmScore = pick('DM_SCORE')
+    const dmMoveReason = pick('DM移行判断')
     results.push({
       index: item.index,
       pipelineId: item.pipelineId,
@@ -112,6 +117,8 @@ export function parseBatchS1ActionOutput(
       warning: pick('警告'),
       replyA: replyA && replyA !== 'なし' ? replyA : undefined,
       replyB: replyB && replyB !== 'なし' ? replyB : undefined,
+      dmScore: dmScore || undefined,
+      dmMoveReason: dmMoveReason || undefined,
     })
   }
 

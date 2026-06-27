@@ -2823,7 +2823,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             replyB: touch.reactionReplyB,
           } : null)
           const judgmentColor = (j: string) => {
-            if (j === '公開リプ継続') return 'bg-violet-50 border-violet-200 text-violet-800'
+            if (j === 'S1継続' || j === '公開リプ継続') return 'bg-violet-50 border-violet-200 text-violet-800'
             if (j === 'DM移行') return 'bg-indigo-50 border-indigo-200 text-indigo-800'
             if (j === '次投稿再接触') return 'bg-blue-50 border-blue-200 text-blue-800'
             if (j === '休眠') return 'bg-slate-50 border-slate-200 text-slate-600'
@@ -2831,7 +2831,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             if (j === 'クローズ') return 'bg-rose-50 border-rose-200 text-rose-700'
             return 'bg-slate-50 border-slate-200 text-slate-700'
           }
-          const hasReplies = (result?.judgment === '公開リプ継続' || result?.judgment === 'DM移行') && (result?.replyA || result?.replyB)
+          const hasReplies = (result?.judgment === 'S1継続' || result?.judgment === '公開リプ継続' || result?.judgment === 'DM移行') && (result?.replyA || result?.replyB)
           return (
             <div className="mt-1 flex flex-col gap-1.5">
               {result ? (

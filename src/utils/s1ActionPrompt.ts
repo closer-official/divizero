@@ -8,6 +8,8 @@ export interface S1ActionResult {
   warning: string
   replyA?: string
   replyB?: string
+  dmScore?: string
+  dmMoveReason?: string
 }
 
 export function buildS1ActionPrompt(
@@ -26,6 +28,7 @@ export function buildS1ActionPrompt(
     .replace('{{channel}}', item.channel)
     .replace('{{track}}', item.track)
     .replace('{{hypothesis}}', item.hypothesis || '未設定')
+    .replace('{{salesExpectation}}', String(item.salesExpectation ?? '未設定'))
     .replace('{{targetPostType}}', touch.targetPostType || '—')
     .replace('{{targetPostText}}', touch.targetPostText || '—')
     .replace('{{targetPostRawText}}', touch.targetPostRawText || '（原文なし）')
@@ -65,6 +68,9 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
   const replyA = pick('返信案A')
   const replyB = pick('返信案B')
 
+  const dmScore = pick('DM_SCORE')
+  const dmMoveReason = pick('DM移行判断')
+
   return {
     judgment,
     reason: pick('理由'),
@@ -72,5 +78,7 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
     warning: pick('警告'),
     replyA: replyA && replyA !== 'なし' ? replyA : undefined,
     replyB: replyB && replyB !== 'なし' ? replyB : undefined,
+    dmScore: dmScore || undefined,
+    dmMoveReason: dmMoveReason || undefined,
   }
 }

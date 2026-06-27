@@ -212,6 +212,7 @@ export interface PipelineItem {
   last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
   last_reaction_at?: string;
   inbound_signal?: { type: string; date: string; memo?: string };
+  salesExpectation?: number;        // 0-40, set at OS1, does not change
 }
 
 export interface ClosedDeal {
