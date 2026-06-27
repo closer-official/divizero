@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
-import { buildTouchConvLog } from './utils/helpers'
+import { buildTouchConvLog, uid } from './utils/helpers'
 import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
 import Tab0 from './components/tabs/Tab0'
@@ -12,7 +12,7 @@ import Tab3 from './components/tabs/Tab3'
 import Tab4 from './components/tabs/Tab4'
 import Tab5 from './components/tabs/Tab5'
 import Tab6 from './components/tabs/Tab6'
-import type { PipelineItem } from './types'
+import type { PipelineItem, Screening } from './types'
 
 type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6'
 
@@ -152,6 +152,39 @@ export default function App() {
       setPrefilledOS3(prefill)
       setActiveTab('tab3')
     }, 2500)
+  }
+
+  // OS②→OS⓪ 戻し
+  function handleReturnToOS0(item: PipelineItem) {
+    const newScreening: Screening = {
+      id: uid(),
+      createdAt: new Date().toISOString(),
+      channel: item.channel,
+      displayName: item.accountName,
+      handle: item.url,
+      verdict: '',
+      reason: 'OS②から戻し（OS①未実施）',
+      is_inbound: item.isInbound,
+      ...(item.inbound_signal ? {
+        signal_type: item.inbound_signal.type as Screening['signal_type'],
+        signal_date: item.inbound_signal.date,
+        signal_memo: item.inbound_signal.memo,
+      } : {}),
+      inbound_actions: item.inboundActions,
+    }
+    saveData(prev => {
+      const d = {
+        ...prev,
+        pipeline: prev.pipeline.filter(p => p.id !== item.id),
+        screenings: [...prev.screenings, newScreening],
+      }
+      if (item.targetId) {
+        d.targets = d.targets.map(t => t.id === item.targetId ? { ...t, pipelineId: null } : t)
+      }
+      return d
+    })
+    toast.show(`「${item.accountName}」をOS⓪に戻しました`)
+    setTimeout(() => setActiveTab('tab0'), 1500)
   }
 
   // Login
@@ -318,7 +351,7 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
         {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
-        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
+        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} onReturnToOS0={handleReturnToOS0} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
         {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
         {activeTab === 'tab5' && <Tab5 data={data} role={role} />}

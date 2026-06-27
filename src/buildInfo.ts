@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/27 行動判定0日後→今日やることリストに自動追加・完了ボタンで除去";
+export const BUILD_LABEL = "06/27 OS②からOS⓪への戻しボタン追加（クローズセクション内）";

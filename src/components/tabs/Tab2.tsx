@@ -323,11 +323,12 @@ interface Props {
   confirm: ConfirmAPI
   onGoToTab3: () => void
   onCloseCase: (item: PipelineItem, result: string) => void
+  onReturnToOS0: (item: PipelineItem) => void
   openItemId?: string | null
   onOpenItemConsumed?: () => void
 }
 
-export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, openItemId, onOpenItemConsumed }: Props) {
+export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, openItemId, onOpenItemConsumed }: Props) {
   const [filter, setFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   const [channelFilter, setChannelFilter] = useState('all')
@@ -1190,6 +1191,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                     setDrawerItemId(null)
                     onCloseCase(item, result)
                   }}
+                  onReturnToOS0={(item) => {
+                    setDrawerItemId(null)
+                    onReturnToOS0(item)
+                  }}
                   onExportMd={handleExportCaseMd}
                 />
               </div>
@@ -1554,10 +1559,11 @@ interface CardProps {
   confirm: ConfirmAPI
   onGoToTab3: () => void
   onCloseCase: (item: PipelineItem, result: string) => void
+  onReturnToOS0: (item: PipelineItem) => void
   onExportMd: (item: PipelineItem) => void
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onExportMd }: CardProps) {
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
@@ -2509,12 +2515,20 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               <i className={`fa-solid fa-chevron-${closeOpen ? 'up' : 'down'} text-slate-400 ml-auto text-[10px]`} />
             </button>
             {closeOpen && (
-              <div className="px-4 pb-4 flex gap-2">
-                <select className="input-base text-xs py-2 flex-1" value={closeResult} onChange={e => setCloseResult(e.target.value)}>
-                  {CLOSE_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
-                <button className="btn-danger text-xs px-4 min-h-[44px]" onClick={handleClose}>
-                  <i className="fa-solid fa-flag-checkered mr-1" />クローズ
+              <div className="px-4 pb-4 flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <select className="input-base text-xs py-2 flex-1" value={closeResult} onChange={e => setCloseResult(e.target.value)}>
+                    {CLOSE_RESULTS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <button className="btn-danger text-xs px-4 min-h-[44px]" onClick={handleClose}>
+                    <i className="fa-solid fa-flag-checkered mr-1" />クローズ
+                  </button>
+                </div>
+                <button
+                  className="btn-sec text-xs w-full min-h-[40px]"
+                  onClick={() => confirm.show('OS⓪に戻す', `「${item.accountName}」をパイプラインから除去してOS⓪（一次選別）に戻しますか？`, () => onReturnToOS0(item))}
+                >
+                  <i className="fa-solid fa-rotate-left mr-1" />OS⓪に戻す（OS①未実施のため）
                 </button>
               </div>
             )}
