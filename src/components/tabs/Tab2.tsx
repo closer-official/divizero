@@ -209,6 +209,14 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
         {item.inbound_signal && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
         )}
+        {item.salesExpectation !== undefined && (
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(item.salesExpectation) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+            期待{item.salesExpectation}
+          </span>
+        )}
+        {(item.salesExpectation ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+          <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-orange-100 text-orange-600">🛡保護</span>
+        )}
         {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
       </div>
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
@@ -449,6 +457,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     else if (filter === 'UT') result = result.filter(p => p.track === 'UT')
     else if (filter === 'warn') result = result.filter(p => warnIds.has(p.id))
     else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => t.status === 'awaiting_reaction'))
+    else if (filter === 'elite') result = result.filter(p => (p.salesExpectation ?? 0) >= 35)
     if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
     if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
     return result
@@ -1011,8 +1020,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       <div className="flex flex-col gap-2">
         <div className="flex gap-2 flex-wrap items-center">
           {/* トラックフィルタ */}
-          <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={filter} onChange={e => setFilter(e.target.value)}>
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="all">全て ({active.length})</option>
+            <option value="elite">★超優良≥35 ({active.filter(p => (p.salesExpectation ?? 0) >= 35).length})</option>
             <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
             <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
             <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
@@ -1846,6 +1856,16 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           )}
           {/* 状態バッジ */}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
+          {/* 営業期待値バッジ */}
+          {item.salesExpectation !== undefined && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${item.salesExpectation >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+              期待値{item.salesExpectation}点
+            </span>
+          )}
+          {/* 超優良案件保護中バッジ */}
+          {(item.salesExpectation ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-orange-100 text-orange-700">🛡保護中</span>
+          )}
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           {item.inbound_signal && <span className="text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded shrink-0">{item.inbound_signal.type}</span>}
@@ -2001,6 +2021,34 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               <button className="shrink-0 hover:text-indigo-500 px-1" onClick={() => { setEditingUrl(true); setUrlInput(item.url || '') }} title="URLを編集">
                 <i className="fa-solid fa-pen text-[10px]" />
               </button>
+            </div>
+          )}
+
+          {/* 案件情報（仮説フルテキスト・営業期待値・判定根拠） */}
+          {(item.hypothesis || item.salesExpectation !== undefined || item.salesExpectationReason) && (
+            <div className="mx-4 mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-2 text-xs">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">案件情報</p>
+              {item.hypothesis && (
+                <div>
+                  <p className="text-[10px] text-slate-400 mb-0.5">事前仮説</p>
+                  <p className="text-slate-700 text-[11px] leading-relaxed whitespace-pre-wrap">{item.hypothesis}</p>
+                </div>
+              )}
+              {item.salesExpectation !== undefined && (
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 shrink-0">営業期待値</span>
+                  <span className={`text-xs font-bold ${item.salesExpectation >= 35 ? 'text-amber-600' : 'text-slate-600'}`}>
+                    {item.salesExpectation}点 / 40点
+                    {item.salesExpectation >= 35 && <span className="ml-1.5 text-[10px] font-normal text-amber-500">★超優良案件（休眠・保管移行なし）</span>}
+                  </span>
+                </div>
+              )}
+              {item.salesExpectationReason && (
+                <div>
+                  <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
+                  <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -2421,6 +2469,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       reactionWarning: parsed.warning,
       reactionReplyA: parsed.replyA,
       reactionReplyB: parsed.replyB,
+      reactionDmScore: parsed.dmScore,
     }, pipelineUpdates)
     setS1ActionOutput('')
     setS1ActionInputOpen(false)
@@ -2841,6 +2890,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                     {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
                     {result.warning && result.warning !== 'なし' && (
                       <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
+                    )}
+                    {(result.dmScore || touch.reactionDmScore) && (
+                      <p className="text-[10px] text-slate-400 border-t border-current border-opacity-10 pt-1 mt-0.5">
+                        DM_SCORE: {result.dmScore || touch.reactionDmScore}
+                      </p>
                     )}
                   </div>
                   {hasReplies && (

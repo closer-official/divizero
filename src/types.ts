@@ -63,6 +63,7 @@ export interface Touch {
   reactionWarning?: string;
   reactionReplyA?: string;
   reactionReplyB?: string;
+  reactionDmScore?: string;
   os2ConversationLog?: string;
   os2Judgment?: string;
   os2NextAction?: string;
