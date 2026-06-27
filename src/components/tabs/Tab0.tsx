@@ -44,7 +44,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [profileModalId, setProfileModalId] = useState<string | null>(null)
   const [profileText, setProfileText] = useState('')
   const [rtDetected, setRtDetected] = useState<string[]>([])
-  const [batchResult, setBatchResult] = useState('')
+  const [batchResults, setBatchResults] = useState<Record<string, string>>({})
 
   // プロフィールモーダル内インバウンド情報
   const [profileIsInbound, setProfileIsInbound] = useState(false)
@@ -312,8 +312,8 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     toast.show(`@${handle} をOS⓪リストに追加しました`, 2000)
   }
 
-  function handleBatchSubmit(queued: Screening[]) {
-    const text = batchResult.trim()
+  function handleBatchSubmit(queued: Screening[], chunkKey: string) {
+    const text = (batchResults[chunkKey] ?? '').trim()
     if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
     if (queued.length === 0) { toast.show('待機中のアカウントがありません', 2000); return }
 
@@ -393,7 +393,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       return d
     })
 
-    setBatchResult('')
+    setBatchResults(prev => { const next = { ...prev }; delete next[chunkKey]; return next })
     setTimeout(() => {
       toast.show(`${addedCount}件を登録（OS②に${pipelineCount}件追加）`, 3000)
       if (pipelineCount > 0) setTimeout(() => _onGoToTab2(), 1200)
@@ -739,61 +739,79 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                 )}
               </div>
 
-              {groups.map(({ ch, items }) => (
-                <div key={ch} className="border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
-                  <div className="flex items-center gap-2">
-                    <i className={`${chIcon[ch]} text-slate-500 text-sm`} />
-                    <span className="font-bold text-sm text-slate-700">{chLabel[ch]}</span>
-                    <span className="badge bg-violet-100 text-violet-700">{items.length}件</span>
-                    {items.some(s => s.is_inbound) && (
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">
-                        <i className="fa-solid fa-arrow-down-to-line mr-0.5" />インバウンド含む
-                      </span>
-                    )}
-                  </div>
+              {groups.flatMap(({ ch, items }) => {
+                // 登録日時の新しい順にソートして5件ずつチャンク分割
+                const sorted = [...items].sort((a, b) =>
+                  (b.os1QueuedAt || b.createdAt || '').localeCompare(a.os1QueuedAt || a.createdAt || '')
+                )
+                const chunks: typeof items[] = []
+                for (let i = 0; i < sorted.length; i += 5) chunks.push(sorted.slice(i, i + 5))
 
-                  <div className="flex flex-wrap gap-1.5">
-                    {items.map((s, i) => (
-                      <span key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-0.5 text-xs">
-                        <span className="text-violet-400 font-mono">#{i + 1}</span>
-                        <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
-                        {s.is_inbound && <span className="text-teal-500 text-[9px]"><i className="fa-solid fa-arrow-down-to-line" /></span>}
-                      </span>
-                    ))}
-                  </div>
+                return chunks.map((chunk, chunkIdx) => {
+                  const chunkKey = `${ch}-${chunkIdx}`
+                  const isMulti = chunks.length > 1
+                  return (
+                    <div key={chunkKey} className="border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <i className={`${chIcon[ch]} text-slate-500 text-sm`} />
+                        <span className="font-bold text-sm text-slate-700">{chLabel[ch]}</span>
+                        {isMulti && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${chunkIdx === 0 ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {chunkIdx === 0 ? `バッチ1（最新${chunk.length}件）` : `バッチ${chunkIdx + 1}（残り${chunk.length}件）`}
+                          </span>
+                        )}
+                        <span className="badge bg-violet-100 text-violet-700">{chunk.length}件</span>
+                        {chunk.some(s => s.is_inbound) && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">
+                            <i className="fa-solid fa-arrow-down-to-line mr-0.5" />インバウンド含む
+                          </span>
+                        )}
+                      </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-2">
-                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピー</p>
-                      <button
-                        className="btn-sec w-full justify-center font-bold"
-                        onClick={() => {
-                          const full = buildGroupPrompt(items, ch)
-                          if (!full) { toast.show('プロンプトを読み込み中です', 2000); return }
-                          copyText(full, () => toast.show(`${chLabel[ch]} ${items.length}人分のOS①プロンプトをコピーしました`, 3000))
-                        }}
-                      >
-                        <i className="fa-solid fa-copy text-violet-500" />{items.length}人分コピー（{chLabel[ch]}）
-                      </button>
+                      <div className="flex flex-wrap gap-1.5">
+                        {chunk.map((s, i) => (
+                          <span key={s.id} className="flex items-center gap-1 bg-violet-50 border border-violet-200 rounded-lg px-2 py-0.5 text-xs">
+                            <span className="text-violet-400 font-mono">#{chunkIdx * 5 + i + 1}</span>
+                            <span className="font-semibold text-violet-800">{s.displayName || s.handle}</span>
+                            {s.is_inbound && <span className="text-teal-500 text-[9px]"><i className="fa-solid fa-arrow-down-to-line" /></span>}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ1：</span>バッチプロンプトをコピー</p>
+                          <button
+                            className="btn-sec w-full justify-center font-bold"
+                            onClick={() => {
+                              const full = buildGroupPrompt(chunk, ch)
+                              if (!full) { toast.show('プロンプトを読み込み中です', 2000); return }
+                              copyText(full, () => toast.show(`${chLabel[ch]} ${chunk.length}人分のOS①プロンプトをコピーしました`, 3000))
+                            }}
+                          >
+                            <i className="fa-solid fa-copy text-violet-500" />{chunk.length}人分コピー（{chLabel[ch]}）
+                          </button>
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ2：</span>AI出力を貼り付けて登録</p>
+                          <textarea
+                            className="input-base h-20 cs text-xs"
+                            placeholder={`${chunk.length}人分の【アカウント情報】〜を貼り付け`}
+                            value={batchResults[chunkKey] ?? ''}
+                            onChange={e => setBatchResults(prev => ({ ...prev, [chunkKey]: e.target.value }))}
+                          />
+                          <button
+                            className="btn-primary w-full justify-center text-sm"
+                            onClick={() => handleBatchSubmit(chunk, chunkKey)}
+                          >
+                            <i className="fa-solid fa-circle-check" />{chunk.length}件を登録してOS②へ
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ2：</span>AI出力を貼り付けて登録</p>
-                      <textarea
-                        className="input-base h-20 cs text-xs"
-                        placeholder={`${items.length}人分の【アカウント情報】〜を貼り付け`}
-                        value={batchResult}
-                        onChange={e => setBatchResult(e.target.value)}
-                      />
-                      <button
-                        className="btn-primary w-full justify-center text-sm"
-                        onClick={() => handleBatchSubmit(items)}
-                      >
-                        <i className="fa-solid fa-circle-check" />{items.length}件を登録してOS②へ
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  )
+                })
+              })}
             </div>
           </section>
         )
