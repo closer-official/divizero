@@ -97,6 +97,7 @@ export interface Screening {
   signal_type?: 'いいね' | 'フォロー' | 'ストーリー反応' | '突然DM' | 'リプ';
   signal_date?: string;
   signal_memo?: string;
+  inbound_actions?: string[];
   rawProfileText?: string;
   os1QueuedAt?: string;
 }
@@ -215,6 +216,8 @@ export interface PipelineItem {
   last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
   last_reaction_at?: string;
   inbound_signal?: { type: string; date: string; memo?: string };
+  isInbound?: boolean;
+  inboundActions?: string[];
   salesExpectation?: number;        // 0-40, set at OS1, does not change
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
 }

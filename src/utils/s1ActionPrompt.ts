@@ -51,6 +51,19 @@ export function buildS1ActionPrompt(
     result += `\n\n（上記「${turns[turns.length - 1].role}」のメッセージが今回判定する最新の発言です）`
   }
 
+  // インバウンドコンテキスト追加
+  const inboundActions = item.inboundActions?.length
+    ? item.inboundActions
+    : item.inbound_signal ? [item.inbound_signal.type] : []
+  if ((item.isInbound || item.inbound_signal) && inboundActions.length > 0) {
+    result += '\n\n━━━━ インバウンド情報（重要） ━━━━'
+    result += '\n■ この案件はインバウンド起点です（こちらから接触する前に、相手から先にアクションが来ています）'
+    result += `\n■ 相手からのアクション：${inboundActions.join('、')}`
+    if (item.inbound_signal?.date) result += `\n■ 起点日：${item.inbound_signal.date}`
+    if (item.inbound_signal?.memo) result += `\n■ 備考：${item.inbound_signal.memo}`
+    result += '\n■ 判定留意点：相手が先にアクションしている分、接触ハードルは低め。フォロー返し・リプへの反応率は通常より高いと仮定して、積極的な初期アクション（フォロー返し+早期リプ等）を優先してください。'
+  }
+
   return result
 }
 

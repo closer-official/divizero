@@ -2520,6 +2520,10 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
   const [reactionNote, setReactionNote] = useState('')
+  // reaction edit state
+  const [editingReaction, setEditingReaction] = useState(false)
+  const [editReactionType, setEditReactionType] = useState<TouchReaction[]>([])
+  const [editReactionNote, setEditReactionNote] = useState('')
   // thread state
   const [replyText, setReplyText] = useState('')
   const [initChannel, setInitChannel] = useState<'リプ' | 'DM'>('リプ')
@@ -2636,6 +2640,44 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setReactionNote('')
     setMsgOutput('')
     setMsgParsed(null)
+  }
+
+  function handleOpenEditReaction() {
+    const current = toReactionArr(touch.reactionType).filter(r => r !== '未記録') as TouchReaction[]
+    setEditReactionType(current)
+    setEditReactionNote(touch.reactionNote || '')
+    setEditingReaction(true)
+  }
+
+  function handleSaveEditedReaction() {
+    if (editReactionType.length === 0) return
+    const touchUpdates: Partial<Touch> = {
+      reactionType: editReactionType,
+      reactionNote: editReactionNote,
+      status: 'reacted' as const,
+    }
+    const pipelineUpdates: Partial<PipelineItem> = {}
+    const sortedTouches = [...(pipelineItem.touches || [])].sort((a, b) => b.date.localeCompare(a.date))
+    const isLatest = sortedTouches[0]?.id === touch.id
+    if (isLatest) {
+      if (editReactionType.some(r => ['いいね返り', 'フォロー返し', 'スタンプ・絵文字'].includes(r))) {
+        pipelineUpdates.last_reaction = 'heart'
+        pipelineUpdates.last_reaction_at = new Date().toISOString()
+      } else if (editReactionType.includes('無反応')) {
+        pipelineUpdates.last_reaction = 'none'
+        pipelineUpdates.last_reaction_at = new Date().toISOString()
+      } else if (editReactionType.includes('公開拒絶（R5）')) {
+        pipelineUpdates.last_reaction = 'negative'
+        pipelineUpdates.last_reaction_at = new Date().toISOString()
+      } else if (editReactionType.includes('テキスト返信')) {
+        pipelineUpdates.noReactionStreak = 0
+        pipelineUpdates.likeReturnStreak = 0
+      }
+    }
+    onReactionSaved(touch.id, touchUpdates, pipelineUpdates)
+    setEditingReaction(false)
+    setEditReactionType([])
+    setEditReactionNote('')
   }
 
   function handleCopyS1ActionPrompt() {
@@ -2991,6 +3033,15 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             <button className="text-[10px] text-slate-400 hover:text-indigo-500 px-1.5 py-0.5 rounded transition" onClick={() => setDetailOpen(v => !v)}>
               詳細{detailOpen ? '▲' : '▼'}
             </button>
+            {role === 'admin' && !isAwaiting && (
+              <button
+                className="text-slate-300 hover:text-indigo-500 p-1 rounded transition min-h-[28px] min-w-[28px] flex items-center justify-center"
+                title="反応を編集"
+                onClick={handleOpenEditReaction}
+              >
+                <i className="fa-solid fa-pen text-[10px]" />
+              </button>
+            )}
             {role === 'admin' && (
               <button className="text-slate-300 hover:text-rose-500 p-1 rounded transition min-h-[28px] min-w-[28px] flex items-center justify-center" onClick={onDelete}>
                 <i className="fa-solid fa-trash text-[10px]" />
@@ -3054,6 +3105,48 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
             <span className="text-[10px] bg-amber-100 text-amber-700 font-bold px-2 py-0.5 rounded-full">⏳ 反応待ち</span>
             <button className="text-xs text-indigo-600 font-semibold hover:text-indigo-800 transition min-h-[32px] px-2" onClick={handleStartReaction}>
               反応を記録 →
+            </button>
+          </div>
+        )}
+
+        {/* reaction edit form */}
+        {editingReaction && (
+          <div className="mt-2 flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold text-amber-700"><i className="fa-solid fa-pen mr-1" />反応を編集</p>
+              <button
+                className="text-[10px] text-slate-400 hover:text-slate-600"
+                onClick={() => { setEditingReaction(false); setEditReactionType([]); setEditReactionNote('') }}
+              >キャンセル</button>
+            </div>
+            <p className="text-xs font-bold text-slate-700">反応の種類</p>
+            <div className="flex flex-wrap gap-1.5">
+              {REACTION_TYPES.map(r => (
+                <Chip
+                  key={r}
+                  label={r}
+                  selected={editReactionType.includes(r)}
+                  onClick={() => setEditReactionType(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])}
+                />
+              ))}
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-500">補足・返信テキスト（任意）</label>
+              <textarea
+                rows={3}
+                className="input-base cs text-xs resize-y"
+                placeholder="相手の返信テキストや補足メモ（任意）"
+                value={editReactionNote}
+                onChange={e => setEditReactionNote(e.target.value)}
+              />
+            </div>
+            <button
+              className="btn-primary text-xs py-2.5 justify-center"
+              disabled={editReactionType.length === 0}
+              style={{ background: editReactionType.length > 0 ? '#4f46e5' : undefined }}
+              onClick={handleSaveEditedReaction}
+            >
+              <i className="fa-solid fa-check mr-1" />上書き保存
             </button>
           </div>
         )}
