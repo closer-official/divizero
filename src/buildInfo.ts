@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 OS①→OS②: 営業期待値引き継ぎ修正＋インバウンド初期Touch自動生成";
+export const BUILD_LABEL = "06/28 DM仮説生成ルール厳格化：4パターン強制・売り込みフレーズ禁止・営業仮説スコア定義値厳命";
