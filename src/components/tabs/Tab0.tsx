@@ -3,7 +3,7 @@ import type { AppData, Prompts, Screening, Target, PipelineItem } from '../../ty
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
-import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, uid, todayStr } from '../../utils/helpers'
+import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
 type SignalType = 'いいね' | 'フォロー' | 'ストーリー反応' | '突然DM' | 'リプ'
@@ -348,6 +348,9 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
             lastContactDate: todayStr(),
             analyses: [], history: [], sentMessages: [], replies: [],
             isOpen: true,
+            salesExpectation: newTarget.salesExpectation,
+            salesExpectationReason: newTarget.salesExpectationReason,
+            touches: inboundFields.isInbound ? [buildInitialInboundTouch(screening, todayStr())] : [],
             ...inboundFields,
           })
           pipelineCount++
@@ -378,6 +381,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         is_inbound: item.is_inbound,
         inbound_actions: item.inbound_actions,
         signal_type: item.signal_type,
+        signal_date: item.signal_date,
       }))
     }
     saveData(prev => ({ ...prev, screenings: prev.screenings.filter(x => x.id !== id) }))

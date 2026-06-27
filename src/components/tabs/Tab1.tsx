@@ -3,7 +3,7 @@ import type { AppData, Prompts, Target, Screening } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
-import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr } from '../../utils/helpers'
+import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
 type Mode = 'twitter' | 'instagram' | 'threads'
@@ -24,7 +24,7 @@ const TRACK_TIPS: Record<string, string> = {
   SKIP: '接触対象外（除外フィルター該当）'
 }
 
-type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }
+type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string; signal_date?: string }
 
 function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }): string {
   const actionsList = item.inbound_actions?.length
@@ -115,6 +115,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           sentMessages: [],
           replies: [],
           isOpen: true,
+          salesExpectation: newTarget.salesExpectation,
+          salesExpectationReason: newTarget.salesExpectationReason,
+          touches: prefill?.is_inbound ? [buildInitialInboundTouch(prefill, todayStr())] : [],
         }]
       }
       return d
@@ -229,6 +232,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             isOpen: true,
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
+            touches: screening.is_inbound ? [buildInitialInboundTouch(screening, todayStr())] : [],
           })
           pipelineCount++
         }

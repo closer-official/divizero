@@ -1,4 +1,4 @@
-import type { AppData, ExcludedAccount, TrashItem, TouchReaction } from '../types';
+import type { AppData, ExcludedAccount, TrashItem, TouchReaction, Touch } from '../types';
 
 export function toReactionArr(r: TouchReaction | TouchReaction[] | string | undefined): TouchReaction[] {
   if (!r) return []
@@ -178,6 +178,31 @@ export function purgeOldTrash(d: AppData): void {
   if (!d.trash || d.trash.length === 0) return;
   const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
   d.trash = d.trash.filter(x => x._trashedAt > cutoff);
+}
+
+export function buildInitialInboundTouch(
+  item: { inbound_actions?: string[]; signal_type?: string; signal_date?: string },
+  fallbackDate: string
+): Touch {
+  const ibActionsArr = item.inbound_actions?.length
+    ? item.inbound_actions
+    : item.signal_type ? [item.signal_type] : []
+  const ibActionsStr = ibActionsArr.join('、')
+  return {
+    id: uid(),
+    date: item.signal_date ?? fallbackDate,
+    targetPostText: `インバウンド着信（${ibActionsStr}）`,
+    targetPostType: 'その他',
+    targetValidity: '◯',
+    aiSuggestedText: '',
+    actualSentText: '',
+    editReason: '',
+    messageValidity: '未評価',
+    status: 'reacted',
+    reactionType: '未記録',
+    reactionNote: `相手から先に接触あり：${ibActionsStr}`,
+    touchMode: ibActionsStr.includes('DM') ? 'conversation' : 'post',
+  }
 }
 
 export function todayStr(): string {

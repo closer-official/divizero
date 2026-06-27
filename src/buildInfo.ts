@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/27 OS①バッチ・単発プロンプトにインバウンド情報を動的追記（突然DM対応含む）";
+export const BUILD_LABEL = "06/28 OS①→OS②: 営業期待値引き継ぎ修正＋インバウンド初期Touch自動生成";
