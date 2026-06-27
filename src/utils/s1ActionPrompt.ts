@@ -24,6 +24,17 @@ export function buildS1ActionPrompt(
     hasReaction(t.reactionType, 'フォロー返し')
   )
 
+  const isInboundDM = (item.isInbound || !!item.inbound_signal) &&
+    (item.inboundActions?.includes('突然DM') || item.inbound_signal?.type === '突然DM')
+
+  const resolvedTargetPostRawText = isInboundDM
+    ? '（インバウンドDM案件のため、接触した投稿はありません）'
+    : (touch.targetPostRawText || '（原文なし）')
+
+  const resolvedReactionNote = isInboundDM && !touch.reactionNote && item.inbound_signal?.memo
+    ? `相手からのDM内容：\n${item.inbound_signal.memo}`
+    : (touch.reactionNote || '（なし）')
+
   let result = template
     .replace('{{accountName}}', item.accountName)
     .replace('{{channel}}', item.channel)
@@ -32,10 +43,10 @@ export function buildS1ActionPrompt(
     .replace('{{salesExpectation}}', String(item.salesExpectation ?? '未設定'))
     .replace('{{targetPostType}}', touch.targetPostType || '—')
     .replace('{{targetPostText}}', touch.targetPostText || '—')
-    .replace('{{targetPostRawText}}', touch.targetPostRawText || '（原文なし）')
+    .replace('{{targetPostRawText}}', resolvedTargetPostRawText)
     .replace('{{actualSentText}}', touch.actualSentText || '—')
     .replace('{{reactionType}}', reactionType)
-    .replace('{{reactionNote}}', touch.reactionNote || '（なし）')
+    .replace('{{reactionNote}}', resolvedReactionNote)
     .replace('{{s1Count}}', String((item.touches || []).length))
     .replace('{{likeReturnStreak}}', String(item.likeReturnStreak || 0))
     .replace('{{noReactionStreak}}', String(item.noReactionStreak || 0))

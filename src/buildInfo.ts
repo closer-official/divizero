@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 DM仮説生成ルール厳格化：4パターン強制・売り込みフレーズ禁止・営業仮説スコア定義値厳命";
+export const BUILD_LABEL = "06/28 インバウンドDM本文をS1判定プロンプトの返信テキスト欄へ自動代入";
