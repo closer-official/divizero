@@ -220,6 +220,7 @@ export interface PipelineItem {
   inboundActions?: string[];
   salesExpectation?: number;        // 0-40, set at OS1, does not change
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
+  todayTask?: { action: string; addedAt: string };  // 行動判定で「0日後・今日」と出た場合にセット
 }
 
 export interface ClosedDeal {

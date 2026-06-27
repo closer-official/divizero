@@ -678,6 +678,11 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           } else if ((r.judgment === '次投稿再接触' || r.judgment === 'S1継続') && r.waitDays && r.waitDays > 0) {
             extra = { state: 'waiting', recontact_date: addDaysBatch(r.waitDays) }
           }
+          // 0日後（今日）判定: 休眠・保管以外でwaitDaysが0または未指定のもの
+          const isToday = r.judgment !== '休眠' && r.judgment !== '保管' && !(r.waitDays && r.waitDays > 0)
+          if (isToday && r.nextStep) {
+            extra.todayTask = { action: r.nextStep, addedAt: todayStr() }
+          }
         }
         return {
           ...p,
@@ -782,13 +787,20 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     toast.show(`${results.length}件の判定を保存しました`)
   }
 
+  function handleClearTodayTask(pipelineId: string) {
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => p.id === pipelineId ? { ...p, todayTask: undefined } : p),
+    }))
+  }
+
   // ① 本日やること計算
   const now48hAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
   const todayTasks = active.filter(p => {
     const awaitingOld = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
     const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
     const isNew = (p.touches || []).length === 0  // 新規登録（未接触）
-    return awaitingOld || recontactDue || isNew
+    return awaitingOld || recontactDue || isNew || !!p.todayTask
   })
 
   // 未判定一括コピー対象: active かつ次アクション未決定
@@ -842,18 +854,20 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
                 const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
                 const isNew = (p.touches || []).length === 0
+                const hasJudgmentTask = !!p.todayTask && !awaitingTouch && !recontactDue && !isNew
                 return (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-100 cursor-pointer transition"
+                    className={`flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-100 cursor-pointer transition ${hasJudgmentTask ? 'border-l-2 border-orange-400' : ''}`}
                     onClick={() => setDrawerItemId(p.id)}
                   >
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                       <p className="font-semibold text-sm text-indigo-900 truncate">{p.accountName}</p>
-                      <p className="text-[11px] text-indigo-600">
-                        {isNew && <span className="mr-2 font-bold text-emerald-600"><i className="fa-solid fa-star mr-1" />初回接触</span>}
-                        {awaitingTouch && <span className="mr-2"><i className="fa-solid fa-clock mr-1" />48h反応待ち確認</span>}
+                      <p className="text-[11px] text-indigo-600 flex flex-wrap gap-x-2 gap-y-0.5">
+                        {isNew && <span className="font-bold text-emerald-600"><i className="fa-solid fa-star mr-1" />初回接触</span>}
+                        {awaitingTouch && <span><i className="fa-solid fa-clock mr-1" />48h反応待ち確認</span>}
                         {recontactDue && !isNew && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
+                        {p.todayTask && <span className="text-orange-600 font-semibold"><i className="fa-solid fa-bolt mr-1" />{p.todayTask.action}</span>}
                       </p>
                     </div>
                     {awaitingTouch && (
@@ -868,6 +882,15 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                           </button>
                         ))}
                       </div>
+                    )}
+                    {p.todayTask && (
+                      <button
+                        className="text-[10px] font-bold py-1 px-2.5 rounded-lg border border-orange-300 bg-white hover:bg-orange-500 hover:text-white hover:border-orange-500 text-orange-600 transition shrink-0"
+                        onClick={e => { e.stopPropagation(); handleClearTodayTask(p.id) }}
+                        title="アクション完了としてリストから除去"
+                      >
+                        <i className="fa-solid fa-check mr-1" />完了
+                      </button>
                     )}
                     <i className="fa-solid fa-chevron-right text-indigo-300 text-xs shrink-0" />
                   </div>
@@ -2710,6 +2733,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       pipelineUpdates.state = 'waiting'
       pipelineUpdates.recontact_date = addDays(parsed.waitDays)
     }
+    // 0日後（今日）判定: 休眠・保管以外でwaitDaysが0または未指定のもの
+    const s1IsToday = parsed.judgment !== '休眠' && parsed.judgment !== '保管' && !(parsed.waitDays && parsed.waitDays > 0)
+    if (s1IsToday && parsed.nextStep) {
+      pipelineUpdates.todayTask = { action: parsed.nextStep, addedAt: todayStr() }
+    }
     onReactionSaved(touch.id, {
       reactionJudgment: parsed.judgment,
       reactionNextStep: parsed.nextStep,
@@ -2956,6 +2984,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         pipelineUpdates.state = 'closed'
       } else if (os2CpParsed.judgment.startsWith('前進') || os2CpParsed.judgment === '前進') {
         pipelineUpdates.currentStep = advanceStep(pipelineItem.currentStep)
+      }
+      // deadline が「今日」系のテキストなら今日やることリストに追加
+      const cpDeadline = os2CpParsed.deadline || ''
+      if (/今日|本日|即日|当日|^0日/.test(cpDeadline) && os2CpParsed.nextAction) {
+        pipelineUpdates.todayTask = { action: os2CpParsed.nextAction, addedAt: todayStr() }
       }
     }
     // OS_現象未来 の「次のアクション」から再接触日をセット
