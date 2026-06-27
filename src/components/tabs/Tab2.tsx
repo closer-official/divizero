@@ -388,6 +388,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [batchJudgOpen, setBatchJudgOpen] = useState(false)
   const [batchJudgOutput, setBatchJudgOutput] = useState('')
   const [batchJudgCopyState, setBatchJudgCopyState] = useState<'idle' | 'copied'>('idle')
+  const [batchJudgInputShown, setBatchJudgInputShown] = useState(false)
   const [batchJudgError, setBatchJudgError] = useState<string | null>(null)
   const [batchJudgSuccess, setBatchJudgSuccess] = useState(false)
 
@@ -632,6 +633,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       const prompt = await buildBatchJudgmentPrompt(unverifiedTouches)
       await navigator.clipboard.writeText(prompt)
       setBatchJudgCopyState('copied')
+      setBatchJudgInputShown(true)
       setTimeout(() => setBatchJudgCopyState('idle'), 2000)
     } catch {
       setBatchJudgError('コピーに失敗しました')
@@ -667,13 +669,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         const pResults = byPipeline[p.id]
         if (!pResults || pResults.length === 0) return p
         let extra: Partial<PipelineItem> = {}
+        const addDaysBatch = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
         for (const r of pResults) {
           if (r.judgment === '休眠') {
-            const d = new Date(); d.setDate(d.getDate() + 30)
-            extra = { state: 'sleeping', recontact_date: d.toISOString().slice(0, 10) }
+            extra = { state: 'sleeping', recontact_date: addDaysBatch(r.waitDays ?? 30) }
           } else if (r.judgment === '保管') {
-            const d = new Date(); d.setDate(d.getDate() + 180)
-            extra = { state: 'archived', recontact_date: d.toISOString().slice(0, 10) }
+            extra = { state: 'archived', recontact_date: addDaysBatch(r.waitDays ?? 180) }
+          } else if ((r.judgment === '次投稿再接触' || r.judgment === 'S1継続') && r.waitDays && r.waitDays > 0) {
+            extra = { state: 'waiting', recontact_date: addDaysBatch(r.waitDays) }
           }
         }
         return {
@@ -959,7 +962,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </div>
             <button
               className="btn-sec text-[11px] py-1 px-3 text-violet-700 border-violet-300 shrink-0"
-              onClick={() => { setBatchJudgOpen(v => !v); setBatchJudgError(null); setBatchJudgSuccess(false) }}
+              onClick={() => { setBatchJudgOpen(v => !v); setBatchJudgError(null); setBatchJudgSuccess(false); setBatchJudgInputShown(false); setBatchJudgOutput('') }}
             >
               {batchJudgOpen ? '閉じる' : 'バッチ判定'}
             </button>
@@ -985,7 +988,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 {batchJudgCopyState === 'copied' ? '✓ コピーしました' : `${unverifiedTouches.length}件まとめて判定プロンプトをコピー`}
               </button>
 
-              {(batchJudgCopyState === 'copied' || batchJudgOutput) && (
+              {(batchJudgInputShown || batchJudgOutput) && (
                 <>
                   <p className="text-[10px] text-slate-400">↓ AIに貼り付けて実行 → 出力をここに貼る</p>
                   <textarea
@@ -1536,6 +1539,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
   const [urlInput, setUrlInput] = useState('')
+  const [editingSalesExp, setEditingSalesExp] = useState(false)
+  const [salesExpInput, setSalesExpInput] = useState('')
+  const [salesExpReasonInput, setSalesExpReasonInput] = useState('')
   const addFormRef = useRef<HTMLDivElement>(null)
 
   // AI generation (touch prompt)
@@ -2025,32 +2031,115 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           )}
 
           {/* 案件情報（仮説フルテキスト・営業期待値・判定根拠） */}
-          {(item.hypothesis || item.salesExpectation !== undefined || item.salesExpectationReason) && (
-            <div className="mx-4 mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-2 text-xs">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">案件情報</p>
-              {item.hypothesis && (
-                <div>
-                  <p className="text-[10px] text-slate-400 mb-0.5">事前仮説</p>
-                  <p className="text-slate-700 text-[11px] leading-relaxed whitespace-pre-wrap">{item.hypothesis}</p>
-                </div>
-              )}
-              {item.salesExpectation !== undefined && (
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-slate-400 shrink-0">営業期待値</span>
-                  <span className={`text-xs font-bold ${item.salesExpectation >= 35 ? 'text-amber-600' : 'text-slate-600'}`}>
-                    {item.salesExpectation}点 / 40点
-                    {item.salesExpectation >= 35 && <span className="ml-1.5 text-[10px] font-normal text-amber-500">★超優良案件（休眠・保管移行なし）</span>}
-                  </span>
-                </div>
-              )}
-              {item.salesExpectationReason && (
-                <div>
-                  <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
-                  <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
-                </div>
+          <div className="mx-4 mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-2 text-xs">
+            <div className="flex items-center gap-1">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex-1">案件情報</p>
+              {role === 'admin' && !editingSalesExp && (
+                <button
+                  className="text-[10px] text-slate-400 hover:text-amber-600 px-1.5 py-0.5 rounded transition"
+                  onClick={() => {
+                    setSalesExpInput(item.salesExpectation !== undefined ? String(item.salesExpectation) : '')
+                    setSalesExpReasonInput(item.salesExpectationReason || '')
+                    setEditingSalesExp(true)
+                  }}
+                >
+                  <i className="fa-solid fa-pen text-[9px] mr-0.5" />営業期待値を編集
+                </button>
               )}
             </div>
-          )}
+
+            {/* 仮説フルテキスト（常時表示） */}
+            {item.hypothesis && (
+              <div>
+                <p className="text-[10px] text-slate-400 mb-0.5">事前仮説</p>
+                <p className="text-slate-700 text-[11px] leading-relaxed whitespace-pre-wrap">{item.hypothesis}</p>
+              </div>
+            )}
+
+            {/* 営業期待値 — 通常表示 */}
+            {!editingSalesExp && (
+              <>
+                {item.salesExpectation !== undefined ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-400 shrink-0">営業期待値</span>
+                    <span className={`text-xs font-bold ${item.salesExpectation >= 35 ? 'text-amber-600' : 'text-slate-600'}`}>
+                      {item.salesExpectation}点 / 40点
+                      {item.salesExpectation >= 35 && <span className="ml-1.5 text-[10px] font-normal text-amber-500">★超優良案件（休眠・保管移行なし）</span>}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-amber-600 font-medium">
+                    ⚠ 営業期待値が未設定です。「営業期待値を編集」から手動入力してください。
+                  </p>
+                )}
+                {item.salesExpectationReason && (
+                  <div>
+                    <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* 営業期待値 — 編集モード */}
+            {editingSalesExp && (
+              <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+                <p className="text-[10px] font-bold text-amber-700">営業期待値を設定（0〜40点）</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={40}
+                    className="input-base text-sm py-1.5 w-20 text-center"
+                    placeholder="0-40"
+                    value={salesExpInput}
+                    onChange={e => setSalesExpInput(e.target.value)}
+                  />
+                  <span className="text-[11px] text-slate-500">点 / 40点</span>
+                  {salesExpInput !== '' && Number(salesExpInput) >= 35 && (
+                    <span className="text-[10px] font-bold text-amber-600">★超優良案件</span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">参考：35〜40=超優良（FT相当）/ 20〜34=通常 / 0〜19=低期待値</p>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-500">判定根拠（任意・OS①で確認した内容）</label>
+                  <textarea
+                    rows={3}
+                    className="input-base cs text-[11px] resize-y"
+                    placeholder="例: LINEのみ導線・受講生あり・教育コンテンツ販売中のため期待値30点"
+                    value={salesExpReasonInput}
+                    onChange={e => setSalesExpReasonInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="btn-sec text-xs py-1.5 flex-1"
+                    onClick={() => setEditingSalesExp(false)}
+                  >キャンセル</button>
+                  <button
+                    className="btn-primary text-xs py-1.5 flex-1 justify-center"
+                    style={{ background: '#d97706' }}
+                    disabled={salesExpInput === '' || isNaN(Number(salesExpInput))}
+                    onClick={() => {
+                      const val = Math.min(40, Math.max(0, Number(salesExpInput)))
+                      saveData(prev => ({
+                        ...prev,
+                        pipeline: prev.pipeline.map(p =>
+                          p.id === item.id
+                            ? { ...p, salesExpectation: val, salesExpectationReason: salesExpReasonInput.trim() || p.salesExpectationReason }
+                            : p
+                        ),
+                      }))
+                      setEditingSalesExp(false)
+                      toast.show(`営業期待値を${val}点に保存しました`)
+                    }}
+                  >
+                    <i className="fa-solid fa-check mr-1" />保存
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* latest OS② judgment */}
           {(displayJudgment || displayNextAction || displayReplyA || displayReplyB) && (
@@ -2454,14 +2543,16 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     }
     setS1ActionParsed(parsed)
     const pipelineUpdates: Partial<PipelineItem> = {}
+    const addDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
     if (parsed.judgment === '休眠') {
       pipelineUpdates.state = 'sleeping'
-      const d = new Date(); d.setDate(d.getDate() + 30)
-      pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
+      pipelineUpdates.recontact_date = addDays(parsed.waitDays ?? 30)
     } else if (parsed.judgment === '保管') {
       pipelineUpdates.state = 'archived'
-      const d = new Date(); d.setDate(d.getDate() + 180)
-      pipelineUpdates.recontact_date = d.toISOString().slice(0, 10)
+      pipelineUpdates.recontact_date = addDays(parsed.waitDays ?? 180)
+    } else if ((parsed.judgment === '次投稿再接触' || parsed.judgment === 'S1継続') && parsed.waitDays && parsed.waitDays > 0) {
+      pipelineUpdates.state = 'waiting'
+      pipelineUpdates.recontact_date = addDays(parsed.waitDays)
     }
     onReactionSaved(touch.id, {
       reactionJudgment: parsed.judgment,

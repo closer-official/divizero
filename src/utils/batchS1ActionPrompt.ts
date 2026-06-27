@@ -17,6 +17,7 @@ export interface BatchS1ActionResult {
   reason: string
   nextStep: string
   warning: string
+  waitDays?: number
   replyA?: string
   replyB?: string
   dmScore?: string
@@ -107,6 +108,8 @@ export function parseBatchS1ActionOutput(
 
     const dmScore = pick('DM_SCORE')
     const dmMoveReason = pick('DM移行判断')
+    const waitDaysRaw = pick('待機日数')
+    const waitDays = waitDaysRaw ? parseInt(waitDaysRaw, 10) : undefined
     results.push({
       index: item.index,
       pipelineId: item.pipelineId,
@@ -115,6 +118,7 @@ export function parseBatchS1ActionOutput(
       reason: pick('理由'),
       nextStep: pick('推奨アクション'),
       warning: pick('警告'),
+      waitDays: waitDays !== undefined && !isNaN(waitDays) ? waitDays : undefined,
       replyA: replyA && replyA !== 'なし' ? replyA : undefined,
       replyB: replyB && replyB !== 'なし' ? replyB : undefined,
       dmScore: dmScore || undefined,
