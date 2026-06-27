@@ -213,6 +213,7 @@ export interface PipelineItem {
   last_reaction_at?: string;
   inbound_signal?: { type: string; date: string; memo?: string };
   salesExpectation?: number;        // 0-40, set at OS1, does not change
+  salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
 }
 
 export interface ClosedDeal {

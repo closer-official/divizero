@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/27 営業OS設計刷新: S1=認知維持ループ・DM_SCORE3軸判定・教育者ターゲット・受講生価値向上仮説に変更";
+export const BUILD_LABEL = "06/27 Ver6.0: 営業仮説スコア導入・AND営業イベント廃止・超優良案件休眠保護";
