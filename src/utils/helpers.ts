@@ -184,13 +184,16 @@ export function purgeOldTrash(d: AppData): void {
 }
 
 export function buildInitialInboundTouch(
-  item: { inbound_actions?: string[]; signal_type?: string; signal_date?: string },
+  item: { inbound_actions?: string[]; signal_type?: string; signal_date?: string; signal_memo?: string },
   fallbackDate: string
 ): Touch {
   const ibActionsArr = item.inbound_actions?.length
     ? item.inbound_actions
     : item.signal_type ? [item.signal_type] : []
   const ibActionsStr = ibActionsArr.join('、')
+  const memoNote = item.signal_memo?.trim()
+    ? `\n\n【受信内容・メモ】\n${item.signal_memo.trim()}`
+    : ''
   return {
     id: uid(),
     date: item.signal_date ?? fallbackDate,
@@ -203,7 +206,7 @@ export function buildInitialInboundTouch(
     messageValidity: '未評価',
     status: 'reacted',
     reactionType: '未記録',
-    reactionNote: `相手から先に接触あり：${ibActionsStr}`,
+    reactionNote: `相手から先に接触あり：${ibActionsStr}${memoNote}`,
     touchMode: ibActionsStr.includes('DM') ? 'conversation' : 'post',
   }
 }

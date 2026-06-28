@@ -26,15 +26,20 @@ const TRACK_TIPS: Record<string, string> = {
 
 type Prefill = { displayName: string; handle: string; channel: string; is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string; signal_date?: string; signal_memo?: string }
 
-function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string }): string {
+function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: string[]; signal_type?: string; signal_date?: string; signal_memo?: string }): string {
   const actionsList = item.inbound_actions?.length
     ? item.inbound_actions
     : item.signal_type ? [item.signal_type] : []
   const actionsStr = actionsList.join('、')
   if (!actionsStr || (!item.is_inbound && !actionsList.length)) return ''
-  let ctx = `\n\n【インバウンド情報（重要）】\nこの相手からは既にアクション（${actionsStr}）が来ています。接触ハードルが低いため、これを含味して仮説構築および初回アプローチ案を生成してください。`
-  if (actionsStr.includes('DM')) {
-    ctx += `\n※注意：相手から既にDMが届いているため、初手のアプローチは「公開リプ」ではなく「DMへの返信」になります。初回リプ案A・Bの出力枠を利用して、相手のDMに対する自然な返信案（1対1の親しみやすいトーン）を生成してください。`
+  const dateStr = item.signal_date ? `（検知日：${item.signal_date}）` : ''
+  const isDm = actionsStr.includes('突然DM') || actionsStr.includes('DM')
+  let ctx = `\n\n【インバウンド情報（重要）】\nこの相手からは既にアクション（${actionsStr}）が来ています${dateStr}。接触ハードルが低いため、これを加味して仮説構築および初回アプローチ案を生成してください。`
+  if (item.signal_memo?.trim()) {
+    ctx += `\n\n▼ ${isDm ? '相手から届いたDM本文' : 'メモ・追記'}：\n${item.signal_memo.trim()}`
+  }
+  if (isDm) {
+    ctx += `\n\n※注意：相手から既にDMが届いているため、初手のアプローチは「公開リプ」ではなく「DMへの返信」になります。${item.signal_memo?.trim() ? '上記DM本文を踏まえたうえで、' : ''}初回リプ案A・Bの出力枠を利用して、相手のDMに対する自然な返信案（1対1の親しみやすいトーン）を生成してください。`
   }
   return ctx
 }
