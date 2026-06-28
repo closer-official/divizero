@@ -37,6 +37,41 @@ function bulletList(text: string): string[] {
     .filter(Boolean)
 }
 
+function cleanMd(s: string): string {
+  return s.replace(/\*\*([^*]*)\*\*/g, '$1').replace(/\*([^*]*)\*/g, '$1').replace(/\*/g, '').trim()
+}
+
+function cleanCandidate(item: string, ...prefixLabels: string[]): string {
+  let s = cleanMd(item)
+  for (const label of prefixLabels) {
+    s = s.replace(new RegExp(`^${label}\\s*[：:]\\s*`), '').trim()
+  }
+  return cleanMd(s)
+}
+
+function migrateResearchData(r: OtherPostResearch): OtherPostResearch {
+  if (!r.analysis) return r
+  const a = r.analysis
+  return {
+    ...r,
+    analysis: {
+      ...a,
+      cognitiveShift: cleanMd(a.cognitiveShift),
+      personalitySignal: cleanMd(a.personalitySignal),
+      aestheticSignal: cleanMd(a.aestheticSignal),
+      twistStructure: cleanMd(a.twistStructure),
+      negativeSpace: cleanMd(a.negativeSpace),
+      followReason: cleanMd(a.followReason),
+      quotePotential: cleanMd(a.quotePotential),
+      researchNote: cleanMd(a.researchNote),
+      usedLens: (a.usedLens || []).map(cleanMd).filter(Boolean),
+      lensCandidates: (a.lensCandidates || []).map(s => cleanCandidate(s, 'レンズ')).filter(Boolean),
+      twistCandidates: (a.twistCandidates || []).map(s => cleanCandidate(s, 'オチ', 'どんでん返し')).filter(Boolean),
+      metaphorCandidates: (a.metaphorCandidates || []).map(s => cleanCandidate(s, '比喩')).filter(Boolean),
+    }
+  }
+}
+
 function constitutionContent(data: AppData, prompts: Prompts, key: 'personality' | 'aesthetic'): string {
   if (key === 'personality') return data.personalityConstitution?.content || prompts.PERSONALITY_CONSTITUTION || ''
   return data.aestheticConstitution?.content || prompts.AESTHETIC_CONSTITUTION || ''
@@ -71,23 +106,24 @@ function migratePostStock(s: PostStock): OtherPostResearch {
 function parseOS01Output(raw: string): OtherPostResearch['analysis'] | null {
   if (!raw.trim()) return null
   const nigaM = raw.match(/ニヤッ度[：:]\s*(\d)/)
+  const dbSection = mdSection(raw, 'DB登録候補')
   return {
-    cognitiveShift: mdSection(raw, '認知変化'),
-    usedLens: bulletList(mdSection(raw, 'レンズ分析')),
-    personalitySignal: fieldLine(raw, '人格'),
-    aestheticSignal: fieldLine(raw, '美学'),
+    cognitiveShift: cleanMd(mdSection(raw, '認知変化')),
+    usedLens: bulletList(mdSection(raw, 'レンズ分析')).map(cleanMd).filter(Boolean),
+    personalitySignal: cleanMd(fieldLine(raw, '人格')),
+    aestheticSignal: cleanMd(fieldLine(raw, '美学')),
     nigaDegree: nigaM ? parseInt(nigaM[1]) : 0,
-    twistStructure: fieldLine(raw, 'どんでん返し'),
-    negativeSpace: fieldLine(raw, '余白'),
-    followReason: mdSection(raw, 'フォロー理由・引用されやすさ'),
-    quotePotential: fieldLine(raw, '引用されやすさ'),
-    lensCandidates: bulletList(mdSection(raw, 'DB登録候補').match(/レンズ[\s\S]*?(?=オチ|比喩|$)/)?.[0] || ''),
-    metaphorCandidates: bulletList(mdSection(raw, 'DB登録候補').match(/比喩[\s\S]*/)?.[0] || ''),
+    twistStructure: cleanMd(fieldLine(raw, 'どんでん返し')),
+    negativeSpace: cleanMd(fieldLine(raw, '余白')),
+    followReason: cleanMd(mdSection(raw, 'フォロー理由・引用されやすさ')),
+    quotePotential: cleanMd(fieldLine(raw, '引用されやすさ')),
+    lensCandidates: bulletList(dbSection.match(/レンズ[\s\S]*?(?=オチ|比喩|$)/)?.[0] || '').map(s => cleanCandidate(s, 'レンズ')).filter(Boolean),
+    metaphorCandidates: bulletList(dbSection.match(/比喩[\s\S]*/)?.[0] || '').map(s => cleanCandidate(s, '比喩')).filter(Boolean),
     openingCandidates: [],
     endingCandidates: [],
-    twistCandidates: bulletList(mdSection(raw, 'DB登録候補').match(/オチ[\s\S]*?(?=比喩|レンズ|$)/)?.[0] || ''),
+    twistCandidates: bulletList(dbSection.match(/オチ[\s\S]*?(?=比喩|レンズ|$)/)?.[0] || '').map(s => cleanCandidate(s, 'オチ', 'どんでん返し')).filter(Boolean),
     humorCandidates: [],
-    researchNote: mdSection(raw, '研究ノート'),
+    researchNote: cleanMd(mdSection(raw, '研究ノート')),
   }
 }
 
@@ -279,6 +315,15 @@ function ResearchSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
     toast.show('削除しました')
   }
 
+  function handleMigrateData() {
+    const count = (data.otherPostResearches || []).filter(r => r.analysis).length
+    saveData(prev => ({
+      ...prev,
+      otherPostResearches: (prev.otherPostResearches || []).map(migrateResearchData)
+    }))
+    toast.show(`${count}件の分析データを整形しました`)
+  }
+
   return (
     <div className="flex flex-col gap-4">
       {/* toolbar */}
@@ -290,6 +335,11 @@ function ResearchSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
             </button>
           ))}
         </div>
+        {role === 'admin' && (
+          <button className="btn-sec text-xs py-2" onClick={handleMigrateData} title="保存済み分析データのMarkdown記号・重複ラベルを一括整形">
+            <i className="fa-solid fa-wand-magic-sparkles mr-1" />既存データ整形
+          </button>
+        )}
         <button className="btn-sec text-xs py-2 ml-auto" onClick={() => setAddOpen(v => !v)}>
           <i className="fa-solid fa-plus mr-1" />手動追加
         </button>
@@ -384,7 +434,7 @@ function ResearchSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
                         </div>
                         <div className="bg-violet-50 rounded-lg p-2">
                           <p className="text-[10px] font-bold text-violet-600 mb-1">フォロー理由</p>
-                          <p className="text-slate-700">{r.analysis.followReason}</p>
+                          <p className="text-slate-700 whitespace-pre-wrap">{r.analysis.followReason}</p>
                         </div>
                       </div>
                       {r.analysis.researchNote && (
