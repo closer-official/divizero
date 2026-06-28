@@ -32,6 +32,9 @@ async function openOrFocusWebapp() {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== 'enqueue') return false
 
+  console.log('[OS Ext BG] enqueue received, itemType:', message.itemType,
+    'accounts:', message.payload?.accounts?.length ?? '?')
+
   const item = {
     id: genId(),
     type: message.itemType,
@@ -44,6 +47,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const queue = result[QUEUE_KEY] || []
     queue.push(item)
     chrome.storage.local.set({ [QUEUE_KEY]: queue }, () => {
+      console.log('[OS Ext BG] saved to storage, queue length:', queue.length, 'item id:', item.id)
       openOrFocusWebapp()
       sendResponse({ ok: true, id: item.id })
     })
@@ -63,7 +67,9 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
 
   if (message.type === 'get_queue') {
     chrome.storage.local.get([QUEUE_KEY], result => {
-      sendResponse({ items: result[QUEUE_KEY] || [] })
+      const items = result[QUEUE_KEY] || []
+      console.log('[OS Ext BG] get_queue responded, items:', items.length)
+      sendResponse({ items })
     })
     return true
   }
