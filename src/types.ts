@@ -85,6 +85,14 @@ export interface Touch {
   subJudgments?: SubJudgment[];
 }
 
+export interface ScreeningSourceContext {
+  platform: 'twitter' | 'instagram' | 'threads' | 'youtube'
+  pageType: string
+  url: string
+  collectedBy: 'chrome-extension' | 'manual'
+  collectedAt: string
+}
+
 export interface Screening {
   id: string;
   createdAt: string;
@@ -100,6 +108,7 @@ export interface Screening {
   inbound_actions?: string[];
   rawProfileText?: string;
   os1QueuedAt?: string;
+  sourceContext?: ScreeningSourceContext;
 }
 
 export interface Target {

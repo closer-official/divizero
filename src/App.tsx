@@ -5,6 +5,7 @@ import { usePrompts } from './hooks/usePrompts'
 import { buildTouchConvLog, uid } from './utils/helpers'
 import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
+import { useReceive } from './services/receive/useReceive'
 import Tab0 from './components/tabs/Tab0'
 import Tab1 from './components/tabs/Tab1'
 import Tab2 from './components/tabs/Tab2'
@@ -39,6 +40,7 @@ export default function App() {
   const { role, showLogin, checking, login, logout } = useAuth()
   const { data, loading, error, saveData } = useData()
   const { prompts } = usePrompts()
+  const { os0Pending, os0History, connected: extConnected, markCompleted, markDismissed, restore, clearHistory } = useReceive()
   const [activeTab, setActiveTab] = useState<TabId>('tab1')
   const [loginPw, setLoginPw] = useState('')
   const [loginError, setLoginError] = useState('')
@@ -353,7 +355,7 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
-        {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
+        {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} os0Pending={os0Pending} os0History={os0History} extConnected={extConnected} onMarkCompleted={markCompleted} onMarkDismissed={markDismissed} onRestore={restore} onClearHistory={clearHistory} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
         {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} onReturnToOS0={handleReturnToOS0} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
         {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
