@@ -1595,7 +1595,11 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tSentText, setTSentText] = useState('')
   const [tEditReason, setTEditReason] = useState('')
   const [tPostDateTime, setTPostDateTime] = useState<string | undefined>(undefined)
-  const [tEngagementStats, setTEngagementStats] = useState<string | undefined>(undefined)
+  const [tLikes, setTLikes] = useState('')
+  const [tComments, setTComments] = useState('')
+  const [tRetweets, setTRetweets] = useState('')
+  const [tSaves, setTSaves] = useState('')
+  const [tImpressions, setTImpressions] = useState('')
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -1625,7 +1629,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTAiText(''); setTSentText(''); setTEditReason('')
     setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
-    setTPostDateTime(undefined); setTEngagementStats(undefined)
+    setTPostDateTime(undefined)
+    setTLikes(''); setTComments(''); setTRetweets(''); setTSaves(''); setTImpressions('')
     setTTouchMode('rep')
   }
 
@@ -1681,7 +1686,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTPostText(parsed.targetPostText)
     setTPostRawText(parsed.targetPostRawText)
     setTPostDateTime(parsed.postDateTime || undefined)
-    setTEngagementStats(parsed.engagementStats || undefined)
+    if (parsed.engagementStats) {
+      const es = parsed.engagementStats
+      setTLikes(es.match(/いいね(\d+)/)?.[1] || '')
+      setTComments(es.match(/コメント(\d+)/)?.[1] || '')
+      setTRetweets(es.match(/RT(\d+)/)?.[1] || '')
+      setTSaves(es.match(/保存(\d+)/)?.[1] || '')
+      setTImpressions(es.match(/表示(\d+)/)?.[1] || '')
+    }
     setTPostType(parsed.targetPostType as TouchPostType)
     setTValidity(parsed.targetValidity as TouchValidity)
     setTAiText(`A: ${parsed.suggestedTextA}\nB: ${parsed.suggestedTextB}`)
@@ -1750,6 +1762,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       }
     }
 
+    const engagementParts: string[] = []
+    if (tLikes) engagementParts.push(`いいね${tLikes}`)
+    if (tComments) engagementParts.push(`コメント${tComments}`)
+    if (tRetweets) engagementParts.push(`RT${tRetweets}`)
+    if (tSaves) engagementParts.push(`保存${tSaves}`)
+    if (tImpressions) engagementParts.push(`表示${tImpressions}`)
+    const builtEngagement = engagementParts.length > 0 ? engagementParts.join('・') : undefined
+
     const shouldStock = tTouchMode !== 'dm' && (tPostRawText.trim() || tPostText.trim())
     const newStock: PostStock | null = shouldStock ? {
       id: uid(), createdAt: now,
@@ -1759,7 +1779,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       postText: tPostText || '（要約なし）',
       postRawText: tPostRawText || undefined,
       postDateTime: tPostDateTime || undefined,
-      engagementStats: tEngagementStats || undefined,
+      engagementStats: builtEngagement,
       status: 'unanalyzed',
     } : null
 
@@ -2469,6 +2489,31 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                             {VALIDITY_OPTS.map(v => <Chip key={v} label={v} selected={tValidity === v} onClick={() => setTValidity(v)} />)}
                           </div>
                           <p className="text-[10px] text-slate-400">◯=課題/通常/達成　△=グレー　✕=愚痴/ネタへの営業</p>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">エンゲージメント（OS④分析用・いいね＋RT必須）</label>
+                          <div className="grid grid-cols-5 gap-1.5">
+                            {([
+                              { label: 'いいね', value: tLikes, set: setTLikes },
+                              { label: 'コメント', value: tComments, set: setTComments },
+                              { label: 'RT', value: tRetweets, set: setTRetweets },
+                              { label: '保存', value: tSaves, set: setTSaves },
+                              { label: '表示回数', value: tImpressions, set: setTImpressions },
+                            ] as const).map(({ label, value, set }) => (
+                              <div key={label} className="flex flex-col gap-0.5">
+                                <span className="text-[10px] text-slate-400 text-center">{label}</span>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  className="input-base text-xs text-center py-1 px-1"
+                                  placeholder="0"
+                                  value={value}
+                                  onChange={e => set(e.target.value)}
+                                />
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </>
                     )}

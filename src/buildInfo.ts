@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 行動判定後UI統一：案A/B→実際に送った文章→変えた理由→送信完了として記録 / 営業期待値AI再判定の根拠箇条書き対応";
+export const BUILD_LABEL = "06/28 SNS人格OS Ver.4 接続：Tab6全面改修・7サブタブ・新データモデル・プロンプトキー更新";

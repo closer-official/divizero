@@ -324,7 +324,7 @@ export default function App() {
             { id: 'tab3' as TabId, icon: 'fa-graduation-cap', label: 'OS③ 案件検証', badgeColor: 'bg-emerald-100 text-emerald-700', count: data.closed.length },
             { id: 'tab4' as TabId, icon: 'fa-chart-pie', label: '集計ダッシュボード', badgeColor: '', count: null },
             { id: 'tab5' as TabId, icon: 'fa-clock-rotate-left', label: '分析履歴', badgeColor: 'bg-violet-100 text-violet-700', count: (data.analyses || []).filter(a => a.status === 'completed').length || null },
-            { id: 'tab6' as TabId, icon: 'fa-pen-nib', label: 'OS④ 投稿分析', badgeColor: 'bg-teal-100 text-teal-700', count: (data.postStocks || []).length || null },
+            { id: 'tab6' as TabId, icon: 'fa-pen-nib', label: '人格OS', badgeColor: 'bg-violet-100 text-violet-700', count: (data.otherPostResearches || data.postStocks || []).length || null },
           ] as const).map(tab => (
             <button
               key={tab.id}

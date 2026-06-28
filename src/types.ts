@@ -315,6 +315,7 @@ export interface Analysis {
   osAccuracyVerdict?: string;
 }
 
+// ── 旧型（後方互換 / legacyへの移行用） ────────────────────────
 export interface OtherAnalysisResult {
   typeName: string;
   persona: string;
@@ -352,6 +353,129 @@ export interface OwnPostAnalysis {
   rawOutput: string;
 }
 
+// ── SNS人格OS Ver.4 型定義 ────────────────────────────────────
+
+export interface OtherPostResearch {
+  id: string;
+  sourceType: 'os2_touch' | 'manual';
+  sourceText: string;
+  summary: string;
+  postedAt?: string;
+  metrics?: {
+    likes?: number;
+    replies?: number;
+    reposts?: number;
+    saves?: number;
+    impressions?: number;
+  };
+  analysis?: {
+    cognitiveShift: string;
+    usedLens: string[];
+    personalitySignal: string;
+    aestheticSignal: string;
+    nigaDegree: number;
+    twistStructure: string;
+    negativeSpace: string;
+    followReason: string;
+    quotePotential: string;
+    lensCandidates: string[];
+    metaphorCandidates: string[];
+    openingCandidates: string[];
+    endingCandidates: string[];
+    twistCandidates: string[];
+    humorCandidates: string[];
+    researchNote: string;
+  };
+  status: 'stocked' | 'researched';
+  legacyAnalysis?: unknown;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OwnPostPDCA {
+  id: string;
+  postText: string;
+  postedAt?: string;
+  hypothesis?: string;
+  usedLens?: string[];
+  postType: 'quote' | 'normal';
+  metrics: {
+    impressions?: number;
+    profileVisits?: number;
+    follows?: number;
+    saves?: number;
+    quotes?: string[];
+  };
+  analysis?: {
+    followRate?: number;
+    profileVisitRate?: number;
+    quoteQuality: string;
+    personalityAccumulation: string;
+    cognitiveShiftResult: string;
+    nigaResult: string;
+    lensResult: string;
+    dangerSignals: string[];
+    continuePoint: string;
+    revisePoint: string;
+    stopPoint: string;
+    dbCandidates: string[];
+    researchNote: string;
+  };
+  rawOutput?: string;
+  createdAt: string;
+}
+
+export interface GeneratedPostCandidate {
+  id: string;
+  type: 'quote' | 'normal';
+  sourcePostText?: string;
+  material?: string;
+  body: string;
+  meta: {
+    openingType?: string;
+    usedLens: string[];
+    cognitiveShift: string;
+    twistType?: string;
+    endingType?: string;
+    nigaPoint: string;
+    nigaDegree: number;
+    followReasonContribution: string;
+    treeCount: 0 | 1;
+    humanSelectionPoint: string;
+  };
+  personalityCheck?: {
+    status: 'OK' | 'WARNING' | 'NG';
+    reasons: string[];
+    returnPoint: string;
+  };
+}
+
+export interface PersonalityAudit {
+  id: string;
+  mode: 'pre_post' | 'post_post' | 'recent_set';
+  postType: 'normal' | 'quote';
+  targetText: string;
+  judgment: 'OK' | 'WARNING' | 'NG';
+  detectedItems: string;
+  impact: string;
+  fixInstruction: string;
+  returnPoint: string;
+  rawOutput: string;
+  createdAt: string;
+}
+
+export interface ConstitutionEntry {
+  content: string;
+  updatedAt: string;
+  reason?: string;
+  impactScope?: string;
+  history?: Array<{
+    content: string;
+    reason: string;
+    updatedAt: string;
+  }>;
+}
+
 export interface AppData {
   screenings: Screening[];
   targets: Target[];
@@ -361,9 +485,19 @@ export interface AppData {
   trash: TrashItem[];
   logs?: LogEntry[];
   analyses?: Analysis[];
+  // 旧フィールド（後方互換・移行元）
   postStocks?: PostStock[];
   ownPostAnalyses?: OwnPostAnalysis[];
   myProfile?: string;
+  // 新フィールド（SNS人格OS Ver.4）
+  otherPostResearches?: OtherPostResearch[];
+  ownPostPdcas?: OwnPostPDCA[];
+  generatedPosts?: GeneratedPostCandidate[];
+  personalityAudits?: PersonalityAudit[];
+  personalityConstitution?: ConstitutionEntry;
+  aestheticConstitution?: ConstitutionEntry;
+  dbOverrides?: Record<string, string>;
+  archivedMyProfile?: string;
 }
 
 export type Prompts = {
@@ -382,7 +516,17 @@ export type Prompts = {
   S1_ACTION?: string;
   S1_ACTION_BATCH?: string;
   DM_JUDGE?: string;
+  // 旧キー（後方互換）
   OS4_OTHER_ANALYSIS?: string;
   OS4_OWN_ANALYSIS?: string;
   OS4_POST_GEN?: string;
+  // SNS人格OS Ver.4
+  OS01_ANALYSIS?: string;
+  OS02_QUOTE?: string;
+  OS03_POST?: string;
+  OS04_PDCA?: string;
+  OS05_LENS?: string;
+  OS06_PERSONALITY?: string;
+  PERSONALITY_CONSTITUTION?: string;
+  AESTHETIC_CONSTITUTION?: string;
 };

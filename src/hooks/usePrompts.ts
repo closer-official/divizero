@@ -18,9 +18,17 @@ export async function loadPrompts(): Promise<Prompts> {
     S1_ACTION: '/prompts/OS_S1リアクション後行動判定_latest.md',
     S1_ACTION_BATCH: '/prompts/OS_S1行動判定_バッチ_latest.md',
     DM_JUDGE: '/prompts/OS_DM文面判定_latest.md',
-    OS4_OTHER_ANALYSIS: '/prompts/OS4_他社投稿分析_latest.md',
-    OS4_OWN_ANALYSIS: '/prompts/OS4_自社投稿分析_latest.md',
-    OS4_POST_GEN: '/prompts/OS4_自社投稿生成_latest.md',
+    OS4_OTHER_ANALYSIS: '/prompts/legacy/OS4_他社投稿分析_latest.md',
+    OS4_OWN_ANALYSIS: '/prompts/legacy/OS4_自社投稿分析_latest.md',
+    OS4_POST_GEN: '/prompts/legacy/OS4_自社投稿生成_latest.md',
+    OS01_ANALYSIS: '/prompts/os01_analysis.md',
+    OS02_QUOTE: '/prompts/os02_quote.md',
+    OS03_POST: '/prompts/os03_post.md',
+    OS04_PDCA: '/prompts/os04_pdca.md',
+    OS05_LENS: '/prompts/os05_lens.md',
+    OS06_PERSONALITY: '/prompts/os06_personality.md',
+    PERSONALITY_CONSTITUTION: '/prompts/01_personality_constitution.md',
+    AESTHETIC_CONSTITUTION: '/prompts/02_aesthetic_constitution.md',
   };
   const entries = await Promise.all(
     Object.entries(files).map(async ([key, path]) => {
