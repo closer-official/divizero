@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 Tab2→Tab6 接続修正：タッチ記録をpostStocksではなくotherPostResearchesへ直接書き込む";
+export const BUILD_LABEL = "06/28 反応待ち：残り24h以内で今日やることリスト入り・カウントダウン表示・期限切れ色分け";

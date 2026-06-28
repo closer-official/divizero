@@ -403,6 +403,13 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   // ① 本日やること
   const [todayOpen, setTodayOpen] = useState(true)
 
+  // カウントダウン用（1分ごと再レンダー）
+  const [tickNow, setTickNow] = useState(() => new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setTickNow(new Date()), 60000)
+    return () => clearInterval(timer)
+  }, [])
+
   // ③ 未判定一括コピー
   const [nextActionBatchOpen, setNextActionBatchOpen] = useState(false)
   const [nextActionCopyStates, setNextActionCopyStates] = useState<Record<string, 'idle' | 'copied'>>({})
@@ -796,12 +803,24 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   // ① 本日やること計算
-  const now48hAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
+  const now48hAgo = new Date(tickNow.getTime() - 48 * 60 * 60 * 1000)
+  const now24hAgo = new Date(tickNow.getTime() - 24 * 60 * 60 * 1000)
+
+  function awaitingCountdown(touchDate: string): string {
+    const deadline = new Date(touchDate).getTime() + 48 * 60 * 60 * 1000
+    const remaining = deadline - tickNow.getTime()
+    if (remaining <= 0) return '期限切れ'
+    const h = Math.floor(remaining / (60 * 60 * 1000))
+    const m = Math.floor((remaining % (60 * 60 * 1000)) / (60 * 1000))
+    return `残り${h}時間${m}分`
+  }
+
   const todayTasks = active.filter(p => {
-    const awaitingOld = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
-    const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
-    const isNew = (p.touches || []).length === 0  // 新規登録（未接触）
-    return awaitingOld || recontactDue || isNew || !!p.todayTask
+    // 24h以上経過（残り24h以下）の反応待ちがあれば追加
+    const awaitingUrgent = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
+    const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
+    const isNew = (p.touches || []).length === 0
+    return awaitingUrgent || recontactDue || isNew || !!p.todayTask
   })
 
   // 未判定一括コピー対象: active かつ次アクション未決定
@@ -852,21 +871,28 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           {todayOpen && (
             <div className="border-t border-indigo-200 divide-y divide-indigo-100">
               {todayTasks.map(p => {
-                const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now48hAgo)
-                const recontactDue = p.recontact_date && new Date(p.recontact_date) <= new Date()
+                const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
+                const isOverdue = awaitingTouch ? new Date(awaitingTouch.date) <= now48hAgo : false
+                const countdown = awaitingTouch ? awaitingCountdown(awaitingTouch.date) : ''
+                const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
                 const isNew = (p.touches || []).length === 0
                 const hasJudgmentTask = !!p.todayTask && !awaitingTouch && !recontactDue && !isNew
                 return (
                   <div
                     key={p.id}
-                    className={`flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-100 cursor-pointer transition ${hasJudgmentTask ? 'border-l-2 border-orange-400' : ''}`}
+                    className={`flex items-center gap-3 px-4 py-2.5 hover:bg-indigo-100 cursor-pointer transition ${hasJudgmentTask ? 'border-l-2 border-orange-400' : ''} ${awaitingTouch && !isOverdue ? 'border-l-2 border-amber-400' : ''} ${isOverdue ? 'border-l-2 border-rose-400' : ''}`}
                     onClick={() => setDrawerItemId(p.id)}
                   >
                     <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                       <p className="font-semibold text-sm text-indigo-900 truncate">{p.accountName}</p>
                       <p className="text-[11px] text-indigo-600 flex flex-wrap gap-x-2 gap-y-0.5">
                         {isNew && <span className="font-bold text-emerald-600"><i className="fa-solid fa-star mr-1" />初回接触</span>}
-                        {awaitingTouch && <span><i className="fa-solid fa-clock mr-1" />48h反応待ち確認</span>}
+                        {awaitingTouch && isOverdue && (
+                          <span className="text-rose-600 font-bold"><i className="fa-solid fa-clock mr-1" />期限切れ — 無反応記録を</span>
+                        )}
+                        {awaitingTouch && !isOverdue && (
+                          <span className="text-amber-600 font-semibold"><i className="fa-solid fa-hourglass-half mr-1" />{countdown}</span>
+                        )}
                         {recontactDue && !isNew && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
                         {p.todayTask && <span className="text-orange-600 font-semibold"><i className="fa-solid fa-bolt mr-1" />{p.todayTask.action}</span>}
                       </p>
