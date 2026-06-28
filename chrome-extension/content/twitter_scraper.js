@@ -135,26 +135,39 @@ function sendToOS() {
     accounts: collectedCards.slice(), // コピー
   }
 
-  chrome.runtime.sendMessage({ type: 'enqueue', itemType: 'os0_candidates', payload }, response => {
-    if (chrome.runtime.lastError) {
-      console.warn('[OS Ext]', chrome.runtime.lastError.message)
-      btn.disabled = false
-      return
-    }
-    if (response && response.ok) {
-      btn.textContent = '✓ 送信しました！'
-      btn.style.background = '#22c55e'
-      setTimeout(() => {
-        if (btn) {
-          btn.innerHTML = `<i class="os-ext-icon">📥</i><span id="os-ext-count">${collectedCards.length}</span>件を営業OSへ`
-          btn.style.background = ''
-          btn.disabled = false
-        }
-      }, 2500)
-    } else {
-      btn.disabled = false
-    }
-  })
+  try {
+    chrome.runtime.sendMessage({ type: 'enqueue', itemType: 'os0_candidates', payload }, response => {
+      if (chrome.runtime.lastError) {
+        console.warn('[OS Ext]', chrome.runtime.lastError.message)
+        btn.disabled = false
+        return
+      }
+      if (response && response.ok) {
+        btn.textContent = '✓ 送信しました！'
+        btn.style.background = '#22c55e'
+        setTimeout(() => {
+          if (btn) {
+            btn.innerHTML = `<i class="os-ext-icon">📥</i><span id="os-ext-count">${collectedCards.length}</span>件を営業OSへ`
+            btn.style.background = ''
+            btn.disabled = false
+          }
+        }, 2500)
+      } else {
+        btn.disabled = false
+      }
+    })
+  } catch (e) {
+    // 拡張機能がリロードされてコンテキストが無効になった場合
+    btn.textContent = '⚠ タブを再読込してください'
+    btn.style.background = '#ef4444'
+    setTimeout(() => {
+      if (btn) {
+        btn.innerHTML = `<i class="os-ext-icon">📥</i><span id="os-ext-count">${collectedCards.length}</span>件を営業OSへ`
+        btn.style.background = ''
+        btn.disabled = false
+      }
+    }, 3000)
+  }
 }
 
 // ── スキャン・SPA対応 ──────────────────────────────────────────
