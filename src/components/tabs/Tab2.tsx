@@ -332,6 +332,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [filter, setFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   const [channelFilter, setChannelFilter] = useState('all')
+  const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -469,6 +470,12 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     else if (filter === 'elite') result = result.filter(p => (p.salesExpectation ?? 0) >= 35)
     if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
     if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
+    if (searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      result = result.filter(p =>
+        p.accountName.toLowerCase().includes(q) || p.url.toLowerCase().includes(q)
+      )
+    }
     return result
   }
 
@@ -1067,6 +1074,21 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
       {/* ⑨ Filter + ② バルクタッチ + analysis manual trigger */}
       <div className="flex flex-col gap-2">
+        {/* 検索窓 */}
+        <div className="relative">
+          <i className="fa-solid fa-magnifying-glass absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 text-[11px]" />
+          <input
+            className="input-base text-xs py-1.5 pl-7 pr-7 w-full"
+            placeholder="アカウント名 / ID で検索"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500" onClick={() => setSearchQuery('')}>
+              <i className="fa-solid fa-xmark text-[11px]" />
+            </button>
+          )}
+        </div>
         <div className="flex gap-2 flex-wrap items-center">
           {/* トラックフィルタ */}
           <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
@@ -1094,7 +1116,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <option value="threads">TH</option>
           </select>
           {(filter !== 'all' || stateFilter !== 'all' || channelFilter !== 'all') && (
-            <button className="text-[11px] text-slate-400 hover:text-slate-600 px-1.5 py-1" onClick={() => { setFilter('all'); setStateFilter('all'); setChannelFilter('all') }}>
+            <button className="text-[11px] text-slate-400 hover:text-slate-600 px-1.5 py-1" onClick={() => { setFilter('all'); setStateFilter('all'); setChannelFilter('all'); setSearchQuery('') }}>
               <i className="fa-solid fa-xmark mr-0.5" />リセット
             </button>
           )}
