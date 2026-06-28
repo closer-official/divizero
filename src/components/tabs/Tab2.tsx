@@ -2585,6 +2585,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [s1ActionError, setS1ActionError] = useState<string | null>(null)
   const [s1ReplyACopyState, setS1ReplyACopyState] = useState<'idle' | 'copied'>('idle')
   const [s1ReplyBCopyState, setS1ReplyBCopyState] = useState<'idle' | 'copied'>('idle')
+  const [s1EditedReplyA, setS1EditedReplyA] = useState('')
+  const [s1EditedReplyB, setS1EditedReplyB] = useState('')
   // DM文面判定
   const [dmJudgTurnId, setDmJudgTurnId] = useState<string | null>(null)
   const [dmJudgOutput, setDmJudgOutput] = useState('')
@@ -2598,6 +2600,21 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [touchJudgModelName, setTouchJudgModelName] = useState('')
 
   const isAwaiting = touch.status === 'awaiting_reaction'
+
+  const s1JudgmentResult = s1ActionParsed || (touch.reactionJudgment ? {
+    judgment: touch.reactionJudgment,
+    nextStep: touch.reactionNextStep || '',
+    warning: touch.reactionWarning || '',
+    reason: '',
+    replyA: touch.reactionReplyA,
+    replyB: touch.reactionReplyB,
+  } as S1ActionResult : null)
+  useEffect(() => {
+    if (s1JudgmentResult?.replyA) setS1EditedReplyA(s1JudgmentResult.replyA)
+  }, [s1JudgmentResult?.replyA]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (s1JudgmentResult?.replyB) setS1EditedReplyB(s1JudgmentResult.replyB)
+  }, [s1JudgmentResult?.replyB]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const newLikeStreak = (pipelineItem.likeReturnStreak || 0) + 1
   const newNoReactionStreak = (pipelineItem.noReactionStreak || 0) + 1
@@ -2762,6 +2779,23 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     }, pipelineUpdates)
     setS1ActionOutput('')
     setS1ActionInputOpen(false)
+  }
+
+  function handleRedoS1Action() {
+    setS1ActionParsed(null)
+    setS1ActionInputOpen(true)
+    setS1ActionOutput('')
+    setS1ActionError(null)
+    setS1EditedReplyA('')
+    setS1EditedReplyB('')
+    onReactionSaved(touch.id, {
+      reactionJudgment: undefined,
+      reactionNextStep: undefined,
+      reactionWarning: undefined,
+      reactionReplyA: undefined,
+      reactionReplyB: undefined,
+      reactionDmScore: undefined,
+    } as Partial<Touch>, {})
   }
 
   function handleUseS1Reply(text: string, judgment: string, variant: 'A' | 'B') {
@@ -3231,7 +3265,14 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
               {result ? (
                 <>
                   <div className={`rounded-xl border px-3 py-2 text-xs flex flex-col gap-1 ${judgmentColor(result.judgment)}`}>
-                    <p className="font-bold">→ {result.judgment}</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-bold">→ {result.judgment}</p>
+                      <button
+                        className="text-[10px] text-slate-400 hover:text-rose-500 border border-slate-200 hover:border-rose-300 rounded px-1.5 py-0.5 transition shrink-0"
+                        onClick={handleRedoS1Action}
+                        title="行動判定をやり直す"
+                      >やり直し入力</button>
+                    </div>
                     {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
                     {result.warning && result.warning !== 'なし' && (
                       <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
@@ -3248,10 +3289,15 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                       {result.replyA && (
                         <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
                           <p className="text-[10px] font-bold text-violet-500">案A</p>
-                          <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">{result.replyA}</p>
+                          <textarea
+                            rows={3}
+                            className="input-base cs text-xs resize-y w-full text-slate-700 leading-relaxed"
+                            value={s1EditedReplyA}
+                            onChange={e => setS1EditedReplyA(e.target.value)}
+                          />
                           <button
                             className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyACopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
-                            onClick={() => handleUseS1Reply(result.replyA!, result.judgment, 'A')}
+                            onClick={() => handleUseS1Reply(s1EditedReplyA, result.judgment, 'A')}
                           >
                             {s1ReplyACopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
                           </button>
@@ -3260,10 +3306,15 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                       {result.replyB && (
                         <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
                           <p className="text-[10px] font-bold text-violet-500">案B</p>
-                          <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">{result.replyB}</p>
+                          <textarea
+                            rows={3}
+                            className="input-base cs text-xs resize-y w-full text-slate-700 leading-relaxed"
+                            value={s1EditedReplyB}
+                            onChange={e => setS1EditedReplyB(e.target.value)}
+                          />
                           <button
                             className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyBCopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
-                            onClick={() => handleUseS1Reply(result.replyB!, result.judgment, 'B')}
+                            onClick={() => handleUseS1Reply(s1EditedReplyB, result.judgment, 'B')}
                           >
                             {s1ReplyBCopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
                           </button>
