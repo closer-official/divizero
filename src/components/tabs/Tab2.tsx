@@ -2204,7 +2204,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                         return
                       }
                       const score = Math.min(40, Math.max(0, parseInt(scoreMatch[1], 10)))
-                      const reason = field(salesExpAiOutput, '根拠')
+                      const reasonMatch2 = salesExpAiOutput.match(/根拠[：:]\s*([\s\S]*)/)
+                      const reason = reasonMatch2 ? reasonMatch2[1].trim() : ''
                       setSalesExpInput(String(score))
                       setSalesExpReasonInput(reason)
                       setSalesExpAiOpen(false)
@@ -2580,8 +2581,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const [s1ActionError, setS1ActionError] = useState<string | null>(null)
   const [s1ReplyACopyState, setS1ReplyACopyState] = useState<'idle' | 'copied'>('idle')
   const [s1ReplyBCopyState, setS1ReplyBCopyState] = useState<'idle' | 'copied'>('idle')
-  const [s1EditedReplyA, setS1EditedReplyA] = useState('')
-  const [s1EditedReplyB, setS1EditedReplyB] = useState('')
+  const [s1ActualSentText, setS1ActualSentText] = useState('')
+  const [s1EditReasonForRecord, setS1EditReasonForRecord] = useState('')
   // DM文面判定
   const [dmJudgTurnId, setDmJudgTurnId] = useState<string | null>(null)
   const [dmJudgOutput, setDmJudgOutput] = useState('')
@@ -2604,12 +2605,6 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     replyA: touch.reactionReplyA,
     replyB: touch.reactionReplyB,
   } as S1ActionResult : null)
-  useEffect(() => {
-    if (s1JudgmentResult?.replyA) setS1EditedReplyA(s1JudgmentResult.replyA)
-  }, [s1JudgmentResult?.replyA]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (s1JudgmentResult?.replyB) setS1EditedReplyB(s1JudgmentResult.replyB)
-  }, [s1JudgmentResult?.replyB]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const newLikeStreak = (pipelineItem.likeReturnStreak || 0) + 1
   const newNoReactionStreak = (pipelineItem.noReactionStreak || 0) + 1
@@ -2781,8 +2776,8 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     setS1ActionInputOpen(true)
     setS1ActionOutput('')
     setS1ActionError(null)
-    setS1EditedReplyA('')
-    setS1EditedReplyB('')
+    setS1ActualSentText('')
+    setS1EditReasonForRecord('')
     onReactionSaved(touch.id, {
       reactionJudgment: undefined,
       reactionNextStep: undefined,
@@ -2793,23 +2788,18 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     } as Partial<Touch>, {})
   }
 
-  function handleUseS1Reply(text: string, judgment: string, variant: 'A' | 'B') {
+  function handleRecordS1Reply() {
+    const text = s1ActualSentText.trim()
+    if (!text) return
+    const judgment = s1JudgmentResult?.judgment || ''
     navigator.clipboard.writeText(text).catch(() => {})
-    if (variant === 'A') {
-      setS1ReplyACopyState('copied')
-      setTimeout(() => setS1ReplyACopyState('idle'), 2000)
-    } else {
-      setS1ReplyBCopyState('copied')
-      setTimeout(() => setS1ReplyBCopyState('idle'), 2000)
-    }
     const now = new Date().toISOString()
 
     if (judgment === 'DM移行') {
-      // DM移行：新しいDMタッチを作成 & currentStep を S3 に自動進める
       const newTouch: Touch = {
         id: uid(), date: now,
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
-        aiSuggestedText: '', actualSentText: text, editReason: '',
+        aiSuggestedText: '', actualSentText: text, editReason: s1EditReasonForRecord || '',
         messageValidity: '未判定', status: 'reacted',
         reactionType: '未記録', reactionNote: '',
         touchMode: 'conversation', threadEntry: 's3_direct', threadStatus: 'active',
@@ -2820,16 +2810,20 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         dmExchangeCount: 0, repExchangeCount: 0,
       }
       onAddNewTouch(newTouch, { currentStep: 'S3' as Step })
+      setS1ActualSentText('')
+      setS1EditReasonForRecord('')
       return
     }
 
-    // 公開リプ継続：同じタッチに継続ターンを追加（別レコードにしない）
     const continuationTurn: ConversationTurn = {
       id: uid(), role: '自分', text,
+      editReason: s1EditReasonForRecord || undefined,
       timestamp: now, channel: 'リプ', sentStatus: 'sent', sentAt: now,
     }
     setS1ActionParsed(null)
     setS1ActionInputOpen(false)
+    setS1ActualSentText('')
+    setS1EditReasonForRecord('')
     onReactionSaved(touch.id, {
       conversationTurns: [...(touch.conversationTurns || []), continuationTurn],
       status: 'awaiting_reaction',
@@ -3280,41 +3274,57 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
                   </div>
                   {hasReplies && (
                     <div className="flex flex-col gap-1.5">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">送る文章</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">AIの提案文（「使う」で下欄に転記）</p>
                       {result.replyA && (
-                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
-                          <p className="text-[10px] font-bold text-violet-500">案A</p>
-                          <textarea
-                            rows={3}
-                            className="input-base cs text-xs resize-y w-full text-slate-700 leading-relaxed"
-                            value={s1EditedReplyA}
-                            onChange={e => setS1EditedReplyA(e.target.value)}
-                          />
+                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                          <span className="text-[10px] font-bold text-violet-500 shrink-0 mt-0.5">案A</span>
+                          <p className="text-[11px] text-slate-700 flex-1 leading-relaxed whitespace-pre-wrap">{result.replyA}</p>
                           <button
-                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyACopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
-                            onClick={() => handleUseS1Reply(s1EditedReplyA, result.judgment, 'A')}
+                            className={`shrink-0 text-xs px-2.5 py-1 rounded-lg font-semibold transition min-h-[28px] ${s1ReplyACopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
+                            onClick={() => { setS1ActualSentText(result.replyA || ''); setS1ReplyACopyState('copied'); setTimeout(() => setS1ReplyACopyState('idle'), 1500) }}
                           >
-                            {s1ReplyACopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
+                            {s1ReplyACopyState === 'copied' ? '✓ 転記' : '使う'}
                           </button>
                         </div>
                       )}
                       {result.replyB && (
-                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex flex-col gap-1.5">
-                          <p className="text-[10px] font-bold text-violet-500">案B</p>
-                          <textarea
-                            rows={3}
-                            className="input-base cs text-xs resize-y w-full text-slate-700 leading-relaxed"
-                            value={s1EditedReplyB}
-                            onChange={e => setS1EditedReplyB(e.target.value)}
-                          />
+                        <div className="bg-white border border-violet-200 rounded-xl px-3 py-2 flex items-start gap-2">
+                          <span className="text-[10px] font-bold text-violet-500 shrink-0 mt-0.5">案B</span>
+                          <p className="text-[11px] text-slate-700 flex-1 leading-relaxed whitespace-pre-wrap">{result.replyB}</p>
                           <button
-                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition self-start ${s1ReplyBCopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
-                            onClick={() => handleUseS1Reply(s1EditedReplyB, result.judgment, 'B')}
+                            className={`shrink-0 text-xs px-2.5 py-1 rounded-lg font-semibold transition min-h-[28px] ${s1ReplyBCopyState === 'copied' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700 hover:bg-violet-200'}`}
+                            onClick={() => { setS1ActualSentText(result.replyB || ''); setS1ReplyBCopyState('copied'); setTimeout(() => setS1ReplyBCopyState('idle'), 1500) }}
                           >
-                            {s1ReplyBCopyState === 'copied' ? '✓ コピー＆タッチ追加済み' : '使う（コピー＆タッチ追加）'}
+                            {s1ReplyBCopyState === 'copied' ? '✓ 転記' : '使う'}
                           </button>
                         </div>
                       )}
+                      <div className="flex flex-col gap-1.5 mt-1 pt-2 border-t border-slate-100">
+                        <label className="text-xs font-semibold text-slate-700">実際に送った文章 <span className="text-rose-500">*</span></label>
+                        <textarea
+                          rows={3}
+                          className="input-base cs text-xs resize-y"
+                          placeholder="「使う」で転記、または直接入力"
+                          value={s1ActualSentText}
+                          onChange={e => setS1ActualSentText(e.target.value)}
+                        />
+                        <label className="text-xs text-slate-500">変えた理由（任意）</label>
+                        <textarea
+                          rows={2}
+                          className="input-base cs text-xs resize-y"
+                          placeholder="AI提案から変えた場合、理由を記録"
+                          value={s1EditReasonForRecord}
+                          onChange={e => setS1EditReasonForRecord(e.target.value)}
+                        />
+                        <button
+                          className="btn-primary text-xs py-2.5 justify-center"
+                          disabled={!s1ActualSentText.trim()}
+                          style={{ background: s1ActualSentText.trim() ? '#4f46e5' : undefined }}
+                          onClick={handleRecordS1Reply}
+                        >
+                          <i className="fa-solid fa-paper-plane mr-1" />送信完了として記録
+                        </button>
+                      </div>
                     </div>
                   )}
                   {result.judgment === 'クローズ' && (
