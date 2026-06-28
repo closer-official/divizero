@@ -8,21 +8,26 @@ declare global {
 
 export class ReceiveService {
   private getExtId(): string | undefined {
-    return window.__OS_EXT_ID
+    // window.__OS_EXT_ID（旧方式）またはDOM属性（CSP対応方式）から取得
+    return (
+      window.__OS_EXT_ID ||
+      document.documentElement.getAttribute('data-os-ext-id') ||
+      undefined
+    )
   }
 
   isAvailable(): boolean {
     const extId = this.getExtId()
     if (!extId) {
-      console.log('[OS Ext RS] isAvailable=false: __OS_EXT_ID not set')
+      console.log('[OS Ext RS] isAvailable=false: extId not found (data-os-ext-id attr:', document.documentElement.getAttribute('data-os-ext-id'), ')')
       return false
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const _chrome = (window as any).chrome
     const hasSendMessage = typeof _chrome?.runtime?.sendMessage === 'function'
     if (!hasSendMessage) {
-      console.log('[OS Ext RS] isAvailable=false: chrome.runtime.sendMessage not a function',
-        'chrome exists:', !!_chrome, 'runtime exists:', !!_chrome?.runtime)
+      console.log('[OS Ext RS] isAvailable=false: chrome.runtime.sendMessage unavailable',
+        'chrome:', typeof _chrome, 'runtime:', typeof _chrome?.runtime)
     } else {
       console.log('[OS Ext RS] isAvailable=true, extId:', extId)
     }
@@ -41,7 +46,7 @@ export class ReceiveService {
       _chrome.runtime.sendMessage(extId, message, (response: T) => {
         if (_chrome.runtime.lastError) {
           const err = _chrome.runtime.lastError.message || 'Unknown chrome error'
-          console.warn('[OS Ext RS] sendMessage error:', err, 'message type:', (message as any).type)
+          console.warn('[OS Ext RS] sendMessage error:', err, 'type:', (message as any).type)
           reject(new Error(err))
         } else {
           resolve(response)
