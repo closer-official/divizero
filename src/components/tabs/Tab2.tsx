@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import MdPreviewModal from '../MdPreviewModal'
 import { buildCaseMd, caseMdFilename } from '../../utils/mdExport'
-import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step, PostStock, SubJudgment } from '../../types'
+import type { AppData, Prompts, PipelineItem, Touch, Analysis, ConversationTurn, Step, PostStock, SubJudgment, OtherPostResearch } from '../../types'
 import type { TouchPostType, TouchValidity, TouchReaction } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
@@ -1762,25 +1762,21 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       }
     }
 
-    const engagementParts: string[] = []
-    if (tLikes) engagementParts.push(`いいね${tLikes}`)
-    if (tComments) engagementParts.push(`コメント${tComments}`)
-    if (tRetweets) engagementParts.push(`RT${tRetweets}`)
-    if (tSaves) engagementParts.push(`保存${tSaves}`)
-    if (tImpressions) engagementParts.push(`表示${tImpressions}`)
-    const builtEngagement = engagementParts.length > 0 ? engagementParts.join('・') : undefined
-
     const shouldStock = tTouchMode !== 'dm' && (tPostRawText.trim() || tPostText.trim())
-    const newStock: PostStock | null = shouldStock ? {
-      id: uid(), createdAt: now,
+    const newResearch: OtherPostResearch | null = shouldStock ? {
+      id: uid(), createdAt: now, updatedAt: now,
       sourceType: 'os2_touch',
-      accountName: item.accountName,
-      channel: item.channel,
-      postText: tPostText || '（要約なし）',
-      postRawText: tPostRawText || undefined,
-      postDateTime: tPostDateTime || undefined,
-      engagementStats: builtEngagement,
-      status: 'unanalyzed',
+      sourceText: tPostRawText.trim() || tPostText || '（本文なし）',
+      summary: tPostText || tPostRawText.slice(0, 60) || '（要約なし）',
+      postedAt: tPostDateTime || undefined,
+      metrics: {
+        likes: tLikes ? Number(tLikes) : undefined,
+        replies: tComments ? Number(tComments) : undefined,
+        reposts: tRetweets ? Number(tRetweets) : undefined,
+        saves: tSaves ? Number(tSaves) : undefined,
+        impressions: tImpressions ? Number(tImpressions) : undefined,
+      },
+      status: 'stocked',
     } : null
 
     saveData(prev => ({
@@ -1789,7 +1785,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         ? { ...p, ...pipelineUpdates, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
         : p
       ),
-      ...(newStock ? { postStocks: [...(prev.postStocks || []), newStock] } : {}),
+      ...(newResearch ? { otherPostResearches: [...(prev.otherPostResearches || []), newResearch] } : {}),
     }))
     resetForm()
     setAddingTouch(false)

@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 SNS人格OS Ver.4 接続：Tab6全面改修・7サブタブ・新データモデル・プロンプトキー更新";
+export const BUILD_LABEL = "06/28 Tab2→Tab6 接続修正：タッチ記録をpostStocksではなくotherPostResearchesへ直接書き込む";
