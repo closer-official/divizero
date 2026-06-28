@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/28 Tab6分析表示修正：Markdown記号除去・重複ラベル防止・改行対応・既存データ整形ボタン追加";
+export const BUILD_LABEL = "06/28 Tab6引用RT→Tab2タッチ自動記録：保存時にpipelineアカウント紐付け＋引用RTタイプ追加";

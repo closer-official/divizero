@@ -2,7 +2,7 @@ export type Channel = 'twitter' | 'instagram' | 'threads' | 'dm';
 export type Track = 'FT' | 'NT' | 'UT' | 'SKIP';
 export type Step = 'S1' | 'S2' | 'S3' | 'S4' | 'S5';
 
-export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・嬉しい報告' | '愚痴・本音' | 'ネタ' | 'ストーリー' | 'その他';
+export type TouchPostType = '課題ツイート' | '通常投稿' | '達成・嬉しい報告' | '愚痴・本音' | 'ネタ' | 'ストーリー' | 'その他' | '引用RT';
 export type TouchValidity = '◯' | '△' | '✕' | '未評価' | '未判定';
 export type TouchReaction = 'テキスト返信' | 'いいね返り' | 'フォロー返し' | 'スタンプ・絵文字' | '無反応' | '公開拒絶（R5）' | '未記録';
 

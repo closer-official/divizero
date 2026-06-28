@@ -170,7 +170,7 @@ function StepsBar({ currentStep }: { currentStep: string }) {
 }
 
 // ── constants ──────────────────────────────────────────────────
-const POST_TYPES: TouchPostType[] = ['課題ツイート', '通常投稿', '達成・嬉しい報告', '愚痴・本音', 'ネタ', 'ストーリー', 'その他']
+const POST_TYPES: TouchPostType[] = ['課題ツイート', '通常投稿', '達成・嬉しい報告', '愚痴・本音', 'ネタ', 'ストーリー', '引用RT', 'その他']
 const VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未評価']
 const MSG_VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未判定']
 const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）']

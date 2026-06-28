@@ -2,11 +2,11 @@ import { useState, useEffect, useRef } from 'react'
 import type {
   AppData, Prompts,
   OtherPostResearch, OwnPostPDCA, GeneratedPostCandidate, PersonalityAudit,
-  PostStock,
+  PostStock, Touch,
 } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI } from '../../App'
-import { uid } from '../../utils/helpers'
+import { uid, shortPostId, todayStr } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
 type SubTab = 'research' | 'quote' | 'post' | 'pdca' | 'lens' | 'audit' | 'constitution'
@@ -487,6 +487,11 @@ function QuoteSubTab({ data, saveData, prompts, toast }: Tab6Props) {
   const [candidates, setCandidates] = useState<GeneratedPostCandidate[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
   const [copyStates, setCopyStates] = useState<Record<string, boolean>>({})
+  // pipeline リンク UI 状態
+  const [linkingId, setLinkingId] = useState<string | null>(null) // 現在リンク選択中の candidate id
+  const [linkPipelineId, setLinkPipelineId] = useState<string>('')
+
+  const activePipeline = (data.pipeline || []).filter(p => p.state !== 'closed')
 
   function buildPrompt() {
     const spec = prompts.OS02_QUOTE || ''
@@ -499,11 +504,51 @@ function QuoteSubTab({ data, saveData, prompts, toast }: Tab6Props) {
     const parsed = parseQuoteCandidates(rawOutput)
     if (parsed.length === 0) { setParseError('AI出力から候補を取得できませんでした。OS②の出力をそのまま貼り付けてください。'); return }
     setCandidates(parsed)
+    setLinkingId(null)
+    setLinkPipelineId('')
   }
 
-  function handleSave(c: GeneratedPostCandidate) {
+  function saveGenerated(c: GeneratedPostCandidate) {
     saveData(prev => ({ ...prev, generatedPosts: [...(prev.generatedPosts || []), { ...c, sourcePostText: sourcePost }] }))
+  }
+
+  function handleSaveOnly(c: GeneratedPostCandidate) {
+    saveGenerated(c)
+    setLinkingId(null)
     toast.show('投稿候補を保存しました')
+  }
+
+  function handleSaveWithTouch(c: GeneratedPostCandidate) {
+    if (!linkPipelineId) { toast.show('pipeline アカウントを選択してください', 2000); return }
+    const now = todayStr()
+    const newTouch: Touch = {
+      id: uid(),
+      postId: shortPostId(),
+      date: now,
+      targetPostText: sourcePost.trim(),
+      targetPostType: '引用RT',
+      targetValidity: '未評価',
+      aiSuggestedText: c.body,
+      actualSentText: c.body,
+      editReason: '',
+      messageValidity: '未判定',
+      status: 'awaiting_reaction',
+      reactionType: '未記録',
+      reactionNote: '',
+    }
+    saveData(prev => ({
+      ...prev,
+      generatedPosts: [...(prev.generatedPosts || []), { ...c, sourcePostText: sourcePost }],
+      pipeline: prev.pipeline.map(p =>
+        p.id === linkPipelineId
+          ? { ...p, touches: [...(p.touches || []), newTouch], lastContactDate: now }
+          : p
+      ),
+    }))
+    const target = activePipeline.find(p => p.id === linkPipelineId)
+    toast.show(`保存 + ${target?.accountName || ''}のタッチを記録しました`)
+    setLinkingId(null)
+    setLinkPipelineId('')
   }
 
   return (
@@ -552,8 +597,47 @@ function QuoteSubTab({ data, saveData, prompts, toast }: Tab6Props) {
                 <button className={`btn-sec text-[10px] py-1 px-2 flex-1 justify-center ${copyStates[c.id] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`} onClick={() => copyText(c.body, () => { setCopyStates(p => ({ ...p, [c.id]: true })); setTimeout(() => setCopyStates(p => ({ ...p, [c.id]: false })), 1500) })}>
                   {copyStates[c.id] ? '✓ コピー' : 'コピー'}
                 </button>
-                <button className="btn-sec text-[10px] py-1 px-2 flex-1 justify-center" onClick={() => handleSave(c)}>保存</button>
+                <button
+                  className="btn-sec text-[10px] py-1 px-2 flex-1 justify-center"
+                  onClick={() => { setLinkingId(prev => prev === c.id ? null : c.id); setLinkPipelineId('') }}
+                >
+                  保存
+                </button>
               </div>
+
+              {/* pipeline リンク選択パネル */}
+              {linkingId === c.id && (
+                <div className="mt-1 pt-2 border-t border-violet-200 flex flex-col gap-2">
+                  <p className="text-[11px] font-semibold text-slate-600">引用RT対象はパイプラインにいますか？</p>
+                  {activePipeline.length > 0 ? (
+                    <select
+                      className="input-base text-xs"
+                      value={linkPipelineId}
+                      onChange={e => setLinkPipelineId(e.target.value)}
+                    >
+                      <option value="">— アカウントを選択（任意）—</option>
+                      {activePipeline.map(p => (
+                        <option key={p.id} value={p.id}>{p.accountName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <p className="text-[10px] text-slate-400">パイプラインにアカウントがありません</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button className="btn-sec text-[10px] py-1 px-2 flex-1 justify-center" onClick={() => handleSaveOnly(c)}>
+                      保存のみ
+                    </button>
+                    <button
+                      className="btn-primary text-[10px] py-1 px-2 flex-1 justify-center"
+                      style={{ background: '#4f46e5' }}
+                      disabled={!linkPipelineId}
+                      onClick={() => handleSaveWithTouch(c)}
+                    >
+                      保存 + タッチ記録
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
