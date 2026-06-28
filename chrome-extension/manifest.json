@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "X/TwitterのアカウントをOS⓪へ送る",
 
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "scripting"],
 
   "host_permissions": [
     "https://x.com/*",
@@ -30,14 +30,6 @@
       "js": ["content/twitter_scraper.js"],
       "css": ["content/twitter.css"],
       "run_at": "document_idle"
-    },
-    {
-      "matches": [
-        "https://divizero.vercel.app/*",
-        "http://localhost:5173/*"
-      ],
-      "js": ["content/id_shim.js"],
-      "run_at": "document_start"
     }
   ],
 

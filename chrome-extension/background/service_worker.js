@@ -27,6 +27,36 @@ async function openOrFocusWebapp() {
   await chrome.tabs.create({ url: webappUrl })
 }
 
+// ── webapp タブへ Extension ID を注入（CSP回避のため scripting API を使用）──
+
+const WEBAPP_ORIGINS = ['https://divizero.vercel.app', 'http://localhost:5173']
+
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status !== 'complete') return
+  if (!tab.url || !WEBAPP_ORIGINS.some(o => tab.url.startsWith(o))) return
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: (id) => {
+        if (!window.__OS_EXT_ID) {
+          Object.defineProperty(window, '__OS_EXT_ID', {
+            value: id,
+            writable: false,
+            configurable: false,
+            enumerable: false,
+          })
+        }
+        window.dispatchEvent(new CustomEvent('os_ext_ready', { detail: { id } }))
+      },
+      args: [chrome.runtime.id],
+    })
+  } catch (_) {
+    // タブが閉じられた / 権限外 URL の場合は無視
+  }
+})
+
 // ── コンテンツスクリプトからの受信（enqueue）──────────────────
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
