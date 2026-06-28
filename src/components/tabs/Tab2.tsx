@@ -227,7 +227,7 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
             {daysUntil < 0 ? `${Math.abs(daysUntil)}日超過` : `あと${daysUntil}日`}
           </span>
         ) : daysSinceLast > 0 ? (
-          <span className={daysSinceLast >= 7 ? 'text-amber-500 font-medium' : ''}>{daysSinceLast}日前</span>
+          <span>{daysSinceLast}日前</span>
         ) : null}
       </div>
       {displayJ && <p className={`text-[10px] mt-1 font-medium truncate ${judgmentColor(displayJ)}`}>{displayJ}</p>}
@@ -377,7 +377,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
-  const warnItems = active.filter(p => (p.lastContactDate && daysSince(p.lastContactDate) >= 7) || daysSince(p.startDate) >= 30)
+  const warnItems = active.filter(p => daysSince(p.startDate) >= 30)
   const unverifiedTouches = data.pipeline
     .filter(p => p.isOpen)
     .flatMap(p => (p.touches || [])
@@ -438,9 +438,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     const bNew = (b.touches || []).length === 0
     if (aNew !== bNew) return aNew ? -1 : 1
     if (aNew && bNew) return new Date(b.startDate || 0).getTime() - new Date(a.startDate || 0).getTime()
-    // 1. 30d warn (forced close) > 7d warn > none
-    const aWarn = warnIds.has(a.id) ? (daysSince(a.startDate) >= 30 ? 2 : 1) : 0
-    const bWarn = warnIds.has(b.id) ? (daysSince(b.startDate) >= 30 ? 2 : 1) : 0
+    // 1. 30d warn (forced close)
+    const aWarn = warnIds.has(a.id) ? 1 : 0
+    const bWarn = warnIds.has(b.id) ? 1 : 0
     if (bWarn !== aWarn) return bWarn - aWarn
     // 2. awaiting_reaction (longer elapsed first)
     const aLast = (a.touches || []).slice(-1)[0]
@@ -958,20 +958,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
       {warnItems.length > 0 && (
         <div className="flex flex-col gap-2">
-          {warnItems.map(p => {
-            const d30 = daysSince(p.startDate) >= 30
-            return (
-              <div
-                key={p.id}
-                className={`border rounded-xl p-3 text-xs flex items-center gap-2 cursor-pointer ${d30 ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
-                onClick={() => handleWarnItemClick(p.id)}
-              >
-                <i className="fa-solid fa-triangle-exclamation" />
-                <span className="font-bold">{p.accountName}</span>：
-                {d30 ? '30日ルール発動 — 強制クローズまたは再接触' : '7日ルール発動 — 再接触するかクローズ'}
-              </div>
-            )
-          })}
+          {warnItems.map(p => (
+            <div
+              key={p.id}
+              className="border rounded-xl p-3 text-xs flex items-center gap-2 cursor-pointer bg-rose-50 border-rose-200 text-rose-800"
+              onClick={() => handleWarnItemClick(p.id)}
+            >
+              <i className="fa-solid fa-triangle-exclamation" />
+              <span className="font-bold">{p.accountName}</span>：30日ルール発動 — 強制クローズまたは再接触
+            </div>
+          ))}
         </div>
       )}
 
@@ -1906,7 +1902,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-orange-100 text-orange-700">🛡保護中</span>
           )}
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
-          {totalDays < 30 && days >= 7 && <span className="text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded shrink-0">7日超</span>}
           {item.inbound_signal && <span className="text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded shrink-0">{item.inbound_signal.type}</span>}
           {profileUrl && (
             <a
