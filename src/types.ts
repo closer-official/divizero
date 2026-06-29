@@ -46,6 +46,7 @@ export interface SubJudgment {
 export interface Touch {
   id: string;
   postId?: string;
+  postUrl?: string;
   date: string;
   targetPostText: string;
   targetPostRawText?: string;

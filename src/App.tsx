@@ -12,9 +12,9 @@ import Tab3 from './components/tabs/Tab3'
 import Tab4 from './components/tabs/Tab4'
 import Tab5 from './components/tabs/Tab5'
 import Tab6 from './components/tabs/Tab6'
+import TabHome from './components/tabs/TabHome'
 import type { PipelineItem, Screening } from './types'
-
-type TabId = 'tab0' | 'tab1' | 'tab2' | 'tab3' | 'tab4' | 'tab5' | 'tab6'
+import type { TabId } from './services/home/homeTypes'
 
 export interface ToastAPI {
   show: (msg: string, duration?: number) => void
@@ -39,7 +39,7 @@ export default function App() {
   const { role, showLogin, checking, login, logout } = useAuth()
   const { data, loading, error, saveData } = useData()
   const { prompts } = usePrompts()
-  const [activeTab, setActiveTab] = useState<TabId>('tab1')
+  const [activeTab, setActiveTab] = useState<TabId>('home')
   const [loginPw, setLoginPw] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
@@ -318,6 +318,7 @@ export default function App() {
       <div className="bg-white border-b border-slate-200 sticky z-30" style={{ top: 57 }}>
         <div className="max-w-7xl mx-auto px-5 flex gap-0 overflow-x-auto cs" style={{ whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch' }}>
           {([
+            { id: 'home' as TabId, icon: 'fa-house', label: 'ホーム', badgeColor: '', count: null },
             { id: 'tab0' as TabId, icon: 'fa-layer-group', label: 'OS⓪ 一次選別', badgeColor: 'bg-fuchsia-100 text-fuchsia-700', count: (data.screenings || []).length },
             { id: 'tab1' as TabId, icon: 'fa-filter', label: 'OS① スクリーニング', badgeColor: 'bg-violet-100 text-violet-700', count: data.targets.length },
             { id: 'tab2' as TabId, icon: 'fa-chart-gantt', label: 'OS② パイプライン', badgeColor: 'bg-indigo-100 text-indigo-700', count: openPipeline.length, warn: warnCount },
@@ -353,6 +354,13 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-5 flex flex-col gap-5">
+        {activeTab === 'home' && (
+          <TabHome
+            data={data}
+            onGoTo={setActiveTab}
+            onGoToTab2WithItem={(id) => { setFocusPipelineItemId(id); setActiveTab('tab2') }}
+          />
+        )}
         {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
         {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
         {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} onReturnToOS0={handleReturnToOS0} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}

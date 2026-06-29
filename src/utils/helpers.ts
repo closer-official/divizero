@@ -62,6 +62,10 @@ export function buildProfileUrl(raw: string | undefined, channel?: string): stri
   return `https://x.com/${handle}`;
 }
 
+export function getProfileUrl(item: { url?: string; channel?: string }): string {
+  return buildProfileUrl(item.url, item.channel);
+}
+
 export function addToExcluded(d: AppData, handle: string, displayName: string, channel: string, reason: string, skipCode = ''): void {
   if (!d.excluded) d.excluded = [];
   const nh = normalizeHandle(handle);

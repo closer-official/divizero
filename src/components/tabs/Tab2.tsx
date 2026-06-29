@@ -1247,6 +1247,24 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   <i className="fa-solid fa-xmark text-sm" />
                 </button>
                 <p className="font-bold text-slate-800 flex-1 truncate text-sm">{drawerItem.accountName}</p>
+                {(() => {
+                  const pUrl = buildProfileUrl(drawerItem.url, drawerItem.channel)
+                  const latestPostUrl = [...(drawerItem.touches || [])].reverse().find(t => t.postUrl)?.postUrl
+                  return (
+                    <>
+                      {pUrl && (
+                        <a href={pUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 btn-sec text-xs py-1 px-2" title="プロフィールを開く">
+                          <i className="fa-solid fa-user text-indigo-500" />
+                        </a>
+                      )}
+                      {latestPostUrl && (
+                        <a href={latestPostUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 btn-sec text-xs py-1 px-2" title="最新投稿を開く">
+                          <i className="fa-solid fa-newspaper text-amber-500" />
+                        </a>
+                      )}
+                    </>
+                  )
+                })()}
                 {continuousMode && (() => {
                   const cList = filterActive(active).sort(urgencySort)
                   const cIdx = cList.findIndex(p => p.id === drawerItemId)
@@ -1721,6 +1739,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tRetweets, setTRetweets] = useState('')
   const [tSaves, setTSaves] = useState('')
   const [tImpressions, setTImpressions] = useState('')
+  const [tPostUrl, setTPostUrl] = useState('')
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -1751,6 +1770,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setAutoFillError(null); setAutoFillWarning(null)
     setSuggACopyState('idle'); setSuggBCopyState('idle')
     setTPostDateTime(undefined)
+    setTPostUrl('')
     setTLikes(''); setTComments(''); setTRetweets(''); setTSaves(''); setTImpressions('')
     setTTouchMode('rep')
   }
@@ -1863,6 +1883,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
         messageValidity: '未判定',
         postId: shortPostId(),
+        postUrl: tPostUrl.trim() || undefined,
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
@@ -1877,6 +1898,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
         messageValidity: '未判定',
         postId: shortPostId(),
+        postUrl: tPostUrl.trim() || undefined,
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
@@ -2147,10 +2169,18 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 </select>
               )}
               {profileUrl && (
-                <a href={profileUrl} target="_blank" rel="noreferrer" className="btn-sec text-[11px] py-1 px-2">
-                  <i className="fa-solid fa-arrow-up-right-from-square" />
+                <a href={profileUrl} target="_blank" rel="noopener noreferrer" className="btn-sec text-[11px] py-1 px-2" title="プロフィールを開く">
+                  <i className="fa-solid fa-user text-indigo-500 mr-0.5" /><span className="hidden sm:inline">プロフィール</span>
                 </a>
               )}
+              {(() => {
+                const latestPostUrl = [...touches].reverse().find(t => t.postUrl)?.postUrl
+                return latestPostUrl ? (
+                  <a href={latestPostUrl} target="_blank" rel="noopener noreferrer" className="btn-sec text-[11px] py-1 px-2" title="最新投稿を開く">
+                    <i className="fa-solid fa-newspaper text-amber-500 mr-0.5" /><span className="hidden sm:inline">最新投稿</span>
+                  </a>
+                ) : null
+              })()}
               <button className="btn-sec text-[11px] py-1 px-2" onClick={() => onExportMd(item)} title="MDでエクスポート">
                 <i className="fa-solid fa-file-lines text-violet-500" />
               </button>
@@ -2587,6 +2617,24 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                         <div className="flex flex-col gap-1">
                           <label className="text-xs text-slate-500">接触した投稿（要約・識別用）</label>
                           <textarea rows={2} className="input-base cs text-xs resize-y" placeholder="相手の投稿を1行で要約" value={tPostText} onChange={e => setTPostText(e.target.value)} />
+                        </div>
+
+                        <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">投稿URL（任意）<span className="ml-1 text-slate-400">← 保存しておくと後で一発で開ける</span></label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="url"
+                              className="input-base text-xs py-1.5 font-mono flex-1"
+                              placeholder="https://x.com/..."
+                              value={tPostUrl}
+                              onChange={e => setTPostUrl(e.target.value)}
+                            />
+                            {tPostUrl.trim() && (
+                              <a href={tPostUrl.trim()} target="_blank" rel="noopener noreferrer" className="shrink-0 btn-sec text-xs py-1.5 px-2" title="開く">
+                                <i className="fa-solid fa-arrow-up-right-from-square text-indigo-500" />
+                              </a>
+                            )}
+                          </div>
                         </div>
 
                         <div className="flex flex-col gap-1">
