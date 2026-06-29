@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/29 Phase2: OS①X/IG/TH — A/B/C/D廃止・Observation出力形式へ移行";
+export const BUILD_LABEL = "06/29 Phase3: S1プロンプト — Observation priority主役化・A/B/C/DをSTEP3 fallbackへ格下げ";
