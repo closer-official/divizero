@@ -147,7 +147,11 @@ function extractBio(cell, displayName, handle) {
 
 function extractFromCell(cell) {
   const allLinks = Array.from(cell.querySelectorAll('a[href]'))
-  const profileLink = allLinks.find(a => isUsernameHref(a.getAttribute('href') || ''))
+  // aria-hidden="true" はアバター画像リンクなので除外し、テキスト名リンクを取得
+  const profileLink = allLinks.find(a =>
+    isUsernameHref(a.getAttribute('href') || '') &&
+    a.getAttribute('aria-hidden') !== 'true'
+  )
   if (!profileLink) return null
   const username = (profileLink.getAttribute('href') || '').slice(1)
   if (!username) return null
