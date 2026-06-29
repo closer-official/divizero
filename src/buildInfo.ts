@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/30 コピーボタンからGeminiへ自動遷移";
+export const BUILD_LABEL = "06/30 HOME行動対象とDaily KPIを修正";

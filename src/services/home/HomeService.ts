@@ -9,7 +9,6 @@ import {
   countTodayOS0,
   countTodayOS1,
   countTodayOS2,
-  countTodayOS3,
   getDMReplyNeeded,
   get48hExpiredItems,
   getOverdueItems,
@@ -137,15 +136,6 @@ export function getHomeDashboard(data: AppData): HomeDashboard {
       dailyTarget: DEFAULT_DAILY_TARGETS.os2,
       icon: 'fa-chart-gantt',
       color: 'indigo',
-    },
-    {
-      id: 'os3',
-      label: 'OS③',
-      tab: 'tab3',
-      today: countTodayOS3(data),
-      dailyTarget: DEFAULT_DAILY_TARGETS.os3,
-      icon: 'fa-graduation-cap',
-      color: 'emerald',
     },
   ]
 

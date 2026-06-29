@@ -5,7 +5,6 @@ export const DEFAULT_DAILY_TARGETS = {
   os0: 10,
   os1: 8,
   os2: 10,
-  os3: 3,
 } as const
 
 // ── 日付ユーティリティ ────────────────────────────────────────
@@ -75,10 +74,29 @@ export function countTodayOS3(data: AppData): number {
 
 // ── ミッション系計算 ──────────────────────────────────────────
 
+// 面談待ち・日程確定済みは「今、自分が動く案件」ではない。
+// 専用ステータスがまだないため、OS②で保存される構造化された判定欄から識別する。
+export function isMeetingWaitingItem(item: PipelineItem): boolean {
+  const latestTouch = [...(item.touches || [])]
+    .sort((a, b) => b.date.localeCompare(a.date))[0]
+  const statusText = [
+    item.judgment,
+    item.nextAction,
+    item.deadline,
+    item.todayTask?.action,
+    latestTouch?.os2Judgment,
+    latestTouch?.os2NextAction,
+    latestTouch?.reactionJudgment,
+    latestTouch?.reactionNextStep,
+  ].filter(Boolean).join(' ')
+
+  return /(?:面談|商談|打ち合わせ|アポ)(?:.{0,8})(?:確定|予定|予約|待ち|設定済|取得済)|日程(?:.{0,6})(?:確定|決定|調整済|合意済)/.test(statusText)
+}
+
 // DM返信が必要：会話スレッドの最新ターンが '相手' 側で送信済み
 export function getDMReplyNeeded(data: AppData): PipelineItem[] {
   return (data.pipeline || []).filter(p => {
-    if (!p.isOpen) return false
+    if (!p.isOpen || isMeetingWaitingItem(p)) return false
     return (p.touches || []).some(t => {
       if (t.touchMode !== 'conversation') return false
       if (t.threadStatus === 'closed') return false
@@ -95,6 +113,7 @@ export function getDMReplyNeeded(data: AppData): PipelineItem[] {
 export function get48hExpiredItems(data: AppData): PipelineItem[] {
   return (data.pipeline || []).filter(p =>
     p.isOpen &&
+    !isMeetingWaitingItem(p) &&
     (p.touches || []).some(t => t.status === 'awaiting_reaction' && is48hExpired(t.date))
   )
 }
@@ -102,7 +121,7 @@ export function get48hExpiredItems(data: AppData): PipelineItem[] {
 // 期限切れ/遅延：active で 7日連絡なし
 export function getOverdueItems(data: AppData): PipelineItem[] {
   return (data.pipeline || []).filter(p => {
-    if (!p.isOpen || (p.state && p.state !== 'active')) return false
+    if (!p.isOpen || isMeetingWaitingItem(p) || (p.state && p.state !== 'active')) return false
     const baseDate = p.lastContactDate || p.startDate
     return daysSince(baseDate) >= 7
   })
@@ -113,6 +132,7 @@ export function getRecontactDueItems(data: AppData): PipelineItem[] {
   const t = todayStr()
   return (data.pipeline || []).filter(p =>
     p.isOpen &&
+    !isMeetingWaitingItem(p) &&
     (p.state === 'waiting' || p.state === 'sleeping' || p.state === 'archived') &&
     p.recontact_date != null &&
     p.recontact_date <= t
@@ -129,7 +149,7 @@ export function getS1StalledItems(data: AppData): PipelineItem[] {
 // OS2接触が必要：active / awaiting 中でなく / 今日まだ触れていない
 export function getNeedsOS2Touch(data: AppData): PipelineItem[] {
   return (data.pipeline || []).filter(p => {
-    if (!p.isOpen || (p.state && p.state !== 'active')) return false
+    if (!p.isOpen || isMeetingWaitingItem(p) || (p.state && p.state !== 'active')) return false
     const touches = p.touches || []
     if (touches.some(t => t.status === 'awaiting_reaction')) return false
     if (touches.some(t => isToday(t.date))) return false
@@ -173,7 +193,7 @@ export function fmtRate(numerator: number, denominator: number): string {
 // ── Waiting サマリ ────────────────────────────────────────────
 
 export function calcWaiting(data: AppData) {
-  const open = (data.pipeline || []).filter(p => p.isOpen)
+  const open = (data.pipeline || []).filter(p => p.isOpen && !isMeetingWaitingItem(p))
   const allTouches = open.flatMap(p => p.touches || [])
 
   const awaitingReaction = allTouches.filter(t => t.status === 'awaiting_reaction').length
