@@ -81,6 +81,49 @@ function isUsernameHref(href) {
   return /^\/[a-zA-Z0-9_]{1,15}$/.test(href)
 }
 
+function extractBio(cell, displayName, handle) {
+  // ① data-testid="UserDescription" (プロフィールページ・一部リスト)
+  const descEl = cell.querySelector('[data-testid="UserDescription"]')
+  if (descEl) {
+    const text = (descEl.textContent || '').trim()
+    if (text) return text
+  }
+
+  // ② User-Name の次の兄弟要素を探す（フォロワー/フォロー中リストで多い構造）
+  const nameContainer = cell.querySelector('[data-testid="User-Name"]')
+  if (nameContainer) {
+    let sibling = nameContainer.nextElementSibling
+    while (sibling) {
+      // ボタン類は除外（role="button" または button タグ）
+      const tag = sibling.tagName.toLowerCase()
+      if (tag === 'button' || sibling.getAttribute('role') === 'button') break
+      const text = (sibling.textContent || '').trim()
+      if (
+        text.length >= 5 &&
+        text !== displayName &&
+        text !== handle &&
+        !text.startsWith('@')
+      ) return text
+      sibling = sibling.nextElementSibling
+    }
+  }
+
+  // ③ dir="auto" 属性を持つ要素（User-Name 外で最初に見つかるもの）
+  for (const el of cell.querySelectorAll('[dir="auto"]')) {
+    if (nameContainer && nameContainer.contains(el)) continue
+    const text = (el.textContent || '').trim()
+    if (
+      text.length >= 5 &&
+      text !== displayName &&
+      text !== handle &&
+      !text.startsWith('@') &&
+      !/^\d[\d,万.kK]*$/.test(text) // フォロワー数などの数値のみは除外
+    ) return text
+  }
+
+  return undefined
+}
+
 function extractFromCell(cell) {
   const allLinks = Array.from(cell.querySelectorAll('a[href]'))
   const profileLink = allLinks.find(a => isUsernameHref(a.getAttribute('href') || ''))
@@ -98,8 +141,7 @@ function extractFromCell(cell) {
     }
   }
 
-  const bioEl = cell.querySelector('[data-testid="UserDescription"]')
-  const bio = bioEl ? (bioEl.textContent || '').trim() : undefined
+  const bio = extractBio(cell, displayName, '@' + username)
 
   const verified = !!(
     cell.querySelector('[data-testid="icon-verified"]') ||
