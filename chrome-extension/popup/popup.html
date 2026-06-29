@@ -6,7 +6,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      width: 260px;
+      width: 280px;
       padding: 16px;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 13px;
@@ -16,9 +16,30 @@
     .header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
     .icon { width: 28px; height: 28px; background: #7c3aed; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
     .title { font-weight: 700; font-size: 14px; }
-    ol { padding-left: 18px; line-height: 2; color: #475569; font-size: 12px; }
-    .badge { display: inline-block; background: #7c3aed; color: #fff; border-radius: 4px; padding: 1px 5px; font-size: 11px; white-space: nowrap; }
-    .note { margin-top: 12px; font-size: 11px; color: #94a3b8; background: #f8fafc; border-radius: 8px; padding: 8px 10px; line-height: 1.6; }
+    .flow {
+      background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 14px; font-size: 11px; color: #5b21b6; line-height: 1.9;
+    }
+    .flow strong { display: block; font-size: 12px; color: #4c1d95; margin-bottom: 4px; }
+    .divider { border: none; border-top: 1px solid #f1f5f9; margin: 12px 0; }
+    .section-label { font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 6px; }
+    .row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .row label { font-size: 12px; color: #475569; }
+    input[type="number"], select, input[type="url"] {
+      border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 8px;
+      font-size: 12px; color: #334155; outline: none; background: #fff;
+    }
+    input[type="number"] { width: 64px; text-align: center; }
+    select { padding-right: 4px; }
+    input[type="url"] { width: 100%; margin-top: 4px; }
+    .btn {
+      width: 100%; border: none; border-radius: 6px; padding: 8px;
+      font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 8px;
+      background: #7c3aed; color: #fff; transition: background 0.15s;
+    }
+    .btn:hover { background: #6d28d9; }
+    .msg { margin-top: 8px; font-size: 11px; color: #22c55e; text-align: center; min-height: 16px; }
+    .cache-note { font-size: 10px; color: #94a3b8; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -26,13 +47,42 @@
     <div class="icon">📋</div>
     <span class="title">営業OS Bridge</span>
   </div>
-  <ol>
-    <li>X でフォロワー / 検索を開く</li>
-    <li><span class="badge">📋 OS0候補をコピー</span> を押す</li>
-    <li>営業OS の <strong>OS⓪</strong> タブを開く</li>
-    <li>「拡張データ貼り付け」欄に貼り付け</li>
-    <li>「展開」→ 候補確認 → 全件追加</li>
-  </ol>
-  <div class="note">ユーザーカードが表示されているページでボタンが出現します。</div>
+
+  <div class="flow">
+    <strong>使い方</strong>
+    ① X でフォロワー/検索を開く<br>
+    ② 「📋 OS0プロンプトを生成」を押す<br>
+    ③ Geminiが自動で開く → 貼り付けて実行<br>
+    ④ 営業OS OS⓪ にAI出力を貼り付けて登録
+  </div>
+
+  <hr class="divider" />
+
+  <div class="section-label">設定</div>
+
+  <div class="row">
+    <label>送信先AI</label>
+    <select id="aiTarget">
+      <option value="gemini">Gemini</option>
+      <option value="chatgpt">ChatGPT</option>
+      <option value="claude">Claude</option>
+    </select>
+  </div>
+
+  <div class="row">
+    <label>最大取得件数</label>
+    <input type="number" id="maxAccounts" min="5" max="50" step="5" value="20" />
+  </div>
+
+  <div>
+    <label class="section-label">営業OS URL（プロンプト取得先）</label>
+    <input type="url" id="webappUrl" placeholder="https://divizero.vercel.app" />
+    <div class="cache-note" id="cacheNote"></div>
+  </div>
+
+  <button class="btn" id="saveBtn">保存</button>
+  <div class="msg" id="msg"></div>
+
+  <script src="popup.js"></script>
 </body>
 </html>

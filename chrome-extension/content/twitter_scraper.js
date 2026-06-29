@@ -1,9 +1,50 @@
 'use strict'
 
+// ── 設定 ───────────────────────────────────────────────────────
+const DEFAULT_WEBAPP_BASE = 'https://divizero.vercel.app'
+const PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
+const PROMPT_CACHE_KEY = 'os0_prompt_cache'
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000  // 24h
+const DEFAULT_MAX_ACCOUNTS = 20
+
+const AI_URLS = {
+  gemini:  'https://gemini.google.com/',
+  chatgpt: 'https://chatgpt.com/',
+  claude:  'https://claude.ai/',
+}
+
+// ── 状態 ───────────────────────────────────────────────────────
 let collectedCards = []
 let scanDebounce = null
 let floatingBtn = null
 let lastUrl = location.href
+
+// ── 設定取得 ───────────────────────────────────────────────────
+
+async function getSettings() {
+  const stored = await chrome.storage.local.get(['webappUrl', 'maxAccounts', 'aiTarget'])
+  return {
+    webappBase: (stored.webappUrl || DEFAULT_WEBAPP_BASE).replace(/\/$/, ''),
+    maxAccounts: Number(stored.maxAccounts) || DEFAULT_MAX_ACCOUNTS,
+    aiTarget: stored.aiTarget || 'gemini',
+  }
+}
+
+// ── プロンプト取得（24hキャッシュ）────────────────────────────
+
+async function fetchOS0Prompt(webappBase) {
+  const cached = await chrome.storage.local.get([PROMPT_CACHE_KEY])
+  const cache = cached[PROMPT_CACHE_KEY]
+  if (cache && cache.text && (Date.now() - cache.cachedAt) < CACHE_TTL_MS) {
+    return cache.text
+  }
+  const url = webappBase + PROMPT_FILE
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`プロンプト取得失敗 (${res.status})`)
+  const text = await res.text()
+  await chrome.storage.local.set({ [PROMPT_CACHE_KEY]: { text, cachedAt: Date.now() } })
+  return text
+}
 
 // ── ページ種別検出 ─────────────────────────────────────────────
 
@@ -20,6 +61,16 @@ function detectPageType() {
   return 'other'
 }
 
+function pageTypeLabel(t) {
+  const m = {
+    followers: 'フォロワー一覧', following: 'フォロー中一覧',
+    search: '検索結果', suggested: 'おすすめユーザー',
+    list: 'リスト', hashtag: 'ハッシュタグ',
+    home_timeline: 'タイムライン', post: '投稿', other: 'その他',
+  }
+  return m[t] || t
+}
+
 // ── ユーザーカード抽出 ─────────────────────────────────────────
 
 function isUsernameHref(href) {
@@ -34,21 +85,14 @@ function extractFromCell(cell) {
   const allLinks = Array.from(cell.querySelectorAll('a[href]'))
   const profileLink = allLinks.find(a => isUsernameHref(a.getAttribute('href') || ''))
   if (!profileLink) return null
-
   const username = (profileLink.getAttribute('href') || '').slice(1)
   if (!username) return null
 
   let displayName = username
   const nameContainer = cell.querySelector('[data-testid="User-Name"]') || profileLink
-  const spans = Array.from(nameContainer.querySelectorAll('span'))
-  for (const span of spans) {
+  for (const span of Array.from(nameContainer.querySelectorAll('span'))) {
     const text = (span.textContent || '').trim()
-    if (
-      text &&
-      !text.startsWith('@') &&
-      text.toLowerCase() !== username.toLowerCase() &&
-      span.children.length === 0
-    ) {
+    if (text && !text.startsWith('@') && text.toLowerCase() !== username.toLowerCase() && span.children.length === 0) {
       displayName = text
       break
     }
@@ -89,6 +133,90 @@ function collectCards() {
   return cards
 }
 
+// ── プロンプト組み立て ─────────────────────────────────────────
+
+function formatAccountsSection(cards, pageType, url) {
+  const lines = [
+    `【取得元】${pageTypeLabel(pageType)}（${url}）`,
+    `【取得アカウント数】${cards.length}件`,
+    '',
+  ]
+  for (const acc of cards) {
+    lines.push(`アカウント名：${acc.displayName}`)
+    lines.push(`ハンドル：${acc.handle}`)
+    if (acc.bio) lines.push(`bio：${acc.bio}`)
+    if (acc.followerCount) lines.push(`フォロワー数：${acc.followerCount}`)
+    lines.push('---')
+  }
+  return lines.join('\n')
+}
+
+function buildFullPrompt(promptText, accountsSection) {
+  // 除外済みアカウントセクションの前に候補を挿入、なければ末尾に追加
+  const splitMarker = '\n\n【除外済みアカウント'
+  const splitPoint = promptText.indexOf(splitMarker)
+  if (splitPoint !== -1) {
+    return (
+      promptText.slice(0, splitPoint) +
+      '\n\n' + accountsSection +
+      promptText.slice(splitPoint)
+    )
+  }
+  return promptText + '\n\n' + accountsSection
+}
+
+// ── メインアクション ───────────────────────────────────────────
+
+async function buildAndSendToAI() {
+  if (collectedCards.length === 0) return
+  const btn = document.getElementById('os-ext-send-btn')
+  if (!btn || btn.disabled) return
+
+  btn.disabled = true
+  const originalText = btn.textContent
+  btn.textContent = '⏳ プロンプト生成中...'
+  btn.style.background = '#7c3aed'
+
+  try {
+    const settings = await getSettings()
+    const cards = collectedCards.slice(0, settings.maxAccounts)
+    const pageType = detectPageType()
+
+    // プロンプト取得（キャッシュ優先）
+    const promptText = await fetchOS0Prompt(settings.webappBase)
+
+    // 候補テキスト組み立て
+    const accountsSection = formatAccountsSection(cards, pageType, location.href)
+    const fullPrompt = buildFullPrompt(promptText, accountsSection)
+
+    // クリップボードにコピー
+    await navigator.clipboard.writeText(fullPrompt)
+
+    // AIタブを開く
+    const aiUrl = AI_URLS[settings.aiTarget] || AI_URLS.gemini
+    window.open(aiUrl, '_blank')
+
+    // 成功表示
+    btn.textContent = `✓ ${cards.length}件 → Geminiに貼り付けてください！`
+    btn.style.background = '#22c55e'
+    setTimeout(() => resetBtn(btn, originalText), 5000)
+
+  } catch (err) {
+    console.error('[OS Ext]', err)
+    const msg = err.message || 'エラーが発生しました'
+    btn.textContent = `⚠ ${msg}`
+    btn.style.background = '#ef4444'
+    setTimeout(() => resetBtn(btn, originalText), 4000)
+  }
+}
+
+function resetBtn(btn, originalText) {
+  if (!btn) return
+  btn.textContent = originalText || `📋 OS0プロンプトを生成 (${collectedCards.length}件)`
+  btn.style.background = ''
+  btn.disabled = false
+}
+
 // ── フローティングボタン ───────────────────────────────────────
 
 function ensureButton() {
@@ -100,7 +228,7 @@ function ensureButton() {
   btn.type = 'button'
   wrapper.appendChild(btn)
   document.body.appendChild(wrapper)
-  btn.addEventListener('click', copyToClipboard)
+  btn.addEventListener('click', buildAndSendToAI)
   floatingBtn = wrapper
   return wrapper
 }
@@ -109,78 +237,19 @@ function updateButton(cards) {
   collectedCards = cards
   const wrapper = ensureButton()
   const btn = document.getElementById('os-ext-send-btn')
-  if (btn) {
+  if (btn && !btn.disabled) {
     btn.textContent = cards.length > 0
-      ? `📋 OS0候補をコピー (${cards.length}件)`
-      : '📋 OS0候補をコピー'
+      ? `📋 OS0プロンプトを生成 (${cards.length}件)`
+      : '📋 OS0プロンプトを生成'
   }
   wrapper.style.display = cards.length > 0 ? 'block' : 'none'
-}
-
-async function copyToClipboard() {
-  if (collectedCards.length === 0) return
-  const btn = document.getElementById('os-ext-send-btn')
-  if (!btn || btn.disabled) return
-  btn.disabled = true
-
-  const data = {
-    type: 'os0_candidates',
-    sourceContext: {
-      platform: 'twitter',
-      pageType: detectPageType(),
-      url: location.href,
-      collectedBy: 'chrome-extension',
-      collectedAt: new Date().toISOString(),
-    },
-    accounts: collectedCards.slice(),
-  }
-
-  const json = JSON.stringify(data, null, 2)
-
-  try {
-    await navigator.clipboard.writeText(json)
-    showSuccess(btn)
-  } catch (_) {
-    // Clipboard API fallback (フォーカス外の場合など)
-    try {
-      const ta = document.createElement('textarea')
-      ta.value = json
-      ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-      showSuccess(btn)
-    } catch (_2) {
-      btn.textContent = '⚠ コピー失敗'
-      btn.style.background = '#ef4444'
-      setTimeout(() => resetBtn(btn), 2500)
-    }
-  }
-}
-
-function showSuccess(btn) {
-  btn.textContent = '✓ コピーしました！'
-  btn.style.background = '#22c55e'
-  setTimeout(() => resetBtn(btn), 2500)
-}
-
-function resetBtn(btn) {
-  if (!btn) return
-  btn.textContent = `📋 OS0候補をコピー (${collectedCards.length}件)`
-  btn.style.background = ''
-  btn.disabled = false
 }
 
 // ── スキャン・SPA対応 ──────────────────────────────────────────
 
 function scheduleScan() {
   clearTimeout(scanDebounce)
-  scanDebounce = setTimeout(() => {
-    const cards = collectCards()
-    updateButton(cards)
-  }, 400)
+  scanDebounce = setTimeout(() => updateButton(collectCards()), 400)
 }
 
 function handleUrlChange() {

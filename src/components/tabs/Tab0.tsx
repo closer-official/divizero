@@ -18,41 +18,6 @@ const SIGNAL_TEMP: Record<SignalType, number> = {
 
 const SIGNAL_OPTS: SignalType[] = ['いいね', 'フォロー', 'ストーリー反応', 'リプ', '突然DM']
 
-function pageTypeLabel(t: string): string {
-  const m: Record<string, string> = {
-    followers: 'フォロワー一覧', following: 'フォロー中一覧',
-    search: '検索結果', suggested: 'おすすめユーザー',
-    list: 'リスト', hashtag: 'ハッシュタグ',
-    home_timeline: 'タイムライン', notifications: '通知',
-    profile: 'プロフィール', post: '投稿',
-    quote_rt_list: '引用RT一覧', reply_thread: 'リプライスレッド',
-    other: 'その他',
-  }
-  return m[t] || t
-}
-
-interface PastedAccount {
-  displayName: string
-  handle: string
-  bio?: string
-  profileUrl: string
-  verified?: boolean
-  followerCount?: string
-  channel: string
-}
-
-interface PastedBatch {
-  type: string
-  sourceContext: {
-    platform: string
-    pageType: string
-    url: string
-    collectedBy: string
-    collectedAt: string
-  }
-  accounts: PastedAccount[]
-}
-
 interface Props {
   data: AppData
   saveData: (updater: (prev: AppData) => AppData) => void
@@ -86,10 +51,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [ibSignals, setIbSignals] = useState<Set<SignalType>>(new Set(['フォロー']))
   const [ibDate, setIbDate] = useState(todayStr())
   const [ibMemo, setIbMemo] = useState('')
-  const [pasteText, setPasteText] = useState('')
-  const [parsedBatch, setParsedBatch] = useState<PastedBatch | null>(null)
-  const [parseError, setParseError] = useState('')
-
   function toggleSignal(s: SignalType) {
     setIbSignals(prev => {
       const next = new Set(prev)
@@ -473,75 +434,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     })
   }
 
-  // ── 拡張機能受信口ハンドラ ─────────────────────────────────
-
-  function isAccountDuplicate(handle: string): boolean {
-    const h = normalizeHandle(handle)
-    return (
-      (data.excluded || []).some(e => normalizeHandle(e.handle) === h) ||
-      (data.screenings || []).some(s => normalizeHandle(s.handle) === h) ||
-      (data.targets || []).some(t => normalizeHandle(t.url) === h) ||
-      (data.pipeline || []).some(p => normalizeHandle(p.url) === h)
-    )
-  }
-
-  function handleParse() {
-    const text = pasteText.trim()
-    if (!text) return
-    try {
-      const parsed = JSON.parse(text) as PastedBatch
-      if (!Array.isArray(parsed.accounts) || parsed.accounts.length === 0) {
-        setParseError('JSONの形式が正しくありません。accounts 配列が見つかりません。')
-        return
-      }
-      setParsedBatch(parsed)
-      setParseError('')
-    } catch {
-      setParseError('JSONの解析に失敗しました。Chrome拡張の「OS0候補をコピー」ボタンでコピーしたJSONを貼り付けてください。')
-    }
-  }
-
-  function handleAddFromPaste() {
-    if (!parsedBatch) return
-    const { accounts, sourceContext } = parsedBatch
-    const newScreenings: Screening[] = []
-    let skipped = 0
-
-    for (const acc of accounts) {
-      if (isAccountDuplicate(acc.handle)) { skipped++; continue }
-      const channel: Channel =
-        acc.channel === 'instagram' ? 'instagram'
-        : acc.channel === 'threads' ? 'threads'
-        : 'twitter'
-      newScreenings.push({
-        id: uid(),
-        createdAt: new Date().toISOString(),
-        channel,
-        displayName: acc.displayName,
-        handle: acc.handle,
-        verdict: '拡張機能経由',
-        reason: pageTypeLabel(sourceContext.pageType),
-        sourceContext: {
-          platform: sourceContext.platform as 'twitter' | 'instagram' | 'threads' | 'youtube',
-          pageType: sourceContext.pageType,
-          url: sourceContext.url,
-          collectedBy: sourceContext.collectedBy as 'chrome-extension' | 'manual',
-          collectedAt: sourceContext.collectedAt,
-        },
-      })
-    }
-
-    if (newScreenings.length > 0) {
-      saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), ...newScreenings] }))
-    }
-    const msg = newScreenings.length > 0
-      ? `${newScreenings.length}件をOS⓪に追加${skipped > 0 ? `（${skipped}件は登録済みのためスキップ）` : ''}`
-      : `全件が登録済みのためスキップ（${skipped}件）`
-    toast.show(msg, 3000)
-    setParsedBatch(null)
-    setPasteText('')
-  }
-
   const screenings = [...(data.screenings || [])].reverse()
   const excluded = [...(data.excluded || [])].reverse()
 
@@ -569,94 +461,6 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
 
   return (
     <div className="flex flex-col gap-5" style={{ animation: 'fadeIn .2s ease-out' }}>
-
-      {/* ── Chrome拡張クリップボード取込 ──────────────────── */}
-      <div className="card overflow-hidden" style={{ borderColor: '#ddd6fe', background: 'linear-gradient(135deg,#f5f3ff,#fff)' }}>
-        <div className="p-4 border-b border-violet-100 flex items-center gap-2">
-          <i className="fa-solid fa-clipboard text-violet-500" />
-          <h3 className="font-bold text-sm text-violet-800">拡張データ貼り付け</h3>
-          <span className="text-[11px] text-violet-400 hidden sm:inline">X画面で「OS0候補をコピー」→ ここに貼り付け</span>
-        </div>
-
-        {!parsedBatch ? (
-          <div className="p-4 flex flex-col gap-3">
-            <textarea
-              className="input-base h-20 cs text-xs"
-              placeholder={'Chrome拡張の「📋 OS0候補をコピー」で取得したJSONをここに貼り付け...'}
-              value={pasteText}
-              onChange={e => { setPasteText(e.target.value); setParseError('') }}
-            />
-            {parseError && (
-              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
-                <i className="fa-solid fa-triangle-exclamation mr-1" />{parseError}
-              </p>
-            )}
-            <button
-              className="btn-primary w-full justify-center"
-              style={{ background: '#7c3aed' }}
-              disabled={!pasteText.trim()}
-              onClick={handleParse}
-            >
-              <i className="fa-solid fa-wand-magic-sparkles" />展開する
-            </button>
-          </div>
-        ) : (
-          <div>
-            <div className="px-4 py-3 flex items-center justify-between bg-violet-50 border-b border-violet-100 flex-wrap gap-2">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
-                  {pageTypeLabel(parsedBatch.sourceContext.pageType)}
-                </span>
-                <span className="text-slate-500">{parsedBatch.accounts.length}件</span>
-                <span className="text-slate-400 hidden sm:inline truncate max-w-[200px]">{parsedBatch.sourceContext.url}</span>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  className="btn-sec text-xs py-1.5 px-3"
-                  onClick={() => { setParsedBatch(null); setPasteText('') }}
-                >
-                  クリア
-                </button>
-                <button
-                  className="btn-primary text-xs py-1.5 px-3"
-                  style={{ background: '#7c3aed' }}
-                  onClick={handleAddFromPaste}
-                >
-                  <i className="fa-solid fa-plus mr-1" />全件追加
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col divide-y divide-violet-50 max-h-52 overflow-y-auto cs">
-              {parsedBatch.accounts.map((acc, idx) => {
-                const isDup = isAccountDuplicate(acc.handle)
-                return (
-                  <div
-                    key={`paste-${idx}`}
-                    className={`flex items-center gap-2 px-4 py-2 text-xs ${isDup ? 'bg-slate-50' : ''}`}
-                  >
-                    {acc.verified && (
-                      <i className="fa-solid fa-circle-check text-sky-400 text-[10px] flex-shrink-0" />
-                    )}
-                    <span className={`font-semibold flex-shrink-0 ${isDup ? 'line-through text-slate-400' : 'text-slate-800'}`}>
-                      {acc.displayName}
-                    </span>
-                    <span className={`flex-shrink-0 ${isDup ? 'text-slate-300' : 'text-slate-400'}`}>
-                      {acc.handle}
-                    </span>
-                    {acc.bio && (
-                      <span className="text-slate-400 truncate hidden sm:block">{acc.bio}</span>
-                    )}
-                    {isDup && (
-                      <span className="ml-auto flex-shrink-0 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">登録済み</span>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-      </div>
 
       <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-3 text-xs text-fuchsia-900">
         <span className="font-bold"><i className="fa-solid fa-layer-group mr-1" />OS⓪ 設計原則：</span>
