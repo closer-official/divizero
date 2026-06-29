@@ -35,12 +35,23 @@ export function buildS1ActionPrompt(
     ? `相手からのDM内容：\n${item.inbound_signal.memo}`
     : (touch.reactionNote || '（なし）')
 
+  const forbiddenAnglesStr = item.forbiddenAngles?.length
+    ? item.forbiddenAngles.join('・')
+    : '（OS①カルテ未作成 — 売り込み・提案フレーズは禁止）'
+
   let result = template
     .replace('{{accountName}}', item.accountName)
     .replace('{{channel}}', item.channel)
     .replace('{{track}}', item.track)
+    .replace('{{trackReason}}', item.trackReason || '（未記録）')
+    .replace('{{estimatedProduct}}', item.estimatedProduct || '（未記録）')
+    .replace('{{partnerFlag}}', item.partnerFlag || '（未記録）')
     .replace('{{hypothesis}}', item.hypothesis || '未設定')
     .replace('{{salesExpectation}}', String(item.salesExpectation ?? '未設定'))
+    .replace('{{salesExpectationReason}}', item.salesExpectationReason || '（未記録）')
+    .replace('{{primaryHypothesisPattern}}', item.primaryHypothesisPattern || '（OS①カルテ未作成）')
+    .replace('{{naturalQuestion}}', item.naturalQuestion || '（OS①カルテ未作成 — 仮説から自力で問いを生成すること）')
+    .replace('{{forbiddenAngles}}', forbiddenAnglesStr)
     .replace('{{targetPostType}}', touch.targetPostType || '—')
     .replace('{{targetPostText}}', touch.targetPostText || '—')
     .replace('{{targetPostRawText}}', resolvedTargetPostRawText)

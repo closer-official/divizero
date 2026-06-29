@@ -35,6 +35,25 @@ function resolveSkipJudge(contactJudgeBlock: string, fullText: string): '通過'
   return (skipReasonIsReal || (firstLineSKIP && !skipReasonVal)) ? 'SKIP' : '通過';
 }
 
+function extractHypothesisKarte(text: string): {
+  primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
+  naturalQuestion?: string;
+  forbiddenAngles?: string[];
+} {
+  const karteBlock = block(text, '仮説カルテ（アプリ自動取込）')
+  if (!karteBlock) return {}
+  const patternRaw = field(karteBlock, '最優先パターン').trim()
+  const primaryHypothesisPattern = ['A', 'B', 'C', 'D'].includes(patternRaw)
+    ? patternRaw as 'A' | 'B' | 'C' | 'D'
+    : undefined
+  const naturalQuestion = field(karteBlock, 'naturalQuestion') || undefined
+  const forbiddenAnglesRaw = field(karteBlock, '禁止角度')
+  const forbiddenAngles = forbiddenAnglesRaw
+    ? forbiddenAnglesRaw.split('・').map(s => s.trim()).filter(Boolean)
+    : undefined
+  return { primaryHypothesisPattern, naturalQuestion, forbiddenAngles }
+}
+
 function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string } {
   const expBlock = block(text, '営業期待値スコア（0〜40）');
   let scoreRaw = expBlock ? field(expBlock, 'スコア') : '';
@@ -74,6 +93,7 @@ export function parseOS1(text: string) {
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -85,6 +105,7 @@ export function parseOS1(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote,
     channel: 'twitter' as const, salesExpectation, salesExpectationReason,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
   };
 }
 
@@ -111,6 +132,7 @@ export function parseOS1Instagram(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -123,6 +145,7 @@ export function parseOS1Instagram(text: string) {
     storyA: saM ? cleanMsg(saM[1]) : '', storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote, dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
   };
 }
 
@@ -145,6 +168,7 @@ export function parseOS1Threads(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
   return {
     caseId: field(text, '案件ID'),
     accountName: field(text, 'アカウント名') || field(text, 'アカウント名（表示名）'),
@@ -157,6 +181,7 @@ export function parseOS1Threads(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
   };
 }
 

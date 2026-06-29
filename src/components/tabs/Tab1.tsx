@@ -122,6 +122,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           isOpen: true,
           salesExpectation: newTarget.salesExpectation,
           salesExpectationReason: newTarget.salesExpectationReason,
+          partnerFlag: newTarget.partnerFlag,
+          trackReason: newTarget.trackReason,
+          estimatedProduct: newTarget.estimatedProduct,
+          estimatedPrice: newTarget.estimatedPrice,
+          primaryHypothesisPattern: newTarget.primaryHypothesisPattern,
+          naturalQuestion: newTarget.naturalQuestion,
+          forbiddenAngles: newTarget.forbiddenAngles,
           isInbound: prefill?.is_inbound || false,
           inboundActions: prefill?.inbound_actions?.length ? prefill.inbound_actions : (prefill?.signal_type ? [prefill.signal_type] : []),
           inbound_signal: prefill?.is_inbound && prefill?.signal_type ? {
@@ -166,6 +173,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           analyses: [], history: [], sentMessages: [], replies: [], isOpen: true,
           salesExpectation: tgt.salesExpectation,
           salesExpectationReason: tgt.salesExpectationReason,
+          partnerFlag: tgt.partnerFlag,
+          trackReason: tgt.trackReason,
+          estimatedProduct: tgt.estimatedProduct,
+          estimatedPrice: tgt.estimatedPrice,
+          primaryHypothesisPattern: tgt.primaryHypothesisPattern,
+          naturalQuestion: tgt.naturalQuestion,
+          forbiddenAngles: tgt.forbiddenAngles,
         })
       })
       return d
@@ -244,6 +258,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             isOpen: true,
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
+            partnerFlag: newTarget.partnerFlag,
+            trackReason: newTarget.trackReason,
+            estimatedProduct: newTarget.estimatedProduct,
+            estimatedPrice: newTarget.estimatedPrice,
+            primaryHypothesisPattern: newTarget.primaryHypothesisPattern,
+            naturalQuestion: newTarget.naturalQuestion,
+            forbiddenAngles: newTarget.forbiddenAngles,
             isInbound: screening.is_inbound || false,
             inboundActions: screening.inbound_actions?.length ? screening.inbound_actions : (screening.signal_type ? [screening.signal_type] : []),
             inbound_signal: screening.is_inbound && screening.signal_type ? {
@@ -292,6 +313,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         isOpen: true,
         salesExpectation: tgt.salesExpectation,
         salesExpectationReason: tgt.salesExpectationReason,
+        partnerFlag: tgt.partnerFlag,
+        trackReason: tgt.trackReason,
+        estimatedProduct: tgt.estimatedProduct,
+        estimatedPrice: tgt.estimatedPrice,
+        primaryHypothesisPattern: tgt.primaryHypothesisPattern,
+        naturalQuestion: tgt.naturalQuestion,
+        forbiddenAngles: tgt.forbiddenAngles,
       })
       return d
     })

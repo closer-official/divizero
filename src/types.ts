@@ -111,6 +111,15 @@ export interface Screening {
   sourceContext?: ScreeningSourceContext;
 }
 
+export interface SalesHypothesisItem {
+  pattern: 'A' | 'B' | 'C' | 'D';
+  label?: string;
+  priority?: 1 | 2 | 3 | 4 | 5;
+  hypothesis?: string;
+  naturalQuestion: string;
+  risk?: string;
+}
+
 export interface Target {
   id: string;
   createdAt: string;
@@ -144,6 +153,11 @@ export interface Target {
   aiOutput?: string;
   salesExpectation?: number;
   salesExpectationReason?: string;
+  // OS①仮説カルテ
+  primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
+  naturalQuestion?: string;
+  forbiddenAngles?: string[];
+  hypothesisItems?: SalesHypothesisItem[];
 }
 
 export interface SentMessage {
@@ -230,6 +244,15 @@ export interface PipelineItem {
   salesExpectation?: number;        // 0-40, set at OS1, does not change
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
   todayTask?: { action: string; addedAt: string };  // 行動判定で「0日後・今日」と出た場合にセット
+  // OS①仮説カルテ（確定後変動しない）
+  partnerFlag?: string;
+  trackReason?: string;
+  estimatedProduct?: string;
+  estimatedPrice?: string;
+  primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
+  naturalQuestion?: string;
+  forbiddenAngles?: string[];
+  hypothesisItems?: SalesHypothesisItem[];
 }
 
 export interface ClosedDeal {
