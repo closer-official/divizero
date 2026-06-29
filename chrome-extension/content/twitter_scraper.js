@@ -82,43 +82,64 @@ function isUsernameHref(href) {
 }
 
 function extractBio(cell, displayName, handle) {
-  // ① data-testid="UserDescription" (プロフィールページ・一部リスト)
+  // ① data-testid="UserDescription"（最も確実）
   const descEl = cell.querySelector('[data-testid="UserDescription"]')
   if (descEl) {
     const text = (descEl.textContent || '').trim()
     if (text) return text
   }
 
-  // ② User-Name の次の兄弟要素を探す（フォロワー/フォロー中リストで多い構造）
   const nameContainer = cell.querySelector('[data-testid="User-Name"]')
-  if (nameContainer) {
-    let sibling = nameContainer.nextElementSibling
-    while (sibling) {
-      // ボタン類は除外（role="button" または button タグ）
-      const tag = sibling.tagName.toLowerCase()
-      if (tag === 'button' || sibling.getAttribute('role') === 'button') break
-      const text = (sibling.textContent || '').trim()
-      if (
-        text.length >= 5 &&
-        text !== displayName &&
-        text !== handle &&
-        !text.startsWith('@')
-      ) return text
-      sibling = sibling.nextElementSibling
+
+  // フォローボタン系かどうか判定（セルから el までの祖先を辿る）
+  function isButtonArea(el) {
+    let node = el
+    while (node && node !== cell) {
+      if (node.tagName.toLowerCase() === 'button') return true
+      if (node.getAttribute('role') === 'button') return true
+      if (/follow/i.test(node.getAttribute('aria-label') || '')) return true
+      node = node.parentElement
     }
+    return false
   }
 
-  // ③ dir="auto" 属性を持つ要素（User-Name 外で最初に見つかるもの）
+  // フォローボタンのテキストパターン
+  function isFollowText(text) {
+    return /^(click to follow|follow|フォロー|following)/i.test(text)
+  }
+
+  // ② dir="auto" 要素（User-Name 外・ボタン外・非表示除外）
   for (const el of cell.querySelectorAll('[dir="auto"]')) {
     if (nameContainer && nameContainer.contains(el)) continue
+    if (isButtonArea(el)) continue
+    if (el.style.display === 'none' || el.style.visibility === 'hidden') continue
     const text = (el.textContent || '').trim()
     if (
       text.length >= 5 &&
+      !isFollowText(text) &&
       text !== displayName &&
       text !== handle &&
       !text.startsWith('@') &&
-      !/^\d[\d,万.kK]*$/.test(text) // フォロワー数などの数値のみは除外
+      !/^\d[\d,万.kK]*[人件]?$/.test(text)
     ) return text
+  }
+
+  // ③ User-Name の次の兄弟要素（最終手段）
+  if (nameContainer) {
+    let sib = nameContainer.nextElementSibling
+    while (sib) {
+      if (!isButtonArea(sib)) {
+        const text = (sib.textContent || '').trim()
+        if (
+          text.length >= 5 &&
+          !isFollowText(text) &&
+          text !== displayName &&
+          text !== handle &&
+          !text.startsWith('@')
+        ) return text
+      }
+      sib = sib.nextElementSibling
+    }
   }
 
   return undefined
