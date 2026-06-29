@@ -1,5 +1,15 @@
-import type { PipelineItem, Touch } from '../types'
+import type { Observation, PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
+
+function formatObservations(observations: Observation[] | undefined): string {
+  if (!observations || observations.length === 0) {
+    return '（なし — 旧形式案件のためnaturalQuestionを使うこと）'
+  }
+  const sorted = [...observations].sort((a, b) => a.priority - b.priority)
+  return sorted.map(o =>
+    `[priority:${o.priority}] 観察:${o.observation} / 疑問:${o.curiosity} / DM質問:${o.naturalQuestion}`
+  ).join('\n')
+}
 
 export interface S1ActionResult {
   judgment: string
@@ -52,6 +62,7 @@ export function buildS1ActionPrompt(
     .replace('{{primaryHypothesisPattern}}', item.primaryHypothesisPattern || '（OS①カルテ未作成）')
     .replace('{{naturalQuestion}}', item.naturalQuestion || '（OS①カルテ未作成 — 仮説から自力で問いを生成すること）')
     .replace('{{forbiddenAngles}}', forbiddenAnglesStr)
+    .replace('{{observations}}', formatObservations(item.observations))
     .replace('{{targetPostType}}', touch.targetPostType || '—')
     .replace('{{targetPostText}}', touch.targetPostText || '—')
     .replace('{{targetPostRawText}}', resolvedTargetPostRawText)

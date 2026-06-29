@@ -1,3 +1,5 @@
+import type { Observation } from '../types'
+
 export function field(text: string, label: string): string {
   const re = new RegExp(label + '[：:]\\s*([^\\n]+)');
   const m = text.match(re);
@@ -35,10 +37,37 @@ function resolveSkipJudge(contactJudgeBlock: string, fullText: string): '通過'
   return (skipReasonIsReal || (firstLineSKIP && !skipReasonVal)) ? 'SKIP' : '通過';
 }
 
+function extractObservationList(karteBlock: string): Observation[] {
+  const obsPattern = /\[Observation[①②③④⑤⑥⑦⑧⑨⑩\d]+\]([\s\S]*?)(?=\[Observation|\n禁止角度|$)/g
+  const results: Observation[] = []
+  let match: RegExpExecArray | null
+  let idx = 0
+  while ((match = obsPattern.exec(karteBlock)) !== null) {
+    const obsText = match[1]
+    const naturalQ = field(obsText, 'naturalQuestion')
+    if (!naturalQ) { idx++; continue }
+    const priorityRaw = parseInt(field(obsText, 'priority'), 10)
+    results.push({
+      id: uid(),
+      priority: isNaN(priorityRaw) ? idx + 1 : priorityRaw,
+      observation: field(obsText, 'observation'),
+      curiosity: field(obsText, 'curiosity'),
+      naturalQuestion: naturalQ,
+      ifYes: field(obsText, 'ifYes'),
+      ifNo: field(obsText, 'ifNo'),
+      businessHypothesis: field(obsText, 'businessHypothesis'),
+      evidence: [],
+    })
+    idx++
+  }
+  return results
+}
+
 function extractHypothesisKarte(text: string): {
   primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
   naturalQuestion?: string;
   forbiddenAngles?: string[];
+  observations?: Observation[];
 } {
   const karteBlock = block(text, '仮説カルテ（アプリ自動取込）')
   if (!karteBlock) return {}
@@ -51,7 +80,8 @@ function extractHypothesisKarte(text: string): {
   const forbiddenAngles = forbiddenAnglesRaw
     ? forbiddenAnglesRaw.split('・').map(s => s.trim()).filter(Boolean)
     : undefined
-  return { primaryHypothesisPattern, naturalQuestion, forbiddenAngles }
+  const observations = extractObservationList(karteBlock)
+  return { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations: observations.length ? observations : undefined }
 }
 
 function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string } {
@@ -93,7 +123,7 @@ export function parseOS1(text: string) {
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
-  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -105,7 +135,7 @@ export function parseOS1(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote,
     channel: 'twitter' as const, salesExpectation, salesExpectationReason,
-    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
 
@@ -132,7 +162,7 @@ export function parseOS1Instagram(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
-  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
     followers: field(text, 'フォロワー数'), industry: field(text, '業種'),
@@ -145,7 +175,7 @@ export function parseOS1Instagram(text: string) {
     storyA: saM ? cleanMsg(saM[1]) : '', storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote, dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason,
-    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
 
@@ -168,7 +198,7 @@ export function parseOS1Threads(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
-  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles } = extractHypothesisKarte(text);
+  const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId: field(text, '案件ID'),
     accountName: field(text, 'アカウント名') || field(text, 'アカウント名（表示名）'),
@@ -181,7 +211,7 @@ export function parseOS1Threads(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason,
-    primaryHypothesisPattern, naturalQuestion, forbiddenAngles,
+    primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
 

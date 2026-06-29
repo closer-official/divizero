@@ -111,6 +111,18 @@ export interface Screening {
   sourceContext?: ScreeningSourceContext;
 }
 
+export interface Observation {
+  id: string;
+  priority: number;
+  observation: string;
+  curiosity: string;
+  naturalQuestion: string;
+  ifYes: string;
+  ifNo: string;
+  businessHypothesis: string;
+  evidence: string[];
+}
+
 export interface SalesHypothesisItem {
   pattern: 'A' | 'B' | 'C' | 'D';
   label?: string;
@@ -158,6 +170,7 @@ export interface Target {
   naturalQuestion?: string;
   forbiddenAngles?: string[];
   hypothesisItems?: SalesHypothesisItem[];
+  observations?: Observation[];
 }
 
 export interface SentMessage {
@@ -253,6 +266,7 @@ export interface PipelineItem {
   naturalQuestion?: string;
   forbiddenAngles?: string[];
   hypothesisItems?: SalesHypothesisItem[];
+  observations?: Observation[];
 }
 
 export interface ClosedDeal {

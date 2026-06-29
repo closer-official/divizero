@@ -129,6 +129,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           primaryHypothesisPattern: newTarget.primaryHypothesisPattern,
           naturalQuestion: newTarget.naturalQuestion,
           forbiddenAngles: newTarget.forbiddenAngles,
+          observations: newTarget.observations,
           isInbound: prefill?.is_inbound || false,
           inboundActions: prefill?.inbound_actions?.length ? prefill.inbound_actions : (prefill?.signal_type ? [prefill.signal_type] : []),
           inbound_signal: prefill?.is_inbound && prefill?.signal_type ? {
@@ -180,6 +181,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           primaryHypothesisPattern: tgt.primaryHypothesisPattern,
           naturalQuestion: tgt.naturalQuestion,
           forbiddenAngles: tgt.forbiddenAngles,
+          observations: tgt.observations,
         })
       })
       return d
@@ -265,6 +267,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             primaryHypothesisPattern: newTarget.primaryHypothesisPattern,
             naturalQuestion: newTarget.naturalQuestion,
             forbiddenAngles: newTarget.forbiddenAngles,
+            observations: newTarget.observations,
             isInbound: screening.is_inbound || false,
             inboundActions: screening.inbound_actions?.length ? screening.inbound_actions : (screening.signal_type ? [screening.signal_type] : []),
             inbound_signal: screening.is_inbound && screening.signal_type ? {
@@ -320,6 +323,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         primaryHypothesisPattern: tgt.primaryHypothesisPattern,
         naturalQuestion: tgt.naturalQuestion,
         forbiddenAngles: tgt.forbiddenAngles,
+        observations: tgt.observations,
       })
       return d
     })

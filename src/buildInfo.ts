@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/29 UTトラックDM仮説優先順位修正: UT→B優先、全トラックA→B→C→D順";
+export const BUILD_LABEL = "06/29 Phase1: Observationベース移行インフラ — 型定義/パーサー/Tab1/s1ActionPrompt/S1プロンプト";

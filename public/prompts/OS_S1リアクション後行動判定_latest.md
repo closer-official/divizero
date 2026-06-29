@@ -26,6 +26,9 @@ DM移行は「DM_SCOREが80点以上」かつ「仮説検証価値がある（DM
 OS①推奨仮説パターン：{{primaryHypothesisPattern}}
 OS①が決めたnaturalQuestion（DM1通目はここをベースに使うこと）：{{naturalQuestion}}
 DM1通目の禁止角度（OS①確定）：{{forbiddenAngles}}
+OS①Observationリスト（priority昇順）：
+{{observations}}
+※Observationリストが存在する場合、priority最小値（最高優先）のnaturalQuestionをDM1通目の核として使うこと。リストが「（なし）」の場合は上記naturalQuestionをそのまま使う。businessHypothesisはDM生成に使わない（内部参照のみ）。
 
 ■ 接触した投稿
 投稿種別：{{targetPostType}}
