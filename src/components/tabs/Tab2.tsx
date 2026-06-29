@@ -582,7 +582,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       const prompt = modalNotif.type === 'case_pattern'
         ? await buildCaseAnalysisPrompt(data)
         : await buildTouchAnalysisPrompt(data)
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setModalCopyState('copied')
       setTimeout(() => setModalCopyState('idle'), 2000)
       // os_accuracy_alert は touch_trend として記録
@@ -667,7 +667,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     setBatchJudgError(null)
     try {
       const prompt = await buildBatchJudgmentPrompt(unverifiedTouches)
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setBatchJudgCopyState('copied')
       setBatchJudgInputShown(true)
       setTimeout(() => setBatchJudgCopyState('idle'), 2000)
@@ -680,7 +680,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     if (!prompts.S1_ACTION_BATCH) { toast.show('プロンプトを読み込み中です', 2000); return }
     if (pendingS1Touches.length === 0) { toast.show('行動判定が必要なタッチはありません', 2000); return }
     const prompt = buildBatchS1ActionPrompt(pendingS1Touches, prompts.S1_ACTION_BATCH)
-    navigator.clipboard.writeText(prompt).then(() => {
+    copyText(prompt).then(() => {
       setBatchS1CopyState('copied')
       setTimeout(() => setBatchS1CopyState('idle'), 2500)
     }).catch(() => toast.show('コピーに失敗しました', 2000))
@@ -1381,7 +1381,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                         onClick={async () => {
                           try {
                             const prompt = await buildTouchPrompt(p, p.touches || [])
-                            await navigator.clipboard.writeText(prompt)
+                            await copyText(prompt)
                             setNextActionCopyStates(s => ({ ...s, [p.id]: 'copied' }))
                             setTimeout(() => setNextActionCopyStates(s => ({ ...s, [p.id]: 'idle' })), 2500)
                           } catch {
@@ -1797,7 +1797,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       } else {
         prompt = await buildTouchPrompt(item, touches)
       }
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setCopyBtnState('copied')
       setTimeout(() => setCopyBtnState('idle'), 2000)
     } catch {
@@ -2579,7 +2579,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                           className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggACopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                           onClick={async () => {
                             setTSentText(suggestionA)
-                            try { await navigator.clipboard.writeText(suggestionA); setSuggACopyState('copied'); setTimeout(() => setSuggACopyState('idle'), 1500) } catch {}
+                            try { await copyText(suggestionA); setSuggACopyState('copied'); setTimeout(() => setSuggACopyState('idle'), 1500) } catch {}
                           }}
                         >{suggACopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
@@ -2595,7 +2595,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                           className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggBCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                           onClick={async () => {
                             setTSentText(suggestionB)
-                            try { await navigator.clipboard.writeText(suggestionB); setSuggBCopyState('copied'); setTimeout(() => setSuggBCopyState('idle'), 1500) } catch {}
+                            try { await copyText(suggestionB); setSuggBCopyState('copied'); setTimeout(() => setSuggBCopyState('idle'), 1500) } catch {}
                           }}
                         >{suggBCopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
@@ -3098,7 +3098,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
         actualSentText: touch.actualSentText || '',
         editReason: touch.editReason || '',
       })
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setTouchJudgCopyState('copied')
       setTimeout(() => setTouchJudgCopyState('idle'), 2000)
     } catch {
@@ -3147,7 +3147,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     if (!prompts.PHENOMENON_FUTURE) return
     const prompt = buildPhenomenonFuturePrompt(pipelineItem, touch, prompts.PHENOMENON_FUTURE)
     try {
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setMsgCopyState('copied')
       setTimeout(() => setMsgCopyState('idle'), 2000)
     } catch {
@@ -3165,7 +3165,7 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
     if (!prompts.OS2) return
     const prompt = buildOS2ConversationPrompt(pipelineItem, touch, prompts.OS2)
     try {
-      await navigator.clipboard.writeText(prompt)
+      await copyText(prompt)
       setOs2CpCopyState('copied')
       setTimeout(() => setOs2CpCopyState('idle'), 2000)
     } catch {
