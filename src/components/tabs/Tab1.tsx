@@ -56,6 +56,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       return s ? JSON.parse(s) : null
     } catch { return null }
   })
+  const [continuousMode, setContinuousMode] = useState(false)
 
   useEffect(() => {
     setSelectedId(null)
@@ -327,8 +328,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       })
       return d
     })
-    toast.show(`「${tgt.accountName}」のSKIPを解除してOS②へ移行しました`, 2000)
-    setTimeout(() => onGoToTab2(), 1500)
+    if (continuousMode) {
+      toast.show(`「${tgt.accountName}」のSKIPを解除してOS②へ移行しました`, 1500)
+      setTimeout(() => advanceContinuous(targetId), 1600)
+    } else {
+      toast.show(`「${tgt.accountName}」のSKIPを解除してOS②へ移行しました`, 2000)
+      setTimeout(() => onGoToTab2(), 1500)
+    }
   }
 
   function handleBackToOS0(targetId: string) {
@@ -354,8 +360,12 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       }
       return d
     })
-    setSelectedId(null)
     toast.show(`「${tgt.accountName}」をOS⓪に戻しました`)
+    if (continuousMode) {
+      advanceContinuous(targetId)
+    } else {
+      setSelectedId(null)
+    }
   }
 
   function handleDelete(id: string) {
@@ -417,8 +427,27 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       })
       return d
     })
-    toast.show(`「${tgt.accountName}」をOS②パイプラインに移行します…`, 2000)
-    setTimeout(() => onGoToTab2(), 1500)
+    if (continuousMode) {
+      toast.show(`「${tgt.accountName}」をOS②に移行しました`, 1500)
+      setTimeout(() => advanceContinuous(targetId), 1700)
+    } else {
+      toast.show(`「${tgt.accountName}」をOS②パイプラインに移行します…`, 2000)
+      setTimeout(() => onGoToTab2(), 1500)
+    }
+  }
+
+  function advanceContinuous(fromId?: string) {
+    const list = [...data.targets].reverse()
+    const fromTarget = fromId ?? selectedId
+    const idx = list.findIndex(t => t.id === fromTarget)
+    const next = list[idx + 1]
+    if (next) {
+      setSelectedId(next.id)
+    } else {
+      setContinuousMode(false)
+      setSelectedId(null)
+      toast.show('すべて処理完了しました')
+    }
   }
 
   const allTargets = [...data.targets].reverse()
@@ -546,20 +575,70 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                 <i className="fa-solid fa-filter text-violet-500" />スクリーニング済みリスト
                 <span className="badge bg-violet-100 text-violet-700">{data.targets.length}</span>
               </h3>
-              {(() => {
-                const eligible = data.targets.filter(t => t.track !== 'SKIP' && !t.pipelineId)
-                if (eligible.length === 0) return null
-                return (
+              <div className="flex items-center gap-1.5 shrink-0">
+                {data.targets.length > 0 && (
                   <button
-                    className="btn-primary text-xs py-1.5 px-3 shrink-0"
-                    onClick={handleBulkToPipeline}
-                    title={`SKIP以外の未移行${eligible.length}件をまとめてOS②へ`}
+                    className={`text-xs py-1.5 px-2.5 rounded-lg border font-bold transition ${continuousMode ? 'bg-violet-600 text-white border-violet-600' : 'btn-sec text-violet-600 border-violet-300'}`}
+                    onClick={() => {
+                      if (continuousMode) {
+                        setContinuousMode(false)
+                        setSelectedId(null)
+                      } else {
+                        const list = [...data.targets].reverse()
+                        setContinuousMode(true)
+                        setSelectedId(list[0]?.id ?? null)
+                      }
+                    }}
+                    title="連続処理モード：1件ずつ順番に処理"
                   >
-                    <i className="fa-solid fa-arrow-right mr-1" />全員OS②へ（{eligible.length}件）
+                    <i className="fa-solid fa-forward-step mr-1" />{continuousMode ? '連続処理中' : '連続処理'}
                   </button>
-                )
-              })()}
+                )}
+                {(() => {
+                  const eligible = data.targets.filter(t => t.track !== 'SKIP' && !t.pipelineId)
+                  if (eligible.length === 0) return null
+                  return (
+                    <button
+                      className="btn-primary text-xs py-1.5 px-3"
+                      onClick={handleBulkToPipeline}
+                      title={`SKIP以外の未移行${eligible.length}件をまとめてOS②へ`}
+                    >
+                      <i className="fa-solid fa-arrow-right mr-1" />全員OS②へ（{eligible.length}件）
+                    </button>
+                  )
+                })()}
+              </div>
             </div>
+            {continuousMode && (() => {
+              const idx = allTargets.findIndex(t => t.id === selectedId)
+              const pos = idx >= 0 ? idx + 1 : 0
+              return (
+                <div className="px-4 py-2 bg-violet-50 border-b border-violet-100 flex items-center gap-2 text-xs">
+                  <i className="fa-solid fa-forward-step text-violet-500 shrink-0" />
+                  <span className="font-bold text-violet-700 flex-1">{pos} / {allTargets.length}件</span>
+                  <button
+                    className="btn-sec text-xs py-1 px-2.5 shrink-0"
+                    disabled={idx <= 0}
+                    onClick={() => { if (idx > 0) setSelectedId(allTargets[idx - 1].id) }}
+                  >
+                    <i className="fa-solid fa-chevron-left" /> 前へ
+                  </button>
+                  <button
+                    className="btn-sec text-xs py-1 px-2.5 shrink-0"
+                    disabled={idx >= allTargets.length - 1}
+                    onClick={() => advanceContinuous()}
+                  >
+                    次へ <i className="fa-solid fa-chevron-right" />
+                  </button>
+                  <button
+                    className="text-xs text-slate-400 hover:text-rose-500 px-1.5 transition"
+                    onClick={() => { setContinuousMode(false); setSelectedId(null) }}
+                  >
+                    終了
+                  </button>
+                </div>
+              )
+            })()}
             <div className="flex-1 overflow-y-auto cs" id="t1-list">
               {total === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-slate-300 gap-2">

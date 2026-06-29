@@ -335,6 +335,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
+  const [continuousMode, setContinuousMode] = useState(false)
   const drawerRef = useRef<HTMLDivElement>(null)
   const resizingRef = useRef(false)
   const resizeStartX = useRef(0)
@@ -535,6 +536,26 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       count: type === 'case_pattern' ? data.closed.length : judgedCount,
       pendingAnalysisId: null,
     })
+  }
+
+  function advanceContinuous() {
+    const list = filterActive(active).sort(urgencySort)
+    const idx = list.findIndex(p => p.id === drawerItemId)
+    const next = list[idx + 1]
+    if (next) {
+      setDrawerItemId(next.id)
+    } else {
+      setContinuousMode(false)
+      setDrawerItemId(null)
+      toast.show('すべての案件を処理しました')
+    }
+  }
+
+  function startContinuousMode() {
+    const list = filterActive(active).sort(urgencySort)
+    if (list.length === 0) { toast.show('処理対象の案件がありません'); return }
+    setContinuousMode(true)
+    setDrawerItemId(list[0].id)
   }
 
   function handleWarnItemClick(itemId: string) {
@@ -1121,6 +1142,16 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </button>
           )}
           <div className="ml-auto flex gap-1 shrink-0">
+            {/* 連続処理モード */}
+            {active.length > 0 && (
+              <button
+                className={`text-[11px] py-1.5 px-2 rounded-lg border font-bold transition ${continuousMode ? 'bg-indigo-600 text-white border-indigo-600' : 'btn-sec text-indigo-600 border-indigo-300'}`}
+                onClick={() => continuousMode ? (setContinuousMode(false), setDrawerItemId(null)) : startContinuousMode()}
+                title="連続処理モード：案件を1件ずつ順番に処理"
+              >
+                <i className="fa-solid fa-forward-step" /><span className="hidden sm:inline ml-1">{continuousMode ? '連続処理中' : '連続処理'}</span>
+              </button>
+            )}
             {/* ③ 未判定一括コピー */}
             {needsNextAction.length > 0 && (
               <button
@@ -1211,11 +1242,38 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               <div className="shrink-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2">
                 <button
                   className="text-slate-400 hover:text-slate-700 p-1 rounded transition min-h-[36px] min-w-[36px] flex items-center justify-center"
-                  onClick={() => setDrawerItemId(null)}
+                  onClick={() => { setContinuousMode(false); setDrawerItemId(null) }}
                 >
                   <i className="fa-solid fa-xmark text-sm" />
                 </button>
                 <p className="font-bold text-slate-800 flex-1 truncate text-sm">{drawerItem.accountName}</p>
+                {continuousMode && (() => {
+                  const cList = filterActive(active).sort(urgencySort)
+                  const cIdx = cList.findIndex(p => p.id === drawerItemId)
+                  return (
+                    <>
+                      <span className="text-[11px] font-bold text-indigo-600 shrink-0 bg-indigo-50 px-2 py-0.5 rounded-full">
+                        {cIdx + 1} / {cList.length}件
+                      </span>
+                      <button
+                        className="btn-sec text-xs py-1 px-2 shrink-0"
+                        disabled={cIdx <= 0}
+                        onClick={() => { const prev = cList[cIdx - 1]; if (prev) setDrawerItemId(prev.id) }}
+                        title="前の案件"
+                      >
+                        <i className="fa-solid fa-chevron-left" />
+                      </button>
+                      <button
+                        className="btn-sec text-xs py-1 px-2 shrink-0"
+                        disabled={cIdx >= cList.length - 1}
+                        onClick={advanceContinuous}
+                        title="次の案件"
+                      >
+                        <i className="fa-solid fa-chevron-right" />
+                      </button>
+                    </>
+                  )
+                })()}
                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(drawerItem.state)}`}>{stateLabel(drawerItem.state)}</span>
                 <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full shrink-0">{drawerItem.currentStep}</span>
               </div>
@@ -1231,8 +1289,22 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   toast={toast}
                   confirm={confirm}
                   onGoToTab3={onGoToTab3}
+                  onOperationDone={continuousMode ? advanceContinuous : undefined}
                   onCloseCase={(item, result) => {
-                    setDrawerItemId(null)
+                    if (continuousMode) {
+                      const list = filterActive(active).sort(urgencySort)
+                      const idx = list.findIndex(p => p.id === item.id)
+                      const next = list[idx + 1]
+                      if (next) {
+                        setDrawerItemId(next.id)
+                      } else {
+                        setContinuousMode(false)
+                        setDrawerItemId(null)
+                        toast.show('すべての案件を処理しました')
+                      }
+                    } else {
+                      setDrawerItemId(null)
+                    }
                     onCloseCase(item, result)
                   }}
                   onReturnToOS0={(item) => {
@@ -1605,9 +1677,10 @@ interface CardProps {
   onCloseCase: (item: PipelineItem, result: string) => void
   onReturnToOS0: (item: PipelineItem) => void
   onExportMd: (item: PipelineItem) => void
+  onOperationDone?: () => void
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd }: CardProps) {
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
@@ -1843,6 +1916,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         ? 'ストーリー返信を記録しました（S3へ移動）'
         : 'タッチを記録しました（反応待ち）'
     toast.show(msg)
+    if (onOperationDone) setTimeout(onOperationDone, 900)
   }
 
   function handleDeleteTouch(touchId: string) {
