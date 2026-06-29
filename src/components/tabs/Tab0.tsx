@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import type { AppData, Prompts, Screening, Target, PipelineItem, Channel } from '../../types'
-import type { OS0QueueItem } from '../../services/receive/types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
@@ -32,13 +31,26 @@ function pageTypeLabel(t: string): string {
   return m[t] || t
 }
 
-function formatReceivedAt(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  if (diff < 60_000) return 'たった今'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分前`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}時間前`
-  const d = new Date(iso)
-  return `${d.getMonth() + 1}/${d.getDate()}`
+interface PastedAccount {
+  displayName: string
+  handle: string
+  bio?: string
+  profileUrl: string
+  verified?: boolean
+  followerCount?: string
+  channel: string
+}
+
+interface PastedBatch {
+  type: string
+  sourceContext: {
+    platform: string
+    pageType: string
+    url: string
+    collectedBy: string
+    collectedAt: string
+  }
+  accounts: PastedAccount[]
 }
 
 interface Props {
@@ -51,18 +63,11 @@ interface Props {
   onGoToTab1: () => void
   onGoToTab2: () => void
   onCreateInboundPipeline: (item: PipelineItem) => void
-  os0Pending: OS0QueueItem[]
-  os0History: OS0QueueItem[]
-  extConnected: boolean
-  onMarkCompleted: (id: string) => Promise<void>
-  onMarkDismissed: (id: string) => Promise<void>
-  onRestore: (id: string) => Promise<void>
-  onClearHistory: () => Promise<void>
 }
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 
-export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline: _onCreateInboundPipeline, os0Pending, os0History, extConnected: _extConnected, onMarkCompleted, onMarkDismissed, onRestore, onClearHistory }: Props) {
+export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline: _onCreateInboundPipeline }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os0_mode') as Mode) || 'twitter')
   const [input, setInput] = useState('')
   const [result, setResult] = useState('')
@@ -81,8 +86,9 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [ibSignals, setIbSignals] = useState<Set<SignalType>>(new Set(['フォロー']))
   const [ibDate, setIbDate] = useState(todayStr())
   const [ibMemo, setIbMemo] = useState('')
-  const [inboxOpen, setInboxOpen] = useState(true)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const [parsedBatch, setParsedBatch] = useState<PastedBatch | null>(null)
+  const [parseError, setParseError] = useState('')
 
   function toggleSignal(s: SignalType) {
     setIbSignals(prev => {
@@ -479,8 +485,25 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     )
   }
 
-  function handleAddBatch(item: OS0QueueItem) {
-    const { accounts, sourceContext } = item.payload
+  function handleParse() {
+    const text = pasteText.trim()
+    if (!text) return
+    try {
+      const parsed = JSON.parse(text) as PastedBatch
+      if (!Array.isArray(parsed.accounts) || parsed.accounts.length === 0) {
+        setParseError('JSONの形式が正しくありません。accounts 配列が見つかりません。')
+        return
+      }
+      setParsedBatch(parsed)
+      setParseError('')
+    } catch {
+      setParseError('JSONの解析に失敗しました。Chrome拡張の「OS0候補をコピー」ボタンでコピーしたJSONを貼り付けてください。')
+    }
+  }
+
+  function handleAddFromPaste() {
+    if (!parsedBatch) return
+    const { accounts, sourceContext } = parsedBatch
     const newScreenings: Screening[] = []
     let skipped = 0
 
@@ -499,10 +522,10 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         verdict: '拡張機能経由',
         reason: pageTypeLabel(sourceContext.pageType),
         sourceContext: {
-          platform: sourceContext.platform,
+          platform: sourceContext.platform as 'twitter' | 'instagram' | 'threads' | 'youtube',
           pageType: sourceContext.pageType,
           url: sourceContext.url,
-          collectedBy: sourceContext.collectedBy,
+          collectedBy: sourceContext.collectedBy as 'chrome-extension' | 'manual',
           collectedAt: sourceContext.collectedAt,
         },
       })
@@ -511,17 +534,12 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     if (newScreenings.length > 0) {
       saveData(prev => ({ ...prev, screenings: [...(prev.screenings || []), ...newScreenings] }))
     }
-    onMarkCompleted(item.id)
-
     const msg = newScreenings.length > 0
       ? `${newScreenings.length}件をOS⓪に追加${skipped > 0 ? `（${skipped}件は登録済みのためスキップ）` : ''}`
       : `全件が登録済みのためスキップ（${skipped}件）`
     toast.show(msg, 3000)
-  }
-
-  function handleDismissBatch(id: string) {
-    onMarkDismissed(id)
-    toast.show('今日はスキップしました（履歴に残ります）', 2000)
+    setParsedBatch(null)
+    setPasteText('')
   }
 
   const screenings = [...(data.screenings || [])].reverse()
@@ -552,149 +570,93 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   return (
     <div className="flex flex-col gap-5" style={{ animation: 'fadeIn .2s ease-out' }}>
 
-      {/* ── 拡張機能受信口 ─────────────────────────────────── */}
-      {(os0Pending.length > 0 || os0History.length > 0) && (
-        <div className="card overflow-hidden" style={{ borderColor: '#ddd6fe', background: 'linear-gradient(135deg,#f5f3ff,#fff)' }}>
-          <div
-            className="p-4 flex items-center justify-between cursor-pointer select-none"
-            onClick={() => setInboxOpen(v => !v)}
-          >
-            <h3 className="font-bold text-sm text-violet-800 flex items-center gap-2">
-              <i className="fa-solid fa-inbox text-violet-500" />
-              拡張機能から受信
-              {os0Pending.length > 0 && (
-                <span className="badge bg-violet-200 text-violet-800">{os0Pending.length}件待機中</span>
-              )}
-            </h3>
-            <i className={`fa-solid fa-chevron-down text-violet-400 text-xs transition-transform ${inboxOpen ? 'rotate-180' : ''}`} />
-          </div>
-
-          {inboxOpen && (
-            <div className="border-t border-violet-200">
-              {/* 待機アイテム */}
-              {os0Pending.length === 0 ? (
-                <div className="py-6 text-center text-violet-300 text-xs">
-                  <i className="fa-solid fa-inbox text-2xl mb-2 block" />
-                  待機中のアカウントはありません
-                </div>
-              ) : (
-                <div className="flex flex-col divide-y divide-violet-100">
-                  {os0Pending.map(item => (
-                    <div key={item.id} className="p-4 flex flex-col gap-3">
-                      {/* バッチヘッダー */}
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
-                            {pageTypeLabel(item.payload.sourceContext.pageType)}
-                          </span>
-                          <span className="text-slate-400">{item.payload.accounts.length}件</span>
-                          <span className="text-slate-300">·</span>
-                          <span className="text-slate-400">{formatReceivedAt(item.enqueuedAt)}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <button
-                            className="btn-sec text-xs py-1.5 px-3"
-                            onClick={() => handleDismissBatch(item.id)}
-                          >
-                            今日はスキップ
-                          </button>
-                          <button
-                            className="btn-primary text-xs py-1.5 px-3"
-                            style={{ background: '#7c3aed' }}
-                            onClick={() => handleAddBatch(item)}
-                          >
-                            <i className="fa-solid fa-plus mr-1" />全件追加
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* アカウントカード一覧 */}
-                      <div className="flex flex-col gap-1 max-h-52 overflow-y-auto cs">
-                        {item.payload.accounts.map((acc, idx) => {
-                          const isDup = isAccountDuplicate(acc.handle)
-                          return (
-                            <div
-                              key={`${item.id}-${idx}`}
-                              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs ${isDup ? 'bg-slate-50 text-slate-400' : 'bg-white border border-violet-100 text-slate-700'}`}
-                            >
-                              {acc.verified && (
-                                <i className="fa-solid fa-circle-check text-sky-400 text-[10px] flex-shrink-0" />
-                              )}
-                              <span className={`font-semibold flex-shrink-0 ${isDup ? 'line-through' : ''}`}>
-                                {acc.displayName}
-                              </span>
-                              <span className={`flex-shrink-0 ${isDup ? 'text-slate-300' : 'text-slate-400'}`}>
-                                {acc.handle}
-                              </span>
-                              {acc.bio && (
-                                <span className="text-slate-400 truncate hidden sm:block">{acc.bio}</span>
-                              )}
-                              {isDup && (
-                                <span className="ml-auto flex-shrink-0 text-[10px] text-slate-400">登録済み</span>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 履歴セクション */}
-              {os0History.length > 0 && (
-                <div className="border-t border-violet-100 bg-violet-50/50">
-                  <div
-                    className="px-4 py-2.5 flex items-center justify-between cursor-pointer select-none"
-                    onClick={() => setHistoryOpen(v => !v)}
-                  >
-                    <span className="text-xs text-violet-500 font-medium">
-                      <i className="fa-solid fa-clock-rotate-left mr-1" />履歴 {os0History.length}件
-                    </span>
-                    <div className="flex items-center gap-3">
-                      {historyOpen && (
-                        <button
-                          className="text-[10px] text-slate-400 hover:text-rose-500 transition"
-                          onClick={e => { e.stopPropagation(); onClearHistory() }}
-                        >
-                          履歴をクリア
-                        </button>
-                      )}
-                      <i className={`fa-solid fa-chevron-down text-violet-300 text-[10px] transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
-                    </div>
-                  </div>
-
-                  {historyOpen && (
-                    <div className="flex flex-col divide-y divide-violet-50">
-                      {os0History.map(item => (
-                        <div key={item.id} className="px-4 py-2.5 flex items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2 text-slate-500 min-w-0">
-                            {item.status === 'completed'
-                              ? <i className="fa-solid fa-circle-check text-emerald-400 flex-shrink-0" />
-                              : <i className="fa-solid fa-circle-minus text-slate-300 flex-shrink-0" />
-                            }
-                            <span className="font-medium">{pageTypeLabel(item.payload.sourceContext.pageType)}</span>
-                            <span className="text-slate-400">· {item.payload.accounts.length}件</span>
-                            <span className="text-slate-300 truncate">{formatReceivedAt(item.enqueuedAt)}</span>
-                          </div>
-                          {item.status === 'dismissed' && (
-                            <button
-                              className="flex-shrink-0 text-[11px] text-violet-500 hover:text-violet-700 border border-violet-200 rounded px-2 py-0.5 transition"
-                              onClick={() => onRestore(item.id)}
-                            >
-                              元に戻す
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+      {/* ── Chrome拡張クリップボード取込 ──────────────────── */}
+      <div className="card overflow-hidden" style={{ borderColor: '#ddd6fe', background: 'linear-gradient(135deg,#f5f3ff,#fff)' }}>
+        <div className="p-4 border-b border-violet-100 flex items-center gap-2">
+          <i className="fa-solid fa-clipboard text-violet-500" />
+          <h3 className="font-bold text-sm text-violet-800">拡張データ貼り付け</h3>
+          <span className="text-[11px] text-violet-400 hidden sm:inline">X画面で「OS0候補をコピー」→ ここに貼り付け</span>
         </div>
-      )}
+
+        {!parsedBatch ? (
+          <div className="p-4 flex flex-col gap-3">
+            <textarea
+              className="input-base h-20 cs text-xs"
+              placeholder={'Chrome拡張の「📋 OS0候補をコピー」で取得したJSONをここに貼り付け...'}
+              value={pasteText}
+              onChange={e => { setPasteText(e.target.value); setParseError('') }}
+            />
+            {parseError && (
+              <p className="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                <i className="fa-solid fa-triangle-exclamation mr-1" />{parseError}
+              </p>
+            )}
+            <button
+              className="btn-primary w-full justify-center"
+              style={{ background: '#7c3aed' }}
+              disabled={!pasteText.trim()}
+              onClick={handleParse}
+            >
+              <i className="fa-solid fa-wand-magic-sparkles" />展開する
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="px-4 py-3 flex items-center justify-between bg-violet-50 border-b border-violet-100 flex-wrap gap-2">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-bold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full">
+                  {pageTypeLabel(parsedBatch.sourceContext.pageType)}
+                </span>
+                <span className="text-slate-500">{parsedBatch.accounts.length}件</span>
+                <span className="text-slate-400 hidden sm:inline truncate max-w-[200px]">{parsedBatch.sourceContext.url}</span>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  className="btn-sec text-xs py-1.5 px-3"
+                  onClick={() => { setParsedBatch(null); setPasteText('') }}
+                >
+                  クリア
+                </button>
+                <button
+                  className="btn-primary text-xs py-1.5 px-3"
+                  style={{ background: '#7c3aed' }}
+                  onClick={handleAddFromPaste}
+                >
+                  <i className="fa-solid fa-plus mr-1" />全件追加
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col divide-y divide-violet-50 max-h-52 overflow-y-auto cs">
+              {parsedBatch.accounts.map((acc, idx) => {
+                const isDup = isAccountDuplicate(acc.handle)
+                return (
+                  <div
+                    key={`paste-${idx}`}
+                    className={`flex items-center gap-2 px-4 py-2 text-xs ${isDup ? 'bg-slate-50' : ''}`}
+                  >
+                    {acc.verified && (
+                      <i className="fa-solid fa-circle-check text-sky-400 text-[10px] flex-shrink-0" />
+                    )}
+                    <span className={`font-semibold flex-shrink-0 ${isDup ? 'line-through text-slate-400' : 'text-slate-800'}`}>
+                      {acc.displayName}
+                    </span>
+                    <span className={`flex-shrink-0 ${isDup ? 'text-slate-300' : 'text-slate-400'}`}>
+                      {acc.handle}
+                    </span>
+                    {acc.bio && (
+                      <span className="text-slate-400 truncate hidden sm:block">{acc.bio}</span>
+                    )}
+                    {isDup && (
+                      <span className="ml-auto flex-shrink-0 text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">登録済み</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="bg-fuchsia-50 border border-fuchsia-200 rounded-xl p-3 text-xs text-fuchsia-900">
         <span className="font-bold"><i className="fa-solid fa-layer-group mr-1" />OS⓪ 設計原則：</span>

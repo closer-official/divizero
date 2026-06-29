@@ -1,28 +1,15 @@
 {
   "manifest_version": 3,
   "name": "営業OS Bridge",
-  "version": "1.0.0",
-  "description": "X/TwitterのアカウントをOS⓪へ送る",
+  "version": "1.1.0",
+  "description": "X/Twitterのアカウントをクリップボード経由でOS⓪へ送る",
 
-  "permissions": ["storage", "tabs", "scripting"],
+  "permissions": [],
 
   "host_permissions": [
     "https://x.com/*",
-    "https://twitter.com/*",
-    "https://divizero.vercel.app/*",
-    "http://localhost:5173/*"
+    "https://twitter.com/*"
   ],
-
-  "externally_connectable": {
-    "matches": [
-      "https://divizero.vercel.app/*",
-      "http://localhost:5173/*"
-    ]
-  },
-
-  "background": {
-    "service_worker": "background/service_worker.js"
-  },
 
   "content_scripts": [
     {

@@ -24,7 +24,6 @@ function detectPageType() {
 
 function isUsernameHref(href) {
   if (!href) return false
-  // /i/, /settings 等の内部パスを除外
   const skip = ['/i/', '/settings', '/home', '/messages', '/notifications',
                 '/explore', '/compose', '/login', '/signup', '/search']
   if (skip.some(s => href.startsWith(s))) return false
@@ -39,7 +38,6 @@ function extractFromCell(cell) {
   const username = (profileLink.getAttribute('href') || '').slice(1)
   if (!username) return null
 
-  // displayName: User-Name コンテナか profileLink 内の最初の非@テキストスパン
   let displayName = username
   const nameContainer = cell.querySelector('[data-testid="User-Name"]') || profileLink
   const spans = Array.from(nameContainer.querySelectorAll('span'))
@@ -56,11 +54,9 @@ function extractFromCell(cell) {
     }
   }
 
-  // bio
   const bioEl = cell.querySelector('[data-testid="UserDescription"]')
   const bio = bioEl ? (bioEl.textContent || '').trim() : undefined
 
-  // verified バッジ（テストIDまたは aria-label で検出）
   const verified = !!(
     cell.querySelector('[data-testid="icon-verified"]') ||
     cell.querySelector('[data-testid="verified"]') ||
@@ -97,34 +93,38 @@ function collectCards() {
 
 function ensureButton() {
   if (floatingBtn) return floatingBtn
-  floatingBtn = document.createElement('div')
-  floatingBtn.id = 'os-ext-btn-wrapper'
-  floatingBtn.innerHTML = `
-    <button id="os-ext-send-btn" type="button">
-      <i class="os-ext-icon">📥</i>
-      <span id="os-ext-count">0</span>件を営業OSへ
-    </button>
-  `
-  document.body.appendChild(floatingBtn)
-  document.getElementById('os-ext-send-btn').addEventListener('click', sendToOS)
-  return floatingBtn
+  const wrapper = document.createElement('div')
+  wrapper.id = 'os-ext-btn-wrapper'
+  const btn = document.createElement('button')
+  btn.id = 'os-ext-send-btn'
+  btn.type = 'button'
+  wrapper.appendChild(btn)
+  document.body.appendChild(wrapper)
+  btn.addEventListener('click', copyToClipboard)
+  floatingBtn = wrapper
+  return wrapper
 }
 
 function updateButton(cards) {
   collectedCards = cards
   const wrapper = ensureButton()
-  const countEl = document.getElementById('os-ext-count')
-  if (countEl) countEl.textContent = String(cards.length)
+  const btn = document.getElementById('os-ext-send-btn')
+  if (btn) {
+    btn.textContent = cards.length > 0
+      ? `📋 OS0候補をコピー (${cards.length}件)`
+      : '📋 OS0候補をコピー'
+  }
   wrapper.style.display = cards.length > 0 ? 'block' : 'none'
 }
 
-function sendToOS() {
+async function copyToClipboard() {
   if (collectedCards.length === 0) return
   const btn = document.getElementById('os-ext-send-btn')
   if (!btn || btn.disabled) return
   btn.disabled = true
 
-  const payload = {
+  const data = {
+    type: 'os0_candidates',
     sourceContext: {
       platform: 'twitter',
       pageType: detectPageType(),
@@ -132,42 +132,45 @@ function sendToOS() {
       collectedBy: 'chrome-extension',
       collectedAt: new Date().toISOString(),
     },
-    accounts: collectedCards.slice(), // コピー
+    accounts: collectedCards.slice(),
   }
 
+  const json = JSON.stringify(data, null, 2)
+
   try {
-    chrome.runtime.sendMessage({ type: 'enqueue', itemType: 'os0_candidates', payload }, response => {
-      if (chrome.runtime.lastError) {
-        console.warn('[OS Ext]', chrome.runtime.lastError.message)
-        btn.disabled = false
-        return
-      }
-      if (response && response.ok) {
-        btn.textContent = '✓ 送信しました！'
-        btn.style.background = '#22c55e'
-        setTimeout(() => {
-          if (btn) {
-            btn.innerHTML = `<i class="os-ext-icon">📥</i><span id="os-ext-count">${collectedCards.length}</span>件を営業OSへ`
-            btn.style.background = ''
-            btn.disabled = false
-          }
-        }, 2500)
-      } else {
-        btn.disabled = false
-      }
-    })
-  } catch (e) {
-    // 拡張機能がリロードされてコンテキストが無効になった場合
-    btn.textContent = '⚠ タブを再読込してください'
-    btn.style.background = '#ef4444'
-    setTimeout(() => {
-      if (btn) {
-        btn.innerHTML = `<i class="os-ext-icon">📥</i><span id="os-ext-count">${collectedCards.length}</span>件を営業OSへ`
-        btn.style.background = ''
-        btn.disabled = false
-      }
-    }, 3000)
+    await navigator.clipboard.writeText(json)
+    showSuccess(btn)
+  } catch (_) {
+    // Clipboard API fallback (フォーカス外の場合など)
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = json
+      ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      showSuccess(btn)
+    } catch (_2) {
+      btn.textContent = '⚠ コピー失敗'
+      btn.style.background = '#ef4444'
+      setTimeout(() => resetBtn(btn), 2500)
+    }
   }
+}
+
+function showSuccess(btn) {
+  btn.textContent = '✓ コピーしました！'
+  btn.style.background = '#22c55e'
+  setTimeout(() => resetBtn(btn), 2500)
+}
+
+function resetBtn(btn) {
+  if (!btn) return
+  btn.textContent = `📋 OS0候補をコピー (${collectedCards.length}件)`
+  btn.style.background = ''
+  btn.disabled = false
 }
 
 // ── スキャン・SPA対応 ──────────────────────────────────────────
@@ -188,7 +191,6 @@ function handleUrlChange() {
   scheduleScan()
 }
 
-// SPA ナビゲーション検出: history.pushState をインターセプト
 const _origPushState = history.pushState
 history.pushState = function (...args) {
   _origPushState.apply(this, args)
@@ -196,9 +198,7 @@ history.pushState = function (...args) {
 }
 window.addEventListener('popstate', () => setTimeout(handleUrlChange, 150))
 
-// DOM変化を監視（Twitter は動的にカードを追加する）
 const domObserver = new MutationObserver(scheduleScan)
 domObserver.observe(document.body, { childList: true, subtree: true })
 
-// 初回スキャン
 scheduleScan()
