@@ -32,10 +32,51 @@ interface Props {
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 
+type ParseSummary = {
+  total: number
+  success: number
+  failed: number
+  errors: string[]
+}
+
+function buildParseSummary(total: number, success: number, errors: string[]): ParseSummary {
+  return { total, success, failed: Math.max(0, total - success), errors }
+}
+
+function ParseSummaryBox({ summary }: { summary: ParseSummary | null }) {
+  if (!summary) return null
+  const isSuccess = summary.failed === 0
+  const shownErrors = summary.errors.slice(0, 3)
+  const extraErrors = Math.max(0, summary.errors.length - shownErrors.length)
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-[11px] ${isSuccess ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+      <p className="font-bold">
+        {isSuccess
+          ? `取り込み結果：${summary.total}件中${summary.success}件を取り込みました`
+          : summary.success > 0
+            ? `取り込み結果：${summary.total}件中${summary.success}件成功 / ${summary.failed}件失敗`
+            : '取り込みに失敗しました。フォーマットを確認してください。'}
+      </p>
+      {!isSuccess && shownErrors.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          <p className="font-semibold">失敗理由：</p>
+          <ul className="space-y-0.5">
+            {shownErrors.map((err, idx) => (
+              <li key={`${idx}-${err}`}>- {err}</li>
+            ))}
+            {extraErrors > 0 && <li>- 他{extraErrors}件のエラー</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Tab0({ data, saveData, prompts, role, toast, confirm, onGoToTab1, onGoToTab2: _onGoToTab2, onCreateInboundPipeline: _onCreateInboundPipeline }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os0_mode') as Mode) || 'twitter')
   const [input, setInput] = useState('')
   const [result, setResult] = useState('')
+  const [parseSummary, setParseSummary] = useState<ParseSummary | null>(null)
   const [excludedOpen, setExcludedOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
@@ -45,6 +86,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
   const [profileText, setProfileText] = useState('')
   const [rtDetected, setRtDetected] = useState<string[]>([])
   const [batchResults, setBatchResults] = useState<Record<string, string>>({})
+  const [batchParseSummaries, setBatchParseSummaries] = useState<Record<string, ParseSummary | null>>({})
 
   // プロフィールモーダル内インバウンド情報
   const [profileIsInbound, setProfileIsInbound] = useState(false)
@@ -102,13 +144,16 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     const text = result.trim()
     if (!text) { toast.show('AIの出力を貼り付けてください', 2000); return }
     const allPassing = parseOS0(text, mode)
+    const ngs = parseOS0NG(text, mode)
+    const summaryErrors = ngs.slice(0, 3).map(ng => `${ng.displayName || ng.handle || '不明な項目'}：${ng.skipCode || 'OS⓪NG'}`)
     if (allPassing.length === 0) {
+      const failTotal = Math.max(ngs.length, 1)
+      setParseSummary({ total: failTotal, success: 0, failed: failTotal, errors: summaryErrors.length > 0 ? summaryErrors : ['AI出力の形式を確認してください'] })
       toast.show('通過アカウントが見つかりませんでした。▼判定一覧の形式を確認してください', 3000)
       return
     }
     saveData(prev => {
       const d = { ...prev, screenings: [...(prev.screenings || [])], excluded: [...(prev.excluded || [])], trash: [...(prev.trash || [])] }
-      const ngs = parseOS0NG(text, mode)
       ngs.forEach(ng => addToExcluded(d, ng.handle, ng.displayName, ng.channel, 'OS⓪NG', ng.skipCode))
       const excluded = d.excluded || []
       const existingScreenings = d.screenings || []
@@ -130,6 +175,7 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
       if (ngsCount > 0) msg += `（NG${ngsCount}件を除外リストに保存）`
       if (skippedCount > 0) msg += `（${skippedCount}件はスキップ＝登録済み）`
       setTimeout(() => toast.show(msg, 3500), 0)
+      setParseSummary(buildParseSummary(allPassing.length + ngs.length, items.length, summaryErrors))
       return d
     })
     setInput('')
@@ -285,21 +331,29 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
     const segments = text.split(/(?=【アカウント情報】)/).filter(s => s.includes('【アカウント情報】'))
     if (segments.length === 0) {
       toast.show('AIの出力に【アカウント情報】が見つかりません。形式を確認してください', 3000)
+      setBatchParseSummaries(prev => ({ ...prev, [chunkKey]: buildParseSummary(queued.length, 0, ['AI出力に【アカウント情報】が見つかりません']) }))
       return
     }
 
     let addedCount = 0
     let pipelineCount = 0
+    const errors: string[] = []
     const processedIds = new Set<string>()
 
     saveData(prev => {
       const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline], screenings: [...prev.screenings] }
       segments.forEach((seg, i) => {
         const screening = queued[i]
-        if (!screening) return
+        if (!screening) {
+          errors.push(`ITEM ${i + 1}：対象案件が見つかりません`)
+          return
+        }
         const ch = screening.channel as Mode
         const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
-        if (!parsed.accountName && !parsed.url) return
+        if (!parsed.accountName && !parsed.url) {
+          errors.push(`ITEM ${i + 1}（${screening.displayName || screening.handle || '不明'}）：必須項目「アカウント名 / ユーザーネーム」が見つかりません`)
+          return
+        }
 
         const targetId = uid()
         const pid = parsed.track !== 'SKIP' ? uid() : null
@@ -357,13 +411,21 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
         processedIds.add(screening.id)
         addedCount++
       })
+      if (queued.length > segments.length) {
+        for (let i = segments.length; i < queued.length; i++) {
+          const screening = queued[i]
+          errors.push(`ITEM ${i + 1}（${screening?.displayName || screening?.handle || '不明'}）：AI出力が不足しています`)
+        }
+      }
       d.screenings = d.screenings.filter(s => !processedIds.has(s.id))
       return d
     })
 
     setBatchResults(prev => { const next = { ...prev }; delete next[chunkKey]; return next })
+    setBatchParseSummaries(prev => ({ ...prev, [chunkKey]: buildParseSummary(queued.length, addedCount, errors) }))
     setTimeout(() => {
-      toast.show(`${addedCount}件を登録（OS②に${pipelineCount}件追加）`, 3000)
+      const summaryMsg = `一括処理完了：${queued.length}件中${addedCount}件成功 / ${queued.length - addedCount}件失敗`
+      toast.show(pipelineCount > 0 ? `${summaryMsg}（OS②に${pipelineCount}件追加）` : summaryMsg, 3000)
       if (pipelineCount > 0) setTimeout(() => _onGoToTab2(), 1200)
     }, 0)
   }
@@ -498,11 +560,12 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
               className="input-base h-32 cs"
               placeholder="AIが出力した【一次選別】〜▼選別サマリのテキストをそのまま貼り付け"
               value={result}
-              onChange={e => setResult(e.target.value)}
+              onChange={e => { setResult(e.target.value); setParseSummary(null) }}
             />
             <button className="btn-primary w-full justify-center text-sm" onClick={handleSubmit}>
               <i className="fa-solid fa-circle-plus" />通過アカウントをリストに追加
             </button>
+            <ParseSummaryBox summary={parseSummary} />
           </div>
         </section>
 
@@ -768,21 +831,25 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
                         </div>
                         <div className="flex flex-col gap-2">
                           <p className="text-xs text-slate-500"><span className="font-bold text-slate-700">ステップ2：</span>AI出力を貼り付けて登録</p>
-                          <textarea
-                            className="input-base h-20 cs text-xs"
-                            placeholder={`${chunk.length}人分の【アカウント情報】〜を貼り付け`}
-                            value={batchResults[chunkKey] ?? ''}
-                            onChange={e => setBatchResults(prev => ({ ...prev, [chunkKey]: e.target.value }))}
-                          />
-                          <button
-                            className="btn-primary w-full justify-center text-sm"
-                            onClick={() => handleBatchSubmit(chunk, chunkKey)}
-                          >
-                            <i className="fa-solid fa-circle-check" />{chunk.length}件を登録してOS②へ
-                          </button>
-                        </div>
-                      </div>
+                      <textarea
+                        className="input-base h-20 cs text-xs"
+                        placeholder={`${chunk.length}人分の【アカウント情報】〜を貼り付け`}
+                        value={batchResults[chunkKey] ?? ''}
+                        onChange={e => {
+                          setBatchResults(prev => ({ ...prev, [chunkKey]: e.target.value }))
+                          setBatchParseSummaries(prev => ({ ...prev, [chunkKey]: null }))
+                        }}
+                      />
+                      <button
+                        className="btn-primary w-full justify-center text-sm"
+                        onClick={() => handleBatchSubmit(chunk, chunkKey)}
+                      >
+                        <i className="fa-solid fa-circle-check" />{chunk.length}件を登録してOS②へ
+                      </button>
+                      <ParseSummaryBox summary={batchParseSummaries[chunkKey] ?? null} />
                     </div>
+                  </div>
+                </div>
                   )
                 })
               })}

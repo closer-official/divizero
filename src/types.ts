@@ -166,6 +166,7 @@ export interface Target {
   aiOutput?: string;
   salesExpectation?: number;
   salesExpectationReason?: string;
+  salesExpectationBreakdown?: string;
   // OS①仮説カルテ
   primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
   naturalQuestion?: string;
@@ -247,8 +248,11 @@ export interface PipelineItem {
   closedAt?: string | null;
   closedCaseId?: string | null;
   // S∞ループ構造フィールド
-  state?: 'active' | 'waiting' | 'sleeping' | 'archived' | 'closed';
+  state?: 'active' | 'waiting' | 'meeting_scheduled' | 'sleeping' | 'archived' | 'closed';
   recontact_date?: string;
+  meetingDate?: string;
+  meetingUrl?: string;
+  meetingNote?: string;
   temperature?: number;
   last_reaction?: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative';
   last_reaction_at?: string;
@@ -257,6 +261,7 @@ export interface PipelineItem {
   inboundActions?: string[];
   salesExpectation?: number;        // 0-40, set at OS1, does not change
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
+  salesExpectationBreakdown?: string;
   todayTask?: { action: string; addedAt: string };  // 行動判定で「0日後・今日」と出た場合にセット
   // OS①仮説カルテ（確定後変動しない）
   partnerFlag?: string;

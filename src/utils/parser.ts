@@ -84,10 +84,20 @@ function extractHypothesisKarte(text: string): {
   return { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations: observations.length ? observations : undefined }
 }
 
-function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string } {
+function extractBreakdownText(expBlock: string): string | undefined {
+  const lines = expBlock.split('\n')
+  const breakdown = lines
+    .filter(l => !/^スコア[：:]/.test(l.trim()) && !/^根拠[：:]/.test(l.trim()))
+    .join('\n')
+    .trim()
+  return breakdown || undefined
+}
+
+function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string; salesExpectationBreakdown?: string } {
   const expBlock = block(text, '営業期待値スコア（0〜40）');
   let scoreRaw = expBlock ? field(expBlock, 'スコア') : '';
   const reasonRaw = expBlock ? field(expBlock, '根拠') : '';
+  const breakdownRaw = expBlock ? extractBreakdownText(expBlock) : undefined;
   if (!scoreRaw) {
     const logBlock = block(text, '案件ログ転記用');
     if (logBlock) scoreRaw = field(logBlock, '営業期待値スコア');
@@ -100,6 +110,7 @@ function extractSalesExp(text: string): { salesExpectation?: number; salesExpect
   return {
     salesExpectation: scoreMatch ? parseInt(scoreMatch[1], 10) : undefined,
     salesExpectationReason: reasonRaw || undefined,
+    salesExpectationBreakdown: breakdownRaw,
   };
 }
 
@@ -122,7 +133,7 @@ export function parseOS1(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
-  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
@@ -134,7 +145,7 @@ export function parseOS1(text: string) {
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote,
-    channel: 'twitter' as const, salesExpectation, salesExpectationReason,
+    channel: 'twitter' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
@@ -161,7 +172,7 @@ export function parseOS1Instagram(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
-  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
@@ -174,7 +185,7 @@ export function parseOS1Instagram(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     storyA: saM ? cleanMsg(saM[1]) : '', storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote, dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
-    dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason,
+    dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
@@ -197,7 +208,7 @@ export function parseOS1Threads(text: string) {
   const dmRoute = field(text, '連動IG') || field(text, 'DM導線');
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
-  const { salesExpectation, salesExpectationReason } = extractSalesExp(text);
+  const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId: field(text, '案件ID'),
@@ -210,7 +221,7 @@ export function parseOS1Threads(text: string) {
     hypothesis: block(text, '事前仮説').split('\n').filter(l => l.trim()).join(' ').trim(),
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
-    dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason,
+    dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }

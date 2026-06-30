@@ -75,22 +75,8 @@ export function countTodayOS3(data: AppData): number {
 // ── ミッション系計算 ──────────────────────────────────────────
 
 // 面談待ち・日程確定済みは「今、自分が動く案件」ではない。
-// 専用ステータスがまだないため、OS②で保存される構造化された判定欄から識別する。
 export function isMeetingWaitingItem(item: PipelineItem): boolean {
-  const latestTouch = [...(item.touches || [])]
-    .sort((a, b) => b.date.localeCompare(a.date))[0]
-  const statusText = [
-    item.judgment,
-    item.nextAction,
-    item.deadline,
-    item.todayTask?.action,
-    latestTouch?.os2Judgment,
-    latestTouch?.os2NextAction,
-    latestTouch?.reactionJudgment,
-    latestTouch?.reactionNextStep,
-  ].filter(Boolean).join(' ')
-
-  return /(?:面談|商談|打ち合わせ|アポ)(?:.{0,8})(?:確定|予定|予約|待ち|設定済|取得済)|日程(?:.{0,6})(?:確定|決定|調整済|合意済)/.test(statusText)
+  return item.state === 'meeting_scheduled'
 }
 
 // DM返信が必要：会話スレッドの最新ターンが '相手' 側で送信済み
@@ -201,6 +187,7 @@ export function calcWaiting(data: AppData) {
   const waiting7d = open.filter(p => p.state === 'waiting').length
   const sleeping = open.filter(p => p.state === 'sleeping' || p.state === 'archived').length
   const s1Stalled = getS1StalledItems(data).length
+  const meetingScheduled = (data.pipeline || []).filter(p => p.isOpen && p.state === 'meeting_scheduled').length
 
-  return { awaitingReaction, expired48h, waiting7d, sleeping, s1Stalled }
+  return { awaitingReaction, expired48h, waiting7d, sleeping, s1Stalled, meetingScheduled }
 }

@@ -594,7 +594,7 @@ function QuoteSubTab({ data, saveData, prompts, toast }: Tab6Props) {
                 </div>
               )}
               <div className="flex gap-2">
-                <button className={`btn-sec text-[10px] py-1 px-2 flex-1 justify-center ${copyStates[c.id] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`} onClick={() => copyText(c.body, () => { setCopyStates(p => ({ ...p, [c.id]: true })); setTimeout(() => setCopyStates(p => ({ ...p, [c.id]: false })), 1500) })}>
+                <button className={`btn-sec text-[10px] py-1 px-2 flex-1 justify-center ${copyStates[c.id] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`} onClick={() => copyText(c.body, () => { setCopyStates(p => ({ ...p, [c.id]: true })); setTimeout(() => setCopyStates(p => ({ ...p, [c.id]: false })), 1500) }, { openGemini: false })}>
                   {copyStates[c.id] ? '✓ コピー' : 'コピー'}
                 </button>
                 <button
@@ -736,7 +736,7 @@ function PostSubTab({ data, saveData, prompts, toast }: Tab6Props) {
                 </div>
               )}
               <div className="flex gap-2">
-                <button className={`btn-sec text-[10px] py-1 px-2 flex-1 justify-center ${copyStates[c.id] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`} onClick={() => copyText(c.body, () => { setCopyStates(p => ({ ...p, [c.id]: true })); setTimeout(() => setCopyStates(p => ({ ...p, [c.id]: false })), 1500) })}>
+                <button className={`btn-sec text-[10px] py-1 px-2 flex-1 justify-center ${copyStates[c.id] ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`} onClick={() => copyText(c.body, () => { setCopyStates(p => ({ ...p, [c.id]: true })); setTimeout(() => setCopyStates(p => ({ ...p, [c.id]: false })), 1500) }, { openGemini: false })}>
                   {copyStates[c.id] ? '✓ コピー' : 'コピー'}
                 </button>
                 <button className="btn-sec text-[10px] py-1 px-2 flex-1 justify-center" onClick={() => handleSave(c)}>保存</button>

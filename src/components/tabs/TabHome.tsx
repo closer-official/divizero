@@ -36,6 +36,7 @@ const WAIT_STYLE: Record<string, { bg: string; txt: string; num: string }> = {
   rose:   { bg: 'bg-rose-50',   txt: 'text-rose-500',   num: 'text-rose-700'   },
   amber:  { bg: 'bg-amber-50',  txt: 'text-amber-500',  num: 'text-amber-700'  },
   slate:  { bg: 'bg-slate-50',  txt: 'text-slate-400',  num: 'text-slate-500'  },
+  sky:    { bg: 'bg-sky-50',    txt: 'text-sky-500',    num: 'text-sky-700'    },
 }
 
 // ── サブコンポーネント ────────────────────────────────────────
@@ -286,7 +287,8 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
               <WaitBadge label="48h超え"   count={db.waiting.expired48h}       color={db.waiting.expired48h > 0 ? 'rose' : 'slate'} />
               <WaitBadge label="7日待機"   count={db.waiting.waiting7d}        color="amber" />
               <WaitBadge label="休眠/保管" count={db.waiting.sleeping}         color="slate" />
-              <div className="col-span-2">
+              <WaitBadge label="面談待ち"  count={db.waiting.meetingScheduled} color={db.waiting.meetingScheduled > 0 ? 'sky' : 'slate'} />
+              <div className="col-span-1">
                 <WaitBadge label="S1滞留（14日超え）" count={db.waiting.s1Stalled} color={db.waiting.s1Stalled > 0 ? 'amber' : 'slate'} />
               </div>
             </div>

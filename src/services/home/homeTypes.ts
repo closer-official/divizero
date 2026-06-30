@@ -48,6 +48,7 @@ export interface WaitingSummary {
   waiting7d: number              // state === 'waiting'
   sleeping: number               // state === 'sleeping' | 'archived'
   s1Stalled: number              // S1 で 14日超え
+  meetingScheduled: number       // state === 'meeting_scheduled'
 }
 
 // ── アラート ─────────────────────────────────────────────────

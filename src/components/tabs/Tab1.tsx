@@ -7,6 +7,45 @@ import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadg
 import { copyText } from '../../utils/clipboard'
 
 type Mode = 'twitter' | 'instagram' | 'threads'
+type ParseSummary = {
+  total: number
+  success: number
+  failed: number
+  errors: string[]
+}
+
+function buildParseSummary(total: number, success: number, errors: string[]): ParseSummary {
+  return { total, success, failed: Math.max(0, total - success), errors }
+}
+
+function ParseSummaryBox({ summary }: { summary: ParseSummary | null }) {
+  if (!summary) return null
+  const isSuccess = summary.failed === 0
+  const shownErrors = summary.errors.slice(0, 3)
+  const extraErrors = Math.max(0, summary.errors.length - shownErrors.length)
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-[11px] ${isSuccess ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+      <p className="font-bold">
+        {isSuccess
+          ? `取り込み結果：${summary.total}件中${summary.success}件を取り込みました`
+          : summary.success > 0
+            ? `取り込み結果：${summary.total}件中${summary.success}件成功 / ${summary.failed}件失敗`
+            : '取り込みに失敗しました。フォーマットを確認してください。'}
+      </p>
+      {!isSuccess && shownErrors.length > 0 && (
+        <div className="mt-1 space-y-0.5">
+          <p className="font-semibold">失敗理由：</p>
+          <ul className="space-y-0.5">
+            {shownErrors.map((err, idx) => (
+              <li key={`${idx}-${err}`}>- {err}</li>
+            ))}
+            {extraErrors > 0 && <li>- 他{extraErrors}件のエラー</li>}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface Props {
   data: AppData
@@ -44,12 +83,25 @@ function buildInboundContext(item: { is_inbound?: boolean; inbound_actions?: str
   return ctx
 }
 
+function getOS1ParseErrors(parsed: Omit<Target, 'id' | 'createdAt'>, mode: Mode): string[] {
+  const errors: string[] = []
+  if (!parsed.accountName) errors.push('必須項目「アカウント名」が見つかりません')
+  if (!parsed.url) {
+    errors.push(mode === 'instagram' || mode === 'threads'
+      ? '必須項目「ユーザーネーム（@〜）」が見つかりません'
+      : '必須項目「ユーザーネーム（@〜）」が見つかりません')
+  }
+  return errors
+}
+
 export default function Tab1({ data, saveData, prompts, role, toast, confirm, onGoToTab2 }: Props) {
   const [mode, setMode] = useState<Mode>(() => (localStorage.getItem('os_screening_mode') as Mode) || 'twitter')
   const [resultText, setResultText] = useState('')
+  const [parseSummary, setParseSummary] = useState<ParseSummary | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [page, setPage] = useState(0)
   const [batchResult, setBatchResult] = useState('')
+  const [batchParseSummary, setBatchParseSummary] = useState<ParseSummary | null>(null)
   const [prefill, setPrefill] = useState<Prefill | null>(() => {
     try {
       const s = localStorage.getItem('os1_prefill')
@@ -84,7 +136,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     if (mode === 'instagram') parsed = parseOS1Instagram(text) as unknown as Omit<Target, 'id' | 'createdAt'>
     else if (mode === 'threads') parsed = parseOS1Threads(text) as unknown as Omit<Target, 'id' | 'createdAt'>
     else parsed = parseOS1(text) as unknown as Omit<Target, 'id' | 'createdAt'>
-    if (!parsed.accountName && !parsed.url) {
+    const errors = getOS1ParseErrors(parsed, mode)
+    if (errors.length > 0 && !parsed.accountName && !parsed.url) {
+      setParseSummary(buildParseSummary(1, 0, errors))
       toast.show('アカウント情報が見つかりませんでした。AIの出力形式を確認してください', 3000)
       return
     }
@@ -123,6 +177,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           isOpen: true,
           salesExpectation: newTarget.salesExpectation,
           salesExpectationReason: newTarget.salesExpectationReason,
+          salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
           partnerFlag: newTarget.partnerFlag,
           trackReason: newTarget.trackReason,
           estimatedProduct: newTarget.estimatedProduct,
@@ -146,6 +201,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     setResultText('')
     localStorage.removeItem('os1_prefill')
     setPrefill(null)
+    setParseSummary(buildParseSummary(1, 1, errors))
     if (pid) {
       toast.show(`「${newTarget.accountName}」をOS②に追加しました`, 2000)
       setTimeout(() => onGoToTab2(), 1000)
@@ -175,6 +231,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           analyses: [], history: [], sentMessages: [], replies: [], isOpen: true,
           salesExpectation: tgt.salesExpectation,
           salesExpectationReason: tgt.salesExpectationReason,
+          salesExpectationBreakdown: tgt.salesExpectationBreakdown,
           partnerFlag: tgt.partnerFlag,
           trackReason: tgt.trackReason,
           estimatedProduct: tgt.estimatedProduct,
@@ -211,21 +268,30 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     const segments = text.split(/(?=【アカウント情報】)/).filter(s => s.includes('【アカウント情報】'))
     if (segments.length === 0) {
       toast.show('AIの出力に【アカウント情報】が見つかりません。形式を確認してください', 3000)
+      setBatchParseSummary(buildParseSummary(queued.length, 0, ['AI出力に【アカウント情報】が見つかりません']))
       return
     }
 
     let addedCount = 0
     let pipelineCount = 0
+    const errors: string[] = []
     const processedIds = new Set<string>()
 
     saveData(prev => {
       const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline], screenings: [...prev.screenings] }
       segments.forEach((seg, i) => {
         const screening = queued[i]
-        if (!screening) return
+        if (!screening) {
+          errors.push(`ITEM ${i + 1}：対象案件が見つかりません`)
+          return
+        }
         const ch = screening.channel as Mode
         const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
-        if (!parsed.accountName && !parsed.url) return
+        const parseErrors = getOS1ParseErrors(parsed as Omit<Target, 'id' | 'createdAt'>, ch)
+        if (parseErrors.length > 0 && !parsed.accountName && !parsed.url) {
+          errors.push(`ITEM ${i + 1}（${screening.displayName || screening.handle || '不明'}）：${parseErrors.join(' / ')}`)
+          return
+        }
 
         const targetId = uid()
         const pid = parsed.track !== 'SKIP' ? uid() : null
@@ -261,6 +327,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             isOpen: true,
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
+            salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
             partnerFlag: newTarget.partnerFlag,
             trackReason: newTarget.trackReason,
             estimatedProduct: newTarget.estimatedProduct,
@@ -283,13 +350,21 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         processedIds.add(screening.id)
         addedCount++
       })
+      if (queued.length > segments.length) {
+        for (let i = segments.length; i < queued.length; i++) {
+          const screening = queued[i]
+          errors.push(`ITEM ${i + 1}（${screening?.displayName || screening?.handle || '不明'}）：AI出力が不足しています`)
+        }
+      }
       d.screenings = d.screenings.filter(s => !processedIds.has(s.id))
       return d
     })
 
     setBatchResult('')
+    setBatchParseSummary(buildParseSummary(queued.length, addedCount, errors))
     setTimeout(() => {
-      toast.show(`${addedCount}件を登録（OS②に${pipelineCount}件追加）`, 3000)
+      const summaryMsg = `一括処理完了：${queued.length}件中${addedCount}件成功 / ${queued.length - addedCount}件失敗`
+      toast.show(pipelineCount > 0 ? `${summaryMsg}（OS②に${pipelineCount}件追加）` : summaryMsg, 3000)
       if (pipelineCount > 0) setTimeout(() => onGoToTab2(), 1200)
     }, 0)
   }
@@ -317,6 +392,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         isOpen: true,
         salesExpectation: tgt.salesExpectation,
         salesExpectationReason: tgt.salesExpectationReason,
+        salesExpectationBreakdown: tgt.salesExpectationBreakdown,
         partnerFlag: tgt.partnerFlag,
         trackReason: tgt.trackReason,
         estimatedProduct: tgt.estimatedProduct,
@@ -424,6 +500,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         isOpen: true,
         salesExpectation: tgt.salesExpectation,
         salesExpectationReason: tgt.salesExpectationReason,
+        salesExpectationBreakdown: tgt.salesExpectationBreakdown,
       })
       return d
     })
@@ -572,11 +649,12 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
               className="input-base h-32 cs"
               placeholder="AIが出力した【アカウント情報】〜【初回接触案】のテキストをそのまま貼り付け"
               value={resultText}
-              onChange={e => setResultText(e.target.value)}
+              onChange={e => { setResultText(e.target.value); setParseSummary(null) }}
             />
             <button className="btn-primary w-full justify-center text-sm" onClick={handleSubmit}>
               <i className="fa-solid fa-circle-plus" />スクリーニング結果を記録
             </button>
+            <ParseSummaryBox summary={parseSummary} />
           </div>
         </section>
 
@@ -790,7 +868,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                         className="input-base h-20 cs text-xs"
                         placeholder={`${items.length}人分の【アカウント情報】〜を貼り付け`}
                         value={batchResult}
-                        onChange={e => setBatchResult(e.target.value)}
+                        onChange={e => { setBatchResult(e.target.value); setBatchParseSummary(null) }}
                       />
                       <button
                         className="btn-primary w-full justify-center text-sm"
@@ -798,6 +876,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                       >
                         <i className="fa-solid fa-circle-check" />{items.length}件を登録してOS②へ
                       </button>
+                      <ParseSummaryBox summary={batchParseSummary} />
                     </div>
                   </div>
                 </div>
@@ -826,7 +905,7 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToO
     : t.channel === 'threads' ? 'fa-brands fa-threads' : 'fa-brands fa-x-twitter'
 
   function copy(text: string, label: string) {
-    copyText(text, () => toast.show(`${label} をコピーしました`))
+    copyText(text, () => toast.show(`${label} をコピーしました`), { openGemini: false })
   }
 
   const msgBtn = (text: string, label: string) => text ? (

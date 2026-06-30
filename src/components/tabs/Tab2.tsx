@@ -119,12 +119,14 @@ function channelLabel(ch: string) { return CHANNEL_LABEL[ch] ?? ch.toUpperCase()
 function stateBadgeStyle(s?: string): string {
   if (!s || s === 'active') return 'bg-emerald-100 text-emerald-700'
   if (s === 'waiting') return 'bg-amber-100 text-amber-700'
+  if (s === 'meeting_scheduled') return 'bg-sky-100 text-sky-700'
   if (s === 'sleeping') return 'bg-slate-100 text-slate-500'
   if (s === 'archived') return 'bg-purple-100 text-purple-600'
   return 'bg-rose-100 text-rose-600'
 }
 function stateLabel(s?: string): string {
   if (!s || s === 'active') return 'active'
+  if (s === 'meeting_scheduled') return '面談待ち'
   return s
 }
 function tempBadgeStyle(t: number): string {
@@ -140,6 +142,17 @@ function judgmentColor(j: string) {
   if (j === '保管') return 'text-purple-600'
   if (j === '対象再選定') return 'text-amber-600'
   return 'text-slate-600'
+}
+
+type TemperatureFilter = 'all' | 'high' | 'mid' | 'low' | 'unset'
+type TemperatureSort = 'default' | 'desc' | 'asc'
+
+function temperatureBucket(temp?: number | null): Exclude<TemperatureFilter, 'all'> | null {
+  if (temp == null) return 'unset'
+  if (temp >= 60) return 'high'
+  if (temp >= 30) return 'mid'
+  if (temp >= 0) return 'low'
+  return null
 }
 
 // ── chip ───────────────────────────────────────────────────────
@@ -190,6 +203,9 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
   const daysUntil = item.recontact_date
     ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
+  const daysUntilMeeting = item.state === 'meeting_scheduled' && item.meetingDate
+    ? Math.round((new Date(item.meetingDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
+    : null
   const daysSinceLast = daysSince(item.lastContactDate || item.startDate)
   const awaitingTouch = [...touches].reverse().find(t => t.status === 'awaiting_reaction')
 
@@ -218,11 +234,16 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
           <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-orange-100 text-orange-600">🛡保護</span>
         )}
         {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
+        {item.state === 'meeting_scheduled' && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-sky-100 text-sky-700">面談待ち</span>}
       </div>
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
         <span>{touches.length}T</span>
-        {daysUntil !== null ? (
+        {daysUntilMeeting !== null ? (
+          <span className={`${daysUntilMeeting < 0 ? 'text-rose-500' : 'text-sky-500'} font-medium`}>
+            {daysUntilMeeting < 0 ? `面談${Math.abs(daysUntilMeeting)}日前` : daysUntilMeeting === 0 ? '本日面談' : `面談あと${daysUntilMeeting}日`}
+          </span>
+        ) : daysUntil !== null ? (
           <span className={daysUntil < 0 ? 'text-rose-500 font-medium' : daysUntil <= 3 ? 'text-amber-500 font-medium' : ''}>
             {daysUntil < 0 ? `${Math.abs(daysUntil)}日超過` : `あと${daysUntil}日`}
           </span>
@@ -332,6 +353,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [filter, setFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   const [channelFilter, setChannelFilter] = useState('all')
+  const [temperatureFilter, setTemperatureFilter] = useState<TemperatureFilter>('all')
+  const [temperatureSort, setTemperatureSort] = useState<TemperatureSort>('default')
   const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
@@ -485,11 +508,30 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         p.accountName.toLowerCase().includes(q) || p.url.toLowerCase().includes(q)
       )
     }
+    if (temperatureFilter !== 'all') {
+      result = result.filter(p => temperatureBucket(p.temperature) === temperatureFilter)
+    }
     return result
   }
 
+  function sortVisibleItems(items: PipelineItem[]): PipelineItem[] {
+    const list = [...items]
+    if (temperatureSort === 'default') return list.sort(urgencySort)
+    const toTemp = (p: PipelineItem) => p.temperature ?? null
+    const compareTemp = (a: PipelineItem, b: PipelineItem) => {
+      const ta = toTemp(a)
+      const tb = toTemp(b)
+      if (ta == null && tb == null) return 0
+      if (ta == null) return 1
+      if (tb == null) return -1
+      if (ta === tb) return urgencySort(a, b)
+      return temperatureSort === 'desc' ? tb - ta : ta - tb
+    }
+    return list.sort(compareTemp)
+  }
+
   function getColItems(key: KanbanColKey): PipelineItem[] {
-    return filterActive(active.filter(p => getColKey(p) === key)).sort(urgencySort)
+    return sortVisibleItems(filterActive(active.filter(p => getColKey(p) === key)))
   }
 
   function handleExportCaseMd(item: PipelineItem) {
@@ -499,7 +541,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function exportAllMD() {
-    const items = filterActive(active)
+    const items = sortVisibleItems(filterActive(active))
     const lines: string[] = [
       `# OS② パイプライン`,
       `生成: ${new Date().toLocaleDateString('ja-JP')}`,
@@ -547,7 +589,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function advanceContinuous() {
-    const list = filterActive(active).sort(urgencySort)
+    const list = sortVisibleItems(filterActive(active))
     const idx = list.findIndex(p => p.id === drawerItemId)
     const next = list[idx + 1]
     if (next) {
@@ -560,7 +602,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   }
 
   function startContinuousMode() {
-    const list = filterActive(active).sort(urgencySort)
+    const list = sortVisibleItems(filterActive(active))
     if (list.length === 0) { toast.show('処理対象の案件がありません'); return }
     setContinuousMode(true)
     setDrawerItemId(list[0].id)
@@ -702,6 +744,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       setBatchS1Error('AI出力の形式が認識できませんでした。===S1_RESULT_START=== を含む出力を貼り付けてください。')
       return
     }
+    const total = pendingS1Touches.length
+    const missing = pendingS1Touches.filter(item => !results.some(r => r.pipelineId === item.pipelineId && r.touchId === item.touchId))
+    const failed = Math.max(0, total - results.length)
     const byPipeline: Record<string, typeof results> = {}
     for (const r of results) {
       if (!byPipeline[r.pipelineId]) byPipeline[r.pipelineId] = []
@@ -748,7 +793,13 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     }))
     setBatchS1ApplyState('applied')
     setBatchS1Output('')
-    toast.show(`${results.length}件の行動判定を記録しました`)
+    const summaryMsg = `一括処理完了：${total}件中${results.length}件成功 / ${failed}件失敗`
+    if (failed > 0) {
+      const detail = missing.slice(0, 3).map(item => item.pipelineItem.accountName).filter(Boolean)
+      const detailMsg = detail.length > 0 ? `（失敗：${detail.join(' / ')}${missing.length > 3 ? ' / 他あり' : ''}）` : ''
+      setBatchS1Error(summaryMsg + detailMsg)
+    }
+    toast.show(summaryMsg)
     setTimeout(() => { setBatchS1ApplyState('idle'); setBatchS1Open(false) }, 1500)
   }
 
@@ -801,6 +852,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       setBatchJudgError('AI出力の形式が認識できませんでした。===RESULT_START=== から ===RESULT_END=== まで含めて貼り付けてください。')
       return
     }
+    const total = unverifiedTouches.length
+    const failed = Math.max(0, total - results.length)
     const now = new Date().toISOString()
     saveData(prev => ({
       ...prev,
@@ -828,7 +881,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       setBatchJudgSuccess(false)
       setBatchJudgOutput('')
     }, 1500)
-    toast.show(`${results.length}件の判定を保存しました`)
+    toast.show(`一括処理完了：${total}件中${results.length}件成功 / ${failed}件失敗`)
   }
 
   function handleClearTodayTask(pipelineId: string) {
@@ -1134,6 +1187,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <option value="all">全state</option>
             <option value="active">active</option>
             <option value="waiting">waiting</option>
+            <option value="meeting_scheduled">面談待ち</option>
             <option value="sleeping">sleeping</option>
             <option value="archived">archived</option>
           </select>
@@ -1144,8 +1198,20 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <option value="instagram">IG</option>
             <option value="threads">TH</option>
           </select>
-          {(filter !== 'all' || stateFilter !== 'all' || channelFilter !== 'all') && (
-            <button className="text-[11px] text-slate-400 hover:text-slate-600 px-1.5 py-1" onClick={() => { setFilter('all'); setStateFilter('all'); setChannelFilter('all'); setSearchQuery('') }}>
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={temperatureFilter} onChange={e => setTemperatureFilter(e.target.value as TemperatureFilter)}>
+            <option value="all">全温度</option>
+            <option value="high">高温 60+</option>
+            <option value="mid">中温 30-59</option>
+            <option value="low">低温 0-29</option>
+            <option value="unset">未設定</option>
+          </select>
+          <select className="input-base text-xs py-1.5" style={{ maxWidth: 140 }} value={temperatureSort} onChange={e => setTemperatureSort(e.target.value as TemperatureSort)}>
+            <option value="default">既定順</option>
+            <option value="desc">温度 高い順</option>
+            <option value="asc">温度 低い順</option>
+          </select>
+          {(filter !== 'all' || stateFilter !== 'all' || channelFilter !== 'all' || temperatureFilter !== 'all' || temperatureSort !== 'default') && (
+            <button className="text-[11px] text-slate-400 hover:text-slate-600 px-1.5 py-1" onClick={() => { setFilter('all'); setStateFilter('all'); setChannelFilter('all'); setTemperatureFilter('all'); setTemperatureSort('default'); setSearchQuery('') }}>
               <i className="fa-solid fa-xmark mr-0.5" />リセット
             </button>
           )}
@@ -1222,7 +1288,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             ))}
           </div>
           <div className="sm:hidden flex flex-col gap-2">
-            {filterActive(active).sort(urgencySort).map(p => {
+            {sortVisibleItems(filterActive(active)).map(p => {
               const latestTouch = (p.touches || []).slice(-1)[0]
               const isAwaiting = latestTouch?.status === 'awaiting_reaction'
               const recontactDays = p.recontact_date
@@ -1317,7 +1383,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   )
                 })()}
                 {continuousMode && (() => {
-                  const cList = filterActive(active).sort(urgencySort)
+                  const cList = sortVisibleItems(filterActive(active))
                   const cIdx = cList.findIndex(p => p.id === drawerItemId)
                   return (
                     <>
@@ -1361,7 +1427,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   onOperationDone={continuousMode ? advanceContinuous : undefined}
                   onCloseCase={(item, result) => {
                     if (continuousMode) {
-                      const list = filterActive(active).sort(urgencySort)
+                      const list = sortVisibleItems(filterActive(active))
                       const idx = list.findIndex(p => p.id === item.id)
                       const next = list[idx + 1]
                       if (next) {
@@ -1761,6 +1827,12 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [salesExpAiCopyState, setSalesExpAiCopyState] = useState<'idle' | 'copied'>('idle')
   const [salesExpAiOutput, setSalesExpAiOutput] = useState('')
   const [salesExpAiError, setSalesExpAiError] = useState<string | null>(null)
+  const [salesExpBreakdownInput, setSalesExpBreakdownInput] = useState('')
+  const [showBreakdown, setShowBreakdown] = useState(false)
+  const [meetingUiOpen, setMeetingUiOpen] = useState(false)
+  const [meetingDateInput, setMeetingDateInput] = useState('')
+  const [meetingUrlInput, setMeetingUrlInput] = useState('')
+  const [meetingNoteInput, setMeetingNoteInput] = useState('')
   const addFormRef = useRef<HTMLDivElement>(null)
 
   // AI generation (touch prompt)
@@ -2134,6 +2206,16 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             {daysUntilRecontact < 0 ? `再接触 ${Math.abs(daysUntilRecontact)}日超過` : `再接触まであと${daysUntilRecontact}日`}
           </p>
         )}
+        {/* 面談日カウントダウン（meeting_scheduled） */}
+        {item.state === 'meeting_scheduled' && item.meetingDate && (() => {
+          const d = Math.round((new Date(item.meetingDate).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+          return (
+            <p className={`text-[11px] font-semibold mt-1 ${d < 0 ? 'text-rose-600' : 'text-sky-600'}`}>
+              <i className="fa-solid fa-calendar-check mr-1 text-[10px]" />
+              {d < 0 ? `面談 ${Math.abs(d)}日前（要フォロー）` : d === 0 ? '本日面談' : `面談まであと${d}日`}
+            </p>
+          )
+        })()}
         {item.hypothesis && <p className="text-xs text-slate-500 mt-1 truncate">{item.hypothesis}</p>}
         {(displayJudgment || displayNextAction) && (
           <div className="flex items-center gap-2 mt-1.5 text-xs">
@@ -2151,7 +2233,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             <span className="truncate flex-1">{displayReplyA}</span>
             <button
               className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-violet-100 transition"
-              onClick={e => { e.stopPropagation(); copyText(displayReplyA, () => toast.show('案Aをコピーしました')) }}
+              onClick={e => { e.stopPropagation(); copyText(displayReplyA, () => toast.show('案Aをコピーしました'), { openGemini: false }) }}
               title="コピー"
             >
               <i className="fa-regular fa-copy text-[10px]" />
@@ -2241,7 +2323,81 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 </button>
               )}
             </div>
+            {/* 面談セット / 解除 */}
+            {role === 'admin' && (
+              item.state === 'meeting_scheduled' ? (
+                <button
+                  className="text-[10px] px-2 py-1 rounded bg-sky-100 text-sky-700 hover:bg-sky-200 transition shrink-0"
+                  onClick={e => {
+                    e.stopPropagation()
+                    saveData(prev => ({
+                      ...prev,
+                      pipeline: prev.pipeline.map(p =>
+                        p.id === item.id ? { ...p, state: 'active' as const } : p
+                      ),
+                    }))
+                    toast.show('面談待ちを解除しました')
+                  }}
+                >
+                  <i className="fa-solid fa-calendar-xmark mr-1" />面談解除
+                </button>
+              ) : (
+                <button
+                  className="text-[10px] px-2 py-1 rounded bg-sky-50 text-sky-600 hover:bg-sky-100 transition shrink-0"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setMeetingDateInput(item.meetingDate || new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10))
+                    setMeetingUrlInput(item.meetingUrl || '')
+                    setMeetingNoteInput(item.meetingNote || '')
+                    setMeetingUiOpen(v => !v)
+                  }}
+                >
+                  <i className="fa-solid fa-calendar-check mr-1" />面談セット
+                </button>
+              )
+            )}
           </div>
+
+          {/* 面談設定フォーム */}
+          {meetingUiOpen && item.state !== 'meeting_scheduled' && role === 'admin' && (
+            <div className="px-4 py-3 bg-sky-50 border-b border-sky-100 flex flex-col gap-2">
+              <p className="text-[10px] font-bold text-sky-700">面談日を設定して「面談待ち」にする</p>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] text-slate-500 shrink-0 w-10">面談日</label>
+                <input type="date" className="input-base text-xs py-1 flex-1" value={meetingDateInput} onChange={e => setMeetingDateInput(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] text-slate-500 shrink-0 w-10">URL</label>
+                <input type="text" className="input-base text-xs py-1 flex-1" placeholder="Zoomリンク等（任意）" value={meetingUrlInput} onChange={e => setMeetingUrlInput(e.target.value)} />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] text-slate-500 shrink-0 w-10">メモ</label>
+                <input type="text" className="input-base text-xs py-1 flex-1" placeholder="面談メモ（任意）" value={meetingNoteInput} onChange={e => setMeetingNoteInput(e.target.value)} />
+              </div>
+              <div className="flex gap-2">
+                <button className="btn-sec text-xs py-1.5 flex-1" onClick={() => setMeetingUiOpen(false)}>キャンセル</button>
+                <button
+                  className="btn-primary text-xs py-1.5 flex-1 justify-center"
+                  style={{ background: '#0284c7' }}
+                  disabled={!meetingDateInput}
+                  onClick={() => {
+                    saveData(prev => ({
+                      ...prev,
+                      pipeline: prev.pipeline.map(p =>
+                        p.id === item.id
+                          ? { ...p, state: 'meeting_scheduled' as const, meetingDate: meetingDateInput, meetingUrl: meetingUrlInput || undefined, meetingNote: meetingNoteInput || undefined }
+                          : p
+                      ),
+                    }))
+                    setMeetingUiOpen(false)
+                    toast.show(`面談日を ${meetingDateInput} に設定しました`)
+                  }}
+                >
+                  <i className="fa-solid fa-calendar-check mr-1" />面談待ちにする
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* URL入力（未設定 or 手動編集） */}
           {role === 'admin' && (!item.url || editingUrl) && (
@@ -2357,6 +2513,22 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
                   </div>
                 )}
+                {item.salesExpectationBreakdown && (
+                  <div>
+                    <button
+                      className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition"
+                      onClick={() => setShowBreakdown(v => !v)}
+                    >
+                      <i className={`fa-solid fa-chevron-${showBreakdown ? 'up' : 'down'} text-[9px]`} />
+                      内訳を{showBreakdown ? '閉じる' : '見る'}
+                    </button>
+                    {showBreakdown && (
+                      <pre className="mt-1 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg p-2 border border-slate-100">
+                        {item.salesExpectationBreakdown}
+                      </pre>
+                    )}
+                  </div>
+                )}
               </>
             )}
 
@@ -2369,16 +2541,27 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 トラック：${item.track}
 事前仮説：${item.hypothesis || '未設定'}
 
-【採点基準】（OS①定義に準拠・厳守）
-40点：教育者 ＋ 受講生あり ＋ LINE販売 ＋ 無形商材
-35点：教育者 ＋ 受講生あり ＋ 導線あり
-25点：教育者 ＋ 商品あり（受講生確認できず）
-15点：サービスあり（教育要素なし）
-0点：対象外（店舗型・完全無形商材なし）
+【採点基準（確認済み事実のみ加点）】
++8点：教育者であることが確認済み
++8点：UTAGE利用が確認済み（ドメイン・本人発言）
++8点：受講生・コミュニティ会員の存在が確認済み
++6点：LINE販売または高単価無形商材が確認済み
++5点：note・LP等の販売導線が確認済み
++4点：無形商材販売（上記以外）
+−3点：LP・HPが既に存在する
+−2点：受講生の存在が未確認
+−2点：販売導線が確認できない
+
+※「〜かもしれない」「〜の可能性」では加点しない。事実として確認できたもののみ加点。
 
 以下のフォーマットで出力してください（他は書かないこと）：
 スコア：N点
-根拠：（教育者か・受講生あり/なし・販売導線の種類・商品種別を箇条書きで）`
+確認済み事実：
+（+N点 理由、の箇条書き。なければ「なし」）
+減点：
+（−N点 理由、の箇条書き。なければ「なし」）
+不明点：
+（確認できていない重要項目）`
               return (
                 <div className="flex flex-col gap-2 bg-violet-50 border border-violet-200 rounded-xl p-3">
                   <div className="flex items-center justify-between">
@@ -2425,8 +2608,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                       const score = Math.min(40, Math.max(0, parseInt(scoreMatch[1], 10)))
                       const reasonMatch2 = salesExpAiOutput.match(/根拠[：:]\s*([\s\S]*)/)
                       const reason = reasonMatch2 ? reasonMatch2[1].trim() : ''
+                      const breakdown = salesExpAiOutput
+                        .split('\n')
+                        .filter(l => !/^スコア[：:]/.test(l.trim()))
+                        .join('\n')
+                        .trim()
                       setSalesExpInput(String(score))
                       setSalesExpReasonInput(reason)
+                      setSalesExpBreakdownInput(breakdown)
                       setSalesExpAiOpen(false)
                       setSalesExpAiOutput('')
                       setEditingSalesExp(true)
@@ -2484,7 +2673,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                         ...prev,
                         pipeline: prev.pipeline.map(p =>
                           p.id === item.id
-                            ? { ...p, salesExpectation: val, salesExpectationReason: salesExpReasonInput.trim() || p.salesExpectationReason }
+                            ? { ...p, salesExpectation: val, salesExpectationReason: salesExpReasonInput.trim() || p.salesExpectationReason, salesExpectationBreakdown: salesExpBreakdownInput.trim() || p.salesExpectationBreakdown }
                             : p
                         ),
                       }))
@@ -2511,7 +2700,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 <div className="flex items-start gap-1 mt-1">
                   <span className="text-violet-600 font-bold shrink-0 text-[11px]">案A</span>
                   <p className="text-violet-700 flex-1 text-[11px] leading-relaxed">{displayReplyA}</p>
-                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyA, () => toast.show('案Aをコピーしました'))}>
+                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyA, () => toast.show('案Aをコピーしました'), { openGemini: false })}>
                     <i className="fa-regular fa-copy" />
                   </button>
                 </div>
@@ -2520,7 +2709,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 <div className="flex items-start gap-1">
                   <span className="text-indigo-500 font-bold shrink-0 text-[11px]">案B</span>
                   <p className="text-indigo-600 flex-1 text-[11px] leading-relaxed">{displayReplyB}</p>
-                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyB, () => toast.show('案Bをコピーしました'))}>
+                  <button className="shrink-0 btn-sec text-[10px] py-0.5 px-1.5" onClick={() => copyText(displayReplyB, () => toast.show('案Bをコピーしました'), { openGemini: false })}>
                     <i className="fa-regular fa-copy" />
                   </button>
                 </div>
@@ -2630,7 +2819,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                           className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggACopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                           onClick={async () => {
                             setTSentText(suggestionA)
-                            try { await copyText(suggestionA); setSuggACopyState('copied'); setTimeout(() => setSuggACopyState('idle'), 1500) } catch {}
+                            try { await copyText(suggestionA, undefined, { openGemini: false }); setSuggACopyState('copied'); setTimeout(() => setSuggACopyState('idle'), 1500) } catch {}
                           }}
                         >{suggACopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
@@ -2646,7 +2835,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                           className={`shrink-0 btn-sec text-[10px] py-1 px-2 ${suggBCopyState === 'copied' ? 'text-emerald-600 border-emerald-300 bg-emerald-50' : ''}`}
                           onClick={async () => {
                             setTSentText(suggestionB)
-                            try { await copyText(suggestionB); setSuggBCopyState('copied'); setTimeout(() => setSuggBCopyState('idle'), 1500) } catch {}
+                            try { await copyText(suggestionB, undefined, { openGemini: false }); setSuggBCopyState('copied'); setTimeout(() => setSuggBCopyState('idle'), 1500) } catch {}
                           }}
                         >{suggBCopyState === 'copied' ? '✓ コピー' : '使う'}</button>
                       </div>
