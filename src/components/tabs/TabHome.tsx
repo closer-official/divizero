@@ -207,7 +207,7 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-4 space-y-5 pb-10">
+    <div className="w-full mx-auto p-4 space-y-5 pb-10">
 
       {/* ── ヘッダー ─────────────────────────────────────── */}
       <div className="flex items-start justify-between gap-3">
