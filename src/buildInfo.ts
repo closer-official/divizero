@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "06/30 HOME行動対象とDaily KPIを修正";
+export const BUILD_LABEL = "06/30 モバイルUI改善と回帰不具合を修正";

@@ -335,6 +335,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
+  useEffect(() => {
+    const resetMobileDrawerWidth = () => {
+      if (window.innerWidth < 640) setDrawerWidth(null)
+    }
+    resetMobileDrawerWidth()
+    window.addEventListener('resize', resetMobileDrawerWidth)
+    return () => window.removeEventListener('resize', resetMobileDrawerWidth)
+  }, [])
   const [continuousMode, setContinuousMode] = useState(false)
   const drawerRef = useRef<HTMLDivElement>(null)
   const resizingRef = useRef(false)
@@ -1199,19 +1207,64 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           <p className="text-sm font-medium">案件がありません</p>
         </div>
       ) : (
-        <div className="flex gap-3 overflow-x-auto -mx-4 px-4 pb-3 snap-x snap-mandatory">
-          {KANBAN_COLS.map(col => (
-            <KanbanColumn
-              key={col.key}
-              label={col.label}
-              colorClass={col.colorClass}
-              items={getColItems(col.key)}
-              activeId={drawerItemId}
-              onCardClick={id => setDrawerItemId(id)}
-              onInlineReaction={handleInlineReaction}
-            />
-          ))}
-        </div>
+        <>
+          <div className="hidden sm:flex gap-3 overflow-x-auto -mx-4 px-4 pb-3 snap-x snap-mandatory">
+            {KANBAN_COLS.map(col => (
+              <KanbanColumn
+                key={col.key}
+                label={col.label}
+                colorClass={col.colorClass}
+                items={getColItems(col.key)}
+                activeId={drawerItemId}
+                onCardClick={id => setDrawerItemId(id)}
+                onInlineReaction={handleInlineReaction}
+              />
+            ))}
+          </div>
+          <div className="sm:hidden flex flex-col gap-2">
+            {filterActive(active).sort(urgencySort).map(p => {
+              const latestTouch = (p.touches || []).slice(-1)[0]
+              const isAwaiting = latestTouch?.status === 'awaiting_reaction'
+              const recontactDays = p.recontact_date
+                ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
+                : null
+              const os2Label = latestTouch?.os2Judgment || p.judgment
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className="card px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:bg-slate-50"
+                  onClick={() => setDrawerItemId(p.id)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {p.currentStep} · {p.track} · {channelLabel(p.channel)}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                      {isAwaiting && (
+                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">反応待ち</span>
+                      )}
+                      {p.temperature != null && (
+                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${tempBadgeStyle(p.temperature)}`}>温度 {p.temperature}</span>
+                      )}
+                      {recontactDays != null && (
+                        <span className={`text-[9px] ${recontactDays < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                          {recontactDays < 0 ? `${Math.abs(recontactDays)}日超過` : recontactDays === 0 ? '本日再接触' : `あと${recontactDays}日`}
+                        </span>
+                      )}
+                      {os2Label && <span className="text-[9px] text-slate-500 truncate max-w-[150px]">{os2Label}</span>}
+                    </div>
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(p.state)}`}>
+                    {stateLabel(p.state)}
+                  </span>
+                  <i className="fa-solid fa-chevron-right text-slate-300 text-xs shrink-0" />
+                </button>
+              )
+            })}
+          </div>
+        </>
       )}
 
       {/* ── Slide-over Drawer ────────────────────────────────────── */}
@@ -1226,17 +1279,15 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             />
             <div
               ref={drawerRef}
-              className="absolute top-0 right-0 bottom-0 bg-white shadow-2xl flex flex-col"
+              className="absolute top-0 right-0 bottom-0 bg-white shadow-2xl flex flex-col w-full sm:w-[50%] sm:min-w-[320px] sm:max-w-[90vw]"
               style={{
-                width: drawerWidth ? `${drawerWidth}px` : '50%',
-                minWidth: '320px',
-                maxWidth: '90vw',
+                width: drawerWidth ? `${drawerWidth}px` : undefined,
                 animation: 'slideInRight .2s ease-out',
               }}
             >
               {/* Resize handle */}
               <div
-                className="absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-10 hover:bg-indigo-300 transition-colors"
+                className="hidden sm:block absolute top-0 left-0 bottom-0 w-1.5 cursor-col-resize z-10 hover:bg-indigo-300 transition-colors"
                 onMouseDown={handleDrawerResizeStart}
               />
               <div className="shrink-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-2">

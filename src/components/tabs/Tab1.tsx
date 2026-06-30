@@ -457,6 +457,19 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const pageTargets = allTargets.slice(safePage * 10, safePage * 10 + 10)
   const selectedTarget = selectedId ? data.targets.find(x => x.id === selectedId) : null
 
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 639px)')
+    const syncBodyScroll = () => {
+      document.body.style.overflow = selectedId && media.matches ? 'hidden' : ''
+    }
+    syncBodyScroll()
+    media.addEventListener('change', syncBodyScroll)
+    return () => {
+      media.removeEventListener('change', syncBodyScroll)
+      document.body.style.overflow = ''
+    }
+  }, [selectedId])
+
   const chBadge = (ch: string) => {
     if (ch === 'instagram') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-pink-100 text-pink-600"><i className="fa-brands fa-instagram mr-0.5" />IG</span>
     if (ch === 'threads') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-200 text-slate-700"><i className="fa-brands fa-threads mr-0.5" />TH</span>
@@ -695,16 +708,27 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
 
       {/* Detail panel */}
       {selectedTarget && (
-        <TargetDetail
-          target={selectedTarget}
-          role={role}
-          toast={toast}
-          confirm={confirm}
-          onToPipeline={() => handleToPipeline(selectedTarget.id)}
-          onBackToOS0={() => handleBackToOS0(selectedTarget.id)}
-          onForceToOS2={() => handleForceToOS2(selectedTarget.id)}
-          onClose={() => setSelectedId(null)}
-        />
+        <div className="max-sm:fixed max-sm:inset-0 max-sm:z-50">
+          <button
+            type="button"
+            aria-label="詳細を閉じる"
+            className="sm:hidden absolute inset-0 w-full bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setSelectedId(null)}
+          />
+          <div className="max-sm:absolute max-sm:inset-x-0 max-sm:bottom-0 max-sm:bg-white max-sm:rounded-t-2xl max-sm:max-h-[85vh] max-sm:overflow-y-auto max-sm:cs">
+            <div className="sm:hidden w-10 h-1 bg-slate-200 rounded mx-auto mt-3 mb-1" />
+            <TargetDetail
+              target={selectedTarget}
+              role={role}
+              toast={toast}
+              confirm={confirm}
+              onToPipeline={() => handleToPipeline(selectedTarget.id)}
+              onBackToOS0={() => handleBackToOS0(selectedTarget.id)}
+              onForceToOS2={() => handleForceToOS2(selectedTarget.id)}
+              onClose={() => setSelectedId(null)}
+            />
+          </div>
+        </div>
       )}
 
       {/* OS①バッチ処理セクション */}

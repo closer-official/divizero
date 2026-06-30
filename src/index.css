@@ -10,7 +10,8 @@ body{font-family:'Inter','Noto Sans JP',sans-serif;background:#f8fafc;color:#1e2
 .cs::-webkit-scrollbar{width:5px;height:5px}
 .cs::-webkit-scrollbar-track{background:#f1f5f9}
 .cs::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
-.nav-tab{position:relative;padding:14px 16px;font-size:13px;font-weight:600;border-bottom:2px solid transparent;color:#64748b;cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:6px;flex-shrink:0}
+.nav-tab{position:relative;padding:10px;font-size:11px;font-weight:600;border-bottom:2px solid transparent;color:#64748b;cursor:pointer;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:4px;flex-shrink:0}
+@media (min-width:640px){.nav-tab{padding:14px 16px;font-size:13px;gap:6px}}
 .nav-tab.active{color:#6d28d9;border-bottom-color:#6d28d9}
 .nav-tab:hover:not(.active){color:#7c3aed;background:#faf5ff}
 .badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:9px;font-size:10px;font-weight:700;padding:0 5px}
@@ -24,7 +25,7 @@ body{font-family:'Inter','Noto Sans JP',sans-serif;background:#f8fafc;color:#1e2
 .urgency-danger{color:#dc2626}
 .red-signal{background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-.btn-primary{background:#7c3aed;color:#fff;font-weight:700;font-size:12px;padding:10px 16px;border-radius:10px;transition:all .15s;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:none}
+.btn-primary{background:#7c3aed;color:#fff;font-weight:700;font-size:12px;padding:10px 16px;border-radius:10px;transition:all .15s;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:none;min-height:44px}
 .btn-primary:hover{background:#6d28d9}
 .btn-sec{background:#f1f5f9;color:#374151;font-weight:600;font-size:12px;padding:10px 16px;border-radius:10px;transition:all .15s;display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid #e2e8f0}
 .btn-sec:hover{background:#e2e8f0}

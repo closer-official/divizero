@@ -45,6 +45,18 @@ export default function App() {
   const [loginBusy, setLoginBusy] = useState(false)
   const [prefilledOS3, setPrefilledOS3] = useState<PrefilledOS3 | null>(null)
   const [focusPipelineItemId, setFocusPipelineItemId] = useState<string | null>(null)
+  const headerRef = useRef<HTMLElement | null>(null)
+  const [headerHeight, setHeaderHeight] = useState(57)
+
+  useEffect(() => {
+    const header = headerRef.current
+    if (!header) return
+    const syncHeight = () => setHeaderHeight(header.getBoundingClientRect().height)
+    syncHeight()
+    const observer = new ResizeObserver(syncHeight)
+    observer.observe(header)
+    return () => observer.disconnect()
+  }, [checking, loading])
 
   // Toast
   const [toastMsg, setToastMsg] = useState('')
@@ -272,7 +284,7 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+      <header ref={headerRef} className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
         <div className="max-w-7xl mx-auto px-5 py-3 flex items-center justify-between gap-4">
           <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">
             {BUILD_LABEL}
@@ -315,17 +327,17 @@ export default function App() {
       </header>
 
       {/* Nav */}
-      <div className="bg-white border-b border-slate-200 sticky z-30" style={{ top: 57 }}>
+      <div className="bg-white border-b border-slate-200 sticky z-30" style={{ top: headerHeight }}>
         <div className="max-w-7xl mx-auto px-5 flex gap-0 overflow-x-auto cs" style={{ whiteSpace: 'nowrap', WebkitOverflowScrolling: 'touch' }}>
           {([
-            { id: 'home' as TabId, icon: 'fa-house', label: 'ホーム', badgeColor: '', count: null },
-            { id: 'tab0' as TabId, icon: 'fa-layer-group', label: 'OS⓪ 一次選別', badgeColor: 'bg-fuchsia-100 text-fuchsia-700', count: (data.screenings || []).length },
-            { id: 'tab1' as TabId, icon: 'fa-filter', label: 'OS① スクリーニング', badgeColor: 'bg-violet-100 text-violet-700', count: data.targets.length },
-            { id: 'tab2' as TabId, icon: 'fa-chart-gantt', label: 'OS② パイプライン', badgeColor: 'bg-indigo-100 text-indigo-700', count: openPipeline.length, warn: warnCount },
-            { id: 'tab3' as TabId, icon: 'fa-graduation-cap', label: 'OS③ 案件検証', badgeColor: 'bg-emerald-100 text-emerald-700', count: data.closed.length },
-            { id: 'tab4' as TabId, icon: 'fa-chart-pie', label: '集計ダッシュボード', badgeColor: '', count: null },
-            { id: 'tab5' as TabId, icon: 'fa-clock-rotate-left', label: '分析履歴', badgeColor: 'bg-violet-100 text-violet-700', count: (data.analyses || []).filter(a => a.status === 'completed').length || null },
-            { id: 'tab6' as TabId, icon: 'fa-pen-nib', label: '人格OS', badgeColor: 'bg-violet-100 text-violet-700', count: (data.otherPostResearches || data.postStocks || []).length || null },
+            { id: 'home' as TabId, icon: 'fa-house', label: 'ホーム', labelShort: 'HOME', badgeColor: '', count: null },
+            { id: 'tab0' as TabId, icon: 'fa-layer-group', label: 'OS⓪ 一次選別', labelShort: 'OS⓪', badgeColor: 'bg-fuchsia-100 text-fuchsia-700', count: (data.screenings || []).length },
+            { id: 'tab1' as TabId, icon: 'fa-filter', label: 'OS① スクリーニング', labelShort: 'OS①', badgeColor: 'bg-violet-100 text-violet-700', count: data.targets.length },
+            { id: 'tab2' as TabId, icon: 'fa-chart-gantt', label: 'OS② パイプライン', labelShort: 'OS②', badgeColor: 'bg-indigo-100 text-indigo-700', count: openPipeline.length, warn: warnCount },
+            { id: 'tab3' as TabId, icon: 'fa-graduation-cap', label: 'OS③ 案件検証', labelShort: 'OS③', badgeColor: 'bg-emerald-100 text-emerald-700', count: data.closed.length },
+            { id: 'tab4' as TabId, icon: 'fa-chart-pie', label: '集計ダッシュボード', labelShort: '集計', badgeColor: '', count: null },
+            { id: 'tab5' as TabId, icon: 'fa-clock-rotate-left', label: '分析履歴', labelShort: '分析', badgeColor: 'bg-violet-100 text-violet-700', count: (data.analyses || []).filter(a => a.status === 'completed').length || null },
+            { id: 'tab6' as TabId, icon: 'fa-pen-nib', label: '人格OS', labelShort: '人格', badgeColor: 'bg-violet-100 text-violet-700', count: (data.otherPostResearches || data.postStocks || []).length || null },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -333,7 +345,8 @@ export default function App() {
               onClick={() => setActiveTab(tab.id)}
             >
               <i className={`fa-solid ${tab.icon}`} />
-              {tab.label}
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.labelShort}</span>
               {tab.count !== null && (
                 <span className={`badge ${tab.badgeColor}`}>{tab.count}</span>
               )}
