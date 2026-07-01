@@ -1,5 +1,6 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction } from './helpers'
+import { getDisplayScore } from './salesExpUtils'
 
 export interface OS2ConversationResult {
   judgment: string
@@ -53,7 +54,7 @@ export function buildOS2ConversationPrompt(
     ...((item.isInbound || item.inbound_signal) ? [
       `【起点】インバウンド（${(item.inboundActions?.length ? item.inboundActions : item.inbound_signal ? [item.inbound_signal.type] : []).join('・')}）- ${item.inbound_signal?.date ?? '日付不明'}${item.inbound_signal?.memo ? ' / ' + item.inbound_signal.memo : ''}`,
     ] : []),
-    `【営業期待値スコア】${item.salesExpectation ?? '未設定'}点（OS①確定値）`,
+    `【営業期待値スコア】${getDisplayScore(item) ?? '未設定'}点（現在のチェックスコア）`,
     `【事前仮説】${item.hypothesis ?? '未設定'}`,
     `【接触開始日】${item.startDate ?? '不明'}`,
     `【現在ステップ】${item.currentStep}`,

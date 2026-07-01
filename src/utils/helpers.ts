@@ -1,4 +1,5 @@
-import type { AppData, ExcludedAccount, TrashItem, TouchReaction, Touch } from '../types';
+import type { AppData, ExcludedAccount, TrashItem, TouchReaction, Touch, SalesExpectationFacts } from '../types';
+import { getDisplayScore } from './salesExpUtils'
 
 export function toReactionArr(r: TouchReaction | TouchReaction[] | string | undefined): TouchReaction[] {
   if (!r) return []
@@ -139,7 +140,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; salesExpectationFacts?: SalesExpectationFacts; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
@@ -150,8 +151,10 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     `現在ステップ: ${item.currentStep}`,
     `接触開始: ${item.startDate || '-'}`,
   ];
-  if (item.salesExpectation !== undefined) {
-    lines.push(`営業期待値スコア: ${item.salesExpectation}点 / 40点（OS①確定値・変動しない）`);
+  const displayScore = getDisplayScore(item)
+  if (displayScore !== undefined) {
+    const scoreLabel = item.salesExpectationFacts ? '（チェック算出）' : '（旧AI判定）'
+    lines.push(`営業期待値スコア: ${displayScore}点 / 40点${scoreLabel}`);
     if (item.salesExpectationReason) lines.push(`スコア根拠: ${item.salesExpectationReason}`);
   }
   lines.push('', `【タッチ履歴（${touches.length}回）】`);

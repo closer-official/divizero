@@ -14,6 +14,7 @@ import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '.
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import { buildBatchJudgmentPrompt, parseBatchJudgmentOutput } from '../../utils/batchJudgmentPrompt'
+import { calcSalesExpectationScore, getDisplayScore, SALES_EXP_ITEMS } from '../../utils/salesExpUtils'
 import {
   getActiveNotifications, setDismissedUntil, createPendingAnalysis,
   markEmergencyAlertRead, buildEmergencyAlertDetail,
@@ -225,12 +226,12 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
         {item.inbound_signal && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
         )}
-        {item.salesExpectation !== undefined && (
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(item.salesExpectation) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-            期待{item.salesExpectation}
+        {getDisplayScore(item) !== undefined && (
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(getDisplayScore(item) ?? 0) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+            期待{getDisplayScore(item)}
           </span>
         )}
-        {(item.salesExpectation ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+        {(getDisplayScore(item) ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
           <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-orange-100 text-orange-600">🛡保護</span>
         )}
         {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
@@ -500,7 +501,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     else if (filter === 'UT') result = result.filter(p => p.track === 'UT')
     else if (filter === 'warn') result = result.filter(p => warnIds.has(p.id))
     else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => t.status === 'awaiting_reaction'))
-    else if (filter === 'elite') result = result.filter(p => (p.salesExpectation ?? 0) >= 35)
+    else if (filter === 'elite') result = result.filter(p => (getDisplayScore(p) ?? 0) >= 35)
     if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
     if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
     if (searchQuery.trim()) {
@@ -1176,7 +1177,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           {/* トラックフィルタ */}
           <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="all">全て ({active.length})</option>
-            <option value="elite">★超優良≥35 ({active.filter(p => (p.salesExpectation ?? 0) >= 35).length})</option>
+            <option value="elite">★超優良≥35 ({active.filter(p => (getDisplayScore(p) ?? 0) >= 35).length})</option>
             <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
             <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
             <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
@@ -1834,14 +1835,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
   const [urlInput, setUrlInput] = useState('')
-  const [editingSalesExp, setEditingSalesExp] = useState(false)
-  const [salesExpInput, setSalesExpInput] = useState('')
-  const [salesExpReasonInput, setSalesExpReasonInput] = useState('')
-  const [salesExpAiOpen, setSalesExpAiOpen] = useState(false)
-  const [salesExpAiCopyState, setSalesExpAiCopyState] = useState<'idle' | 'copied'>('idle')
-  const [salesExpAiOutput, setSalesExpAiOutput] = useState('')
-  const [salesExpAiError, setSalesExpAiError] = useState<string | null>(null)
-  const [salesExpBreakdownInput, setSalesExpBreakdownInput] = useState('')
   const [showBreakdown, setShowBreakdown] = useState(false)
   const [meetingUiOpen, setMeetingUiOpen] = useState(false)
   const [meetingDateInput, setMeetingDateInput] = useState('')
@@ -2194,13 +2187,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           {/* 状態バッジ */}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
           {/* 営業期待値バッジ */}
-          {item.salesExpectation !== undefined && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${item.salesExpectation >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-              期待値{item.salesExpectation}点
+          {getDisplayScore(item) !== undefined && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(getDisplayScore(item) ?? 0) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+              期待値{getDisplayScore(item)}点
             </span>
           )}
           {/* 超優良案件保護中バッジ */}
-          {(item.salesExpectation ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+          {(getDisplayScore(item) ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-orange-100 text-orange-700">🛡保護中</span>
           )}
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
@@ -2456,18 +2449,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           <div className="mx-4 mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-2 text-xs">
             <div className="flex items-center gap-1">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex-1">案件情報</p>
-              {role === 'admin' && !editingSalesExp && (
-                <button
-                  className="text-[10px] text-slate-400 hover:text-amber-600 px-1.5 py-0.5 rounded transition"
-                  onClick={() => {
-                    setSalesExpInput(item.salesExpectation !== undefined ? String(item.salesExpectation) : '')
-                    setSalesExpReasonInput(item.salesExpectationReason || '')
-                    setEditingSalesExp(true)
-                  }}
-                >
-                  <i className="fa-solid fa-pen text-[9px] mr-0.5" />営業期待値を編集
-                </button>
-              )}
             </div>
 
             {/* 仮説フルテキスト（常時表示） */}
@@ -2478,231 +2459,78 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               </div>
             )}
 
-            {/* 営業期待値 — 通常表示 */}
-            {!editingSalesExp && (
-              <>
-                {item.salesExpectation !== undefined ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-400 shrink-0">営業期待値</span>
-                    <span className={`text-xs font-bold ${item.salesExpectation >= 35 ? 'text-amber-600' : 'text-slate-600'}`}>
-                      {item.salesExpectation}点 / 40点
-                      {item.salesExpectation >= 35 && <span className="ml-1.5 text-[10px] font-normal text-amber-500">★超優良案件（休眠・保管移行なし）</span>}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1.5">
-                    <p className="text-[11px] text-amber-600 font-medium">⚠ 営業期待値が未設定です</p>
-                    {role === 'admin' && (
-                      <button
-                        className="self-start text-[10px] font-bold text-violet-600 hover:text-violet-800 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-2 py-1 rounded-lg transition flex items-center gap-1"
-                        onClick={() => {
-                          // Try auto-parse from stored OS1 output first
-                          if (item.os1Output) {
-                            const salesExpBlock = block(item.os1Output, '営業期待値スコア（0〜40）')
-                            if (salesExpBlock) {
-                              const salesExpRaw = field(salesExpBlock, 'スコア')
-                              const salesExpMatch = salesExpRaw.match(/(\d+)/)
-                              if (salesExpMatch) {
-                                const score = Math.min(40, Math.max(0, parseInt(salesExpMatch[1], 10)))
-                                const reason = field(salesExpBlock, '根拠')
-                                setSalesExpInput(String(score))
-                                setSalesExpReasonInput(reason)
-                                setSalesExpAiOpen(false)
-                                setEditingSalesExp(true)
-                                toast.show(`OS①出力から${score}点を検出しました。確認して保存してください。`)
-                                return
-                              }
-                            }
-                          }
-                          // Fall back to mini re-judgment prompt flow
-                          setSalesExpAiOpen(v => !v)
-                          setSalesExpAiOutput('')
-                          setSalesExpAiError(null)
-                        }}
-                      >
-                        <i className="fa-solid fa-wand-magic-sparkles text-[9px]" />
-                        AIで自動判定する
-                      </button>
-                    )}
-                  </div>
-                )}
-                {item.salesExpectationReason && (
-                  <div>
-                    <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
-                    <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
-                  </div>
-                )}
-                {item.salesExpectationBreakdown && (
-                  <div>
-                    <button
-                      className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition"
-                      onClick={() => setShowBreakdown(v => !v)}
-                    >
-                      <i className={`fa-solid fa-chevron-${showBreakdown ? 'up' : 'down'} text-[9px]`} />
-                      内訳を{showBreakdown ? '閉じる' : '見る'}
-                    </button>
-                    {showBreakdown && (
-                      <pre className="mt-1 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg p-2 border border-slate-100">
-                        {item.salesExpectationBreakdown}
-                      </pre>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* 営業期待値 AI再判定パネル */}
-            {!editingSalesExp && salesExpAiOpen && item.salesExpectation === undefined && (() => {
-              const miniPrompt = `以下の案件情報を元に、OS①の営業期待値（0〜40点）を採点してください。
-
-アカウント名：${item.accountName}
-チャネル：${item.channel}
-トラック：${item.track}
-事前仮説：${item.hypothesis || '未設定'}
-
-【採点基準（確認済み事実のみ加点）】
-+8点：教育者であることが確認済み
-+8点：UTAGE利用が確認済み（ドメイン・本人発言）
-+8点：受講生・コミュニティ会員の存在が確認済み
-+6点：LINE販売または高単価無形商材が確認済み
-+5点：note・LP等の販売導線が確認済み
-+4点：無形商材販売（上記以外）
-−3点：LP・HPが既に存在する
-−2点：受講生の存在が未確認
-−2点：販売導線が確認できない
-
-※「〜かもしれない」「〜の可能性」では加点しない。事実として確認できたもののみ加点。
-
-以下のフォーマットで出力してください（他は書かないこと）：
-スコア：N点
-確認済み事実：
-（+N点 理由、の箇条書き。なければ「なし」）
-減点：
-（−N点 理由、の箇条書き。なければ「なし」）
-不明点：
-（確認できていない重要項目）`
-              return (
-                <div className="flex flex-col gap-2 bg-violet-50 border border-violet-200 rounded-xl p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-violet-700">営業期待値AI再判定</p>
-                    <button
-                      className="text-[10px] text-slate-400 hover:text-slate-600"
-                      onClick={() => { setSalesExpAiOpen(false); setSalesExpAiError(null); setSalesExpAiOutput('') }}
-                    >✕ 閉じる</button>
-                  </div>
-                  <p className="text-[10px] text-slate-500">①下のプロンプトをコピー → 外部AI（Gemini等）で実行 → ②出力を貼り付け → ③「判定を適用」</p>
-                  <button
-                    className={`self-start btn-sec text-[10px] py-1 px-2 flex items-center gap-1 transition ${salesExpAiCopyState === 'copied' ? 'text-green-600 border-green-400' : ''}`}
-                    onClick={() => {
-                      copyText(miniPrompt, () => {
-                        setSalesExpAiCopyState('copied')
-                        setTimeout(() => setSalesExpAiCopyState('idle'), 2000)
-                      })
-                    }}
-                  >
-                    <i className={`fa-${salesExpAiCopyState === 'copied' ? 'solid fa-check' : 'regular fa-copy'} text-[9px]`} />
-                    {salesExpAiCopyState === 'copied' ? 'コピーしました' : 'プロンプトをコピー'}
-                  </button>
-                  <textarea
-                    rows={3}
-                    className="input-base cs text-[11px] resize-y"
-                    placeholder={'AIの出力を貼り付けてください\n（例）スコア：30点\n根拠：...'}
-                    value={salesExpAiOutput}
-                    onChange={e => { setSalesExpAiOutput(e.target.value); setSalesExpAiError(null) }}
-                  />
-                  {salesExpAiError && (
-                    <p className="text-[10px] text-rose-600">{salesExpAiError}</p>
-                  )}
-                  <button
-                    className="btn-primary text-xs py-1.5 justify-center"
-                    style={{ background: '#7c3aed' }}
-                    disabled={!salesExpAiOutput.trim()}
-                    onClick={() => {
-                      const scoreRaw = field(salesExpAiOutput, 'スコア')
-                      const scoreMatch = scoreRaw.match(/(\d+)/)
-                      if (!scoreMatch) {
-                        setSalesExpAiError('「スコア：N点」の形式が見つかりません。AI出力を確認してください。')
-                        return
-                      }
-                      const score = Math.min(40, Math.max(0, parseInt(scoreMatch[1], 10)))
-                      const reasonMatch2 = salesExpAiOutput.match(/根拠[：:]\s*([\s\S]*)/)
-                      const reason = reasonMatch2 ? reasonMatch2[1].trim() : ''
-                      const breakdown = salesExpAiOutput
-                        .split('\n')
-                        .filter(l => !/^スコア[：:]/.test(l.trim()))
-                        .join('\n')
-                        .trim()
-                      setSalesExpInput(String(score))
-                      setSalesExpReasonInput(reason)
-                      setSalesExpBreakdownInput(breakdown)
-                      setSalesExpAiOpen(false)
-                      setSalesExpAiOutput('')
-                      setEditingSalesExp(true)
-                      toast.show(`${score}点を検出しました。確認して保存してください。`)
-                    }}
-                  >
-                    <i className="fa-solid fa-check mr-1" />判定を適用して編集フォームへ
-                  </button>
-                </div>
-              )
-            })()}
-
-            {/* 営業期待値 — 編集モード */}
-            {editingSalesExp && (
-              <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
-                <p className="text-[10px] font-bold text-amber-700">営業期待値を設定（0〜40点）</p>
-                <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold text-amber-700">営業期待値チェック</p>
+                <span className={`text-sm font-bold ${(getDisplayScore(item) ?? 0) >= 35 ? 'text-amber-700' : 'text-slate-700'}`}>
+                  {item.salesExpectationFacts
+                    ? calcSalesExpectationScore(item.salesExpectationFacts)
+                    : getDisplayScore(item) ?? 0} / 40点
+                </span>
+              </div>
+              {SALES_EXP_ITEMS.map(entry => (
+                <label key={entry.key} className={`flex items-center gap-2 ${role === 'admin' ? 'cursor-pointer' : ''}`}>
                   <input
-                    type="number"
-                    min={0}
-                    max={40}
-                    className="input-base text-sm py-1.5 w-20 text-center"
-                    placeholder="0-40"
-                    value={salesExpInput}
-                    onChange={e => setSalesExpInput(e.target.value)}
-                  />
-                  <span className="text-[11px] text-slate-500">点 / 40点</span>
-                  {salesExpInput !== '' && Number(salesExpInput) >= 35 && (
-                    <span className="text-[10px] font-bold text-amber-600">★超優良案件</span>
-                  )}
-                </div>
-                <p className="text-[10px] text-slate-400">参考：35〜40=超優良（FT相当）/ 20〜34=通常 / 0〜19=低期待値</p>
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-500">判定根拠（任意・OS①で確認した内容）</label>
-                  <textarea
-                    rows={3}
-                    className="input-base cs text-[11px] resize-y"
-                    placeholder="例: LINEのみ導線・受講生あり・教育コンテンツ販売中のため期待値30点"
-                    value={salesExpReasonInput}
-                    onChange={e => setSalesExpReasonInput(e.target.value)}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    className="btn-sec text-xs py-1.5 flex-1"
-                    onClick={() => setEditingSalesExp(false)}
-                  >キャンセル</button>
-                  <button
-                    className="btn-primary text-xs py-1.5 flex-1 justify-center"
-                    style={{ background: '#d97706' }}
-                    disabled={salesExpInput === '' || isNaN(Number(salesExpInput))}
-                    onClick={() => {
-                      const val = Math.min(40, Math.max(0, Number(salesExpInput)))
+                    type="checkbox"
+                    disabled={role !== 'admin'}
+                    checked={!!item.salesExpectationFacts?.[entry.key]}
+                    onChange={event => {
+                      const facts = {
+                        ...(item.salesExpectationFacts || {}),
+                        [entry.key]: event.target.checked,
+                      }
                       saveData(prev => ({
                         ...prev,
-                        pipeline: prev.pipeline.map(p =>
-                          p.id === item.id
-                            ? { ...p, salesExpectation: val, salesExpectationReason: salesExpReasonInput.trim() || p.salesExpectationReason, salesExpectationBreakdown: salesExpBreakdownInput.trim() || p.salesExpectationBreakdown }
-                            : p
-                        ),
+                        pipeline: prev.pipeline.map(p => p.id === item.id
+                          ? { ...p, salesExpectationFacts: facts }
+                          : p),
+                        targets: item.targetId
+                          ? prev.targets.map(t => t.id === item.targetId
+                              ? { ...t, salesExpectationFacts: facts }
+                              : t)
+                          : prev.targets,
                       }))
-                      setEditingSalesExp(false)
-                      toast.show(`営業期待値を${val}点に保存しました`)
                     }}
-                  >
-                    <i className="fa-solid fa-check mr-1" />保存
-                  </button>
-                </div>
+                  />
+                  <span className="text-[11px] text-slate-700">{entry.label}</span>
+                  <span className={`text-[10px] font-bold ml-auto ${entry.score > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+                    {entry.score > 0 ? `+${entry.score}` : entry.score}点
+                  </span>
+                </label>
+              ))}
+              {!item.salesExpectationFacts && item.salesExpectation !== undefined && (
+                <p className="text-[10px] text-slate-500">
+                  旧AIスコア：{item.salesExpectation}点（参考）— いずれかをチェックすると新方式へ移行します。
+                </p>
+              )}
+              {item.salesExpectationBreakdown && (
+                <details>
+                  <summary className="text-[10px] text-slate-500 cursor-pointer">AIの確認候補（参考）</summary>
+                  <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{item.salesExpectationBreakdown}</pre>
+                </details>
+              )}
+            </div>
+
+            {item.salesExpectationReason && (
+              <div>
+                <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
+                <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
+              </div>
+            )}
+            {item.salesExpectationBreakdown && (
+              <div>
+                <button
+                  className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition"
+                  onClick={() => setShowBreakdown(v => !v)}
+                >
+                  <i className={`fa-solid fa-chevron-${showBreakdown ? 'up' : 'down'} text-[9px]`} />
+                  内訳を{showBreakdown ? '閉じる' : '見る'}
+                </button>
+                {showBreakdown && (
+                  <pre className="mt-1 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg p-2 border border-slate-100">
+                    {item.salesExpectationBreakdown}
+                  </pre>
+                )}
               </div>
             )}
           </div>

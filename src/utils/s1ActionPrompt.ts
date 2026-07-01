@@ -1,5 +1,6 @@
 import type { Observation, PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
+import { getDisplayScore } from './salesExpUtils'
 
 function formatObservations(observations: Observation[] | undefined): string {
   if (!observations || observations.length === 0) {
@@ -57,8 +58,7 @@ export function buildS1ActionPrompt(
     .replace('{{estimatedProduct}}', item.estimatedProduct || '（未記録）')
     .replace('{{partnerFlag}}', item.partnerFlag || '（未記録）')
     .replace('{{hypothesis}}', item.hypothesis || '未設定')
-    .replace('{{salesExpectation}}', String(item.salesExpectation ?? '未設定'))
-    .replace('{{salesExpectationReason}}', item.salesExpectationReason || '（未記録）')
+    .replace('{{salesExpectation}}', String(getDisplayScore(item) ?? '未設定'))
     .replace('{{primaryHypothesisPattern}}', item.primaryHypothesisPattern || '（OS①カルテ未作成）')
     .replace('{{naturalQuestion}}', item.naturalQuestion || '（OS①カルテ未作成 — 仮説から自力で問いを生成すること）')
     .replace('{{forbiddenAngles}}', forbiddenAnglesStr)

@@ -403,6 +403,8 @@ export default function Tab0({ data, saveData, prompts, role, toast, confirm, on
             isOpen: true,
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
+            salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
+            salesExpectationFacts: newTarget.salesExpectationFacts,
             touches: inboundFields.isInbound ? [buildInitialInboundTouch(screening, todayStr())] : [],
             ...inboundFields,
           })

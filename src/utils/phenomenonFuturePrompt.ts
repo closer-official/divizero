@@ -64,7 +64,7 @@ export function parsePhenomenonFutureOutput(raw: string): PhenomenonFutureResult
   }
 
   const suggestedA = pick('提案文A')
-  const suggestedB = pick('提案文B')
+  const suggestedB = pick('提案文B').replace(/^（空欄）$/, '')
   if (!suggestedA && !suggestedB) return null
 
   const nextAction = pick('次のアクション')

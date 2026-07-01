@@ -134,6 +134,16 @@ export interface SalesHypothesisItem {
   risk?: string;
 }
 
+export interface SalesExpectationFacts {
+  isEducatorConfirmed?: boolean;
+  usesUtageConfirmed?: boolean;
+  hasStudentsOrCommunityConfirmed?: boolean;
+  hasLineOrHighTicketOfferConfirmed?: boolean;
+  hasNoteOrLpSalesFlowConfirmed?: boolean;
+  sellsIntangibleProductConfirmed?: boolean;
+  hasExistingLpOrHpConfirmed?: boolean;
+}
+
 export interface Target {
   id: string;
   createdAt: string;
@@ -168,6 +178,7 @@ export interface Target {
   salesExpectation?: number;
   salesExpectationReason?: string;
   salesExpectationBreakdown?: string;
+  salesExpectationFacts?: SalesExpectationFacts;
   // OS①仮説カルテ
   primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
   naturalQuestion?: string;
@@ -263,6 +274,7 @@ export interface PipelineItem {
   salesExpectation?: number;        // 0-40, set at OS1, does not change
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
   salesExpectationBreakdown?: string;
+  salesExpectationFacts?: SalesExpectationFacts;
   todayTask?: { action: string; addedAt: string };  // 行動判定で「0日後・今日」と出た場合にセット
   // OS①仮説カルテ（確定後変動しない）
   partnerFlag?: string;

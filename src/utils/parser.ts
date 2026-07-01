@@ -94,23 +94,11 @@ function extractBreakdownText(expBlock: string): string | undefined {
 }
 
 function extractSalesExp(text: string): { salesExpectation?: number; salesExpectationReason?: string; salesExpectationBreakdown?: string } {
-  const expBlock = block(text, '営業期待値スコア（0〜40）');
-  let scoreRaw = expBlock ? field(expBlock, 'スコア') : '';
-  const reasonRaw = expBlock ? field(expBlock, '根拠') : '';
-  const breakdownRaw = expBlock ? extractBreakdownText(expBlock) : undefined;
-  if (!scoreRaw) {
-    const logBlock = block(text, '案件ログ転記用');
-    if (logBlock) scoreRaw = field(logBlock, '営業期待値スコア');
-  }
-  if (!scoreRaw) {
-    const m = text.match(/営業期待値スコア[：:]\s*(\d+)/);
-    if (m) scoreRaw = m[1];
-  }
-  const scoreMatch = scoreRaw.match(/(\d+)/);
+  const candidateBlock = block(text, '営業期待値 確認候補');
   return {
-    salesExpectation: scoreMatch ? parseInt(scoreMatch[1], 10) : undefined,
-    salesExpectationReason: reasonRaw || undefined,
-    salesExpectationBreakdown: breakdownRaw,
+    salesExpectation: undefined,
+    salesExpectationReason: undefined,
+    salesExpectationBreakdown: candidateBlock || undefined,
   };
 }
 

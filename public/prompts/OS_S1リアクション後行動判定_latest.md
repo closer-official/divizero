@@ -18,8 +18,7 @@ DM移行は「DM_SCOREが80点以上」かつ「仮説検証価値がある（DM
 トラック：{{track}}（判定理由：{{trackReason}}）
 推定商品：{{estimatedProduct}}
 提携候補フラグ：{{partnerFlag}}
-営業期待値スコア（0〜40）：{{salesExpectation}}点（OS①で確定済み・変動しない）
-スコア根拠：{{salesExpectationReason}}
+営業期待値スコア（0〜40）：{{salesExpectation}}点（チェック方式で算出）
 
 ■ OS①仮説カルテ（確定済み・DM時に最優先で参照すること）
 事前仮説：{{hypothesis}}

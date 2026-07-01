@@ -1,5 +1,6 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
+import { getDisplayScore } from './salesExpUtils'
 
 export interface BatchS1ActionItem {
   index: number
@@ -34,7 +35,7 @@ function buildCaseSection(item: BatchS1ActionItem): string {
 チャネル：${p.channel}
 トラック：${p.track}
 事前仮説：${p.hypothesis || '未設定'}
-営業期待値スコア：${p.salesExpectation ?? '未設定'}点
+営業期待値スコア：${getDisplayScore(p) ?? '未設定'}点
 
 ■ 接触した投稿
 投稿種別：${t.targetPostType || '—'}

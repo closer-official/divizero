@@ -5,6 +5,7 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
+import { calcSalesExpectationScore, SALES_EXP_ITEMS } from '../../utils/salesExpUtils'
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 type ParseSummary = {
@@ -178,6 +179,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           salesExpectation: newTarget.salesExpectation,
           salesExpectationReason: newTarget.salesExpectationReason,
           salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
+          salesExpectationFacts: newTarget.salesExpectationFacts,
           partnerFlag: newTarget.partnerFlag,
           trackReason: newTarget.trackReason,
           estimatedProduct: newTarget.estimatedProduct,
@@ -232,6 +234,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           salesExpectation: tgt.salesExpectation,
           salesExpectationReason: tgt.salesExpectationReason,
           salesExpectationBreakdown: tgt.salesExpectationBreakdown,
+          salesExpectationFacts: tgt.salesExpectationFacts,
           partnerFlag: tgt.partnerFlag,
           trackReason: tgt.trackReason,
           estimatedProduct: tgt.estimatedProduct,
@@ -328,6 +331,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             salesExpectation: newTarget.salesExpectation,
             salesExpectationReason: newTarget.salesExpectationReason,
             salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
+            salesExpectationFacts: newTarget.salesExpectationFacts,
             partnerFlag: newTarget.partnerFlag,
             trackReason: newTarget.trackReason,
             estimatedProduct: newTarget.estimatedProduct,
@@ -393,6 +397,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         salesExpectation: tgt.salesExpectation,
         salesExpectationReason: tgt.salesExpectationReason,
         salesExpectationBreakdown: tgt.salesExpectationBreakdown,
+        salesExpectationFacts: tgt.salesExpectationFacts,
         partnerFlag: tgt.partnerFlag,
         trackReason: tgt.trackReason,
         estimatedProduct: tgt.estimatedProduct,
@@ -501,6 +506,15 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         salesExpectation: tgt.salesExpectation,
         salesExpectationReason: tgt.salesExpectationReason,
         salesExpectationBreakdown: tgt.salesExpectationBreakdown,
+        salesExpectationFacts: tgt.salesExpectationFacts,
+        partnerFlag: tgt.partnerFlag,
+        trackReason: tgt.trackReason,
+        estimatedProduct: tgt.estimatedProduct,
+        estimatedPrice: tgt.estimatedPrice,
+        primaryHypothesisPattern: tgt.primaryHypothesisPattern,
+        naturalQuestion: tgt.naturalQuestion,
+        forbiddenAngles: tgt.forbiddenAngles,
+        observations: tgt.observations,
       })
       return d
     })
@@ -800,6 +814,15 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
               role={role}
               toast={toast}
               confirm={confirm}
+              onUpdateFacts={facts => saveData(prev => ({
+                ...prev,
+                targets: prev.targets.map(target => target.id === selectedTarget.id
+                  ? { ...target, salesExpectationFacts: facts }
+                  : target),
+                pipeline: prev.pipeline.map(item => item.targetId === selectedTarget.id
+                  ? { ...item, salesExpectationFacts: facts }
+                  : item),
+              }))}
               onToPipeline={() => handleToPipeline(selectedTarget.id)}
               onBackToOS0={() => handleBackToOS0(selectedTarget.id)}
               onForceToOS2={() => handleForceToOS2(selectedTarget.id)}
@@ -889,11 +912,12 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   )
 }
 
-function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToOS0, onForceToOS2, onClose }: {
+function TargetDetail({ target: t, role, toast, confirm, onUpdateFacts, onToPipeline, onBackToOS0, onForceToOS2, onClose }: {
   target: Target
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
+  onUpdateFacts: (facts: NonNullable<Target['salesExpectationFacts']>) => void
   onToPipeline: () => void
   onBackToOS0: () => void
   onForceToOS2: () => void
@@ -979,6 +1003,41 @@ function TargetDetail({ target: t, role, toast, confirm, onToPipeline, onBackToO
       <div className="bg-slate-50 rounded-lg p-3 text-xs">
         <p className="text-slate-400 text-[10px] mb-1">事前仮説</p>
         <p className="text-slate-700">{t.hypothesis || '-'}</p>
+      </div>
+
+      <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-bold text-amber-700">営業期待値チェック</p>
+          <span className="text-sm font-bold text-amber-700">
+            {calcSalesExpectationScore(t.salesExpectationFacts || {})} / 40点
+          </span>
+        </div>
+        {SALES_EXP_ITEMS.map(entry => (
+          <label key={entry.key} className={`flex items-center gap-2 ${role === 'admin' ? 'cursor-pointer' : ''}`}>
+            <input
+              type="checkbox"
+              disabled={role !== 'admin'}
+              checked={!!t.salesExpectationFacts?.[entry.key]}
+              onChange={event => onUpdateFacts({
+                ...(t.salesExpectationFacts || {}),
+                [entry.key]: event.target.checked,
+              })}
+            />
+            <span className="text-[11px] text-slate-700">{entry.label}</span>
+            <span className={`text-[10px] font-bold ml-auto ${entry.score > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
+              {entry.score > 0 ? `+${entry.score}` : entry.score}点
+            </span>
+          </label>
+        ))}
+        {t.salesExpectationBreakdown && (
+          <details className="mt-1">
+            <summary className="text-[10px] text-slate-500 cursor-pointer">AIの確認候補を見る</summary>
+            <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{t.salesExpectationBreakdown}</pre>
+          </details>
+        )}
+        {!t.salesExpectationFacts && t.salesExpectation !== undefined && (
+          <p className="text-[10px] text-slate-500">旧AIスコア：{t.salesExpectation}点（参考）— チェックすると新方式へ移行します。</p>
+        )}
       </div>
 
       {t.track === 'SKIP' ? (
