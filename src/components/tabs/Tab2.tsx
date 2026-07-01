@@ -25,7 +25,7 @@ import {
 } from '../../utils/analysisPrompt'
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
-  trackBadgeClass, stepsBarData, daysSince,
+  trackBadgeClass, stepsBarData, daysSince, normalizeHandle, buildXSearchUrl,
   uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
@@ -410,6 +410,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const notifications = getActiveNotifications(data)
 
   const active = data.pipeline.filter(p => p.isOpen)
+  const myXHandle = data.settings?.myXHandle?.trim() || ''
   const warnItems = active.filter(p => daysSince(p.startDate) >= 30)
   const unverifiedTouches = data.pipeline
     .filter(p => p.isOpen)
@@ -1198,6 +1199,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <option value="instagram">IG</option>
             <option value="threads">TH</option>
           </select>
+          <input
+            className="input-base text-xs py-1.5 font-mono"
+            style={{ maxWidth: 150 }}
+            value={myXHandle}
+            onChange={e => {
+              const next = e.target.value.replace(/^@/, '').trim()
+              saveData(prev => ({ ...prev, settings: { ...(prev.settings || {}), myXHandle: next || undefined } }))
+            }}
+            placeholder="自分のX ID"
+            title="X検索URLの自動生成に使用します"
+          />
           <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={temperatureFilter} onChange={e => setTemperatureFilter(e.target.value as TemperatureFilter)}>
             <option value="all">全温度</option>
             <option value="high">高温 60+</option>
@@ -1425,6 +1437,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                   confirm={confirm}
                   onGoToTab3={onGoToTab3}
                   onOperationDone={continuousMode ? advanceContinuous : undefined}
+                  myXHandle={myXHandle}
                   onCloseCase={(item, result) => {
                     if (continuousMode) {
                       const list = sortVisibleItems(filterActive(active))
@@ -1813,9 +1826,10 @@ interface CardProps {
   onReturnToOS0: (item: PipelineItem) => void
   onExportMd: (item: PipelineItem) => void
   onOperationDone?: () => void
+  myXHandle?: string
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone }: CardProps) {
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone, myXHandle }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
@@ -1863,6 +1877,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tSaves, setTSaves] = useState('')
   const [tImpressions, setTImpressions] = useState('')
   const [tPostUrl, setTPostUrl] = useState('')
+  const [tCommentUrl, setTCommentUrl] = useState('')
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -1894,6 +1909,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setSuggACopyState('idle'); setSuggBCopyState('idle')
     setTPostDateTime(undefined)
     setTPostUrl('')
+    setTCommentUrl('')
     setTLikes(''); setTComments(''); setTRetweets(''); setTSaves(''); setTImpressions('')
     setTTouchMode('rep')
   }
@@ -1982,6 +1998,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
         aiSuggestedText: tAiText, actualSentText: tSentText, editReason: tEditReason,
         messageValidity: '未判定',
+        commentUrl: tCommentUrl.trim() || undefined,
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
@@ -2007,6 +2024,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         messageValidity: '未判定',
         postId: shortPostId(),
         postUrl: tPostUrl.trim() || undefined,
+        commentUrl: tCommentUrl.trim() || undefined,
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
@@ -2022,6 +2040,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         messageValidity: '未判定',
         postId: shortPostId(),
         postUrl: tPostUrl.trim() || undefined,
+        commentUrl: tCommentUrl.trim() || undefined,
         status: 'awaiting_reaction',
         reactionType: '未記録',
         reactionNote: '',
@@ -2729,6 +2748,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     key={touch.id}
                     touch={touch}
                     pipelineItem={item}
+                    myXHandle={myXHandle}
                     prompts={prompts}
                     role={role}
                     onDelete={() => handleDeleteTouch(touch.id)}
@@ -2878,6 +2898,27 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                         </div>
 
                         <div className="flex flex-col gap-1">
+                          <label className="text-xs text-slate-500">
+                            コメントURL（任意）
+                            <span className="ml-1 text-slate-400">← 送信後、自分のコメントの共有リンクを貼る</span>
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="url"
+                              className="input-base text-xs py-1.5 font-mono flex-1"
+                              placeholder="https://x.com/..."
+                              value={tCommentUrl}
+                              onChange={e => setTCommentUrl(e.target.value)}
+                            />
+                            {tCommentUrl.trim() && (
+                              <a href={tCommentUrl.trim()} target="_blank" rel="noopener noreferrer" className="shrink-0 btn-sec text-xs py-1.5 px-2" title="開く">
+                                <i className="fa-solid fa-arrow-up-right-from-square text-indigo-500" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col gap-1">
                           <label className="text-xs font-semibold text-slate-700">投稿原文（相手の文をそのまま）<span className="font-normal text-slate-400 ml-1">← 自動入力で設定されます</span></label>
                           <textarea rows={4} className="input-base cs text-xs resize-y" placeholder="「自動入力」で設定されます。手動で貼り付けることも可能です。" value={tPostRawText} onChange={e => setTPostRawText(e.target.value)} />
                         </div>
@@ -2990,6 +3031,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 interface TouchItemProps {
   touch: Touch
   pipelineItem: PipelineItem
+  myXHandle?: string
   prompts: Prompts
   role: Role
   onDelete: () => void
@@ -2999,7 +3041,7 @@ interface TouchItemProps {
   onCloseCaseAuto: (result: string) => void
 }
 
-function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
@@ -3532,6 +3574,11 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
   const isNoReaction = selectedReaction.includes('無反応')
   const isR5 = selectedReaction.includes('公開拒絶（R5）')
   const isTextReply = selectedReaction.includes('テキスト返信')
+  const isDMTouch = touch.targetPostText === '（DM）' || touch.touchMode === 'conversation'
+  const targetHandle = normalizeHandle(pipelineItem.url)
+  const xSearchUrl = !touch.commentUrl && !isDMTouch && myXHandle && targetHandle && (pipelineItem.channel === 'twitter' || !pipelineItem.channel)
+    ? buildXSearchUrl(myXHandle, targetHandle, touch.actualSentText)
+    : undefined
 
   // messageValidity display: treat '未評価' as '未判定' for backward compat
   const displayMsgValidity = (!touch.messageValidity || touch.messageValidity === '未評価') ? '未判定' : touch.messageValidity
@@ -3571,9 +3618,43 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
           </div>
         </div>
 
+        {/* URL導線ボタン */}
+        {!isDMTouch && (touch.postUrl || touch.commentUrl || xSearchUrl) && (
+          <div className="flex gap-1 flex-wrap">
+            {touch.postUrl && (
+              <a
+                href={touch.postUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-sec text-[10px] py-0.5 px-1.5"
+              >
+                <i className="fa-solid fa-newspaper text-amber-500 mr-0.5" />対象投稿を開く
+              </a>
+            )}
+            {touch.commentUrl ? (
+              <a
+                href={touch.commentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-sec text-[10px] py-0.5 px-1.5"
+              >
+                <i className="fa-solid fa-comment text-indigo-400 mr-0.5" />自分のコメントを開く
+              </a>
+            ) : xSearchUrl ? (
+              <a
+                href={xSearchUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-sec text-[10px] py-0.5 px-1.5"
+              >
+                <i className="fa-brands fa-x-twitter text-slate-600 mr-0.5" />自分のコメントを検索
+              </a>
+            ) : null}
+          </div>
+        )}
+
         {/* 会話フロー表示 */}
         {(() => {
-          const isDMTouch = touch.targetPostText === '（DM）' || touch.touchMode === 'conversation'
           const postDisplay = touch.targetPostRawText || touch.targetPostText
           return (
             <div className="flex flex-col gap-2">
@@ -4374,6 +4455,24 @@ function TouchItem({ touch, pipelineItem, prompts, role, onDelete, onReactionSav
       {/* ── reaction recording flow ───────── */}
       {recordingReaction && (
         <div className="border-t border-slate-100 bg-slate-50 p-3 flex flex-col gap-3">
+          {!isDMTouch && (touch.postUrl || touch.commentUrl || xSearchUrl) && (
+            <div className="flex gap-1.5 flex-wrap">
+              {touch.postUrl && (
+                <a href={touch.postUrl} target="_blank" rel="noopener noreferrer" className="btn-sec text-[10px] py-1 px-2">
+                  <i className="fa-solid fa-newspaper text-amber-500 mr-0.5" />前回の対象投稿
+                </a>
+              )}
+              {touch.commentUrl ? (
+                <a href={touch.commentUrl} target="_blank" rel="noopener noreferrer" className="btn-sec text-[10px] py-1 px-2">
+                  <i className="fa-solid fa-comment text-indigo-400 mr-0.5" />前回の自分コメント
+                </a>
+              ) : xSearchUrl ? (
+                <a href={xSearchUrl} target="_blank" rel="noopener noreferrer" className="btn-sec text-[10px] py-1 px-2">
+                  <i className="fa-brands fa-x-twitter text-slate-600 mr-0.5" />Xで検索
+                </a>
+              ) : null}
+            </div>
+          )}
           <p className="text-xs font-bold text-slate-700">相手の反応</p>
           <div className="flex flex-wrap gap-1.5">
             {REACTION_TYPES.map(r => <Chip key={r} label={r} selected={selectedReaction.includes(r)} onClick={() => { setSelectedReaction(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r]); setMsgParsed(null) }} />)}

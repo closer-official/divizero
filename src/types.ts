@@ -47,6 +47,7 @@ export interface Touch {
   id: string;
   postId?: string;
   postUrl?: string;
+  commentUrl?: string;
   date: string;
   targetPostText: string;
   targetPostRawText?: string;
@@ -528,6 +529,10 @@ export interface ConstitutionEntry {
   }>;
 }
 
+export interface AppSettings {
+  myXHandle?: string;
+}
+
 export interface AppData {
   screenings: Screening[];
   targets: Target[];
@@ -550,6 +555,7 @@ export interface AppData {
   aestheticConstitution?: ConstitutionEntry;
   dbOverrides?: Record<string, string>;
   archivedMyProfile?: string;
+  settings?: AppSettings;
 }
 
 export type Prompts = {

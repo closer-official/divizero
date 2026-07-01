@@ -62,6 +62,14 @@ export function buildProfileUrl(raw: string | undefined, channel?: string): stri
   return `https://x.com/${handle}`;
 }
 
+export function buildXSearchUrl(myHandle: string, targetHandle: string, keyword?: string): string {
+  const from = normalizeHandle(myHandle)
+  const to = normalizeHandle(targetHandle)
+  const parts = [`from:${from}`, `@${to}`]
+  if (keyword) parts.push(keyword.slice(0, 20).trim())
+  return `https://x.com/search?q=${encodeURIComponent(parts.join(' '))}&src=typed_query&f=live`
+}
+
 export function getProfileUrl(item: { url?: string; channel?: string }): string {
   return buildProfileUrl(item.url, item.channel);
 }
