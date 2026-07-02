@@ -1308,60 +1308,67 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               />
             ))}
           </div>
-          <div className="sm:hidden flex flex-col gap-3">
-            {KANBAN_COLS.map(col => {
-              const items = getColItems(col.key)
-              if (items.length === 0) return null
-              return (
-                <div key={col.key} className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2 px-1">
-                    <p className={`text-[11px] font-bold flex-1 ${col.colorClass}`}>{col.label}</p>
-                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
+          <div className="sm:hidden -mx-4 px-4 pb-2 overflow-x-auto overflow-y-hidden touch-pan-x snap-x snap-mandatory">
+            <div className="flex flex-nowrap gap-3 min-w-max">
+              {KANBAN_COLS.map(col => {
+                const items = getColItems(col.key)
+                if (items.length === 0) return null
+                return (
+                  <div
+                    key={col.key}
+                    className="w-[86vw] max-w-[86vw] shrink-0 snap-start rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2 mb-3">
+                      <p className={`text-[12px] font-bold flex-1 ${col.colorClass}`}>{col.label}</p>
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {items.map(p => {
+                        const latestTouch = (p.touches || []).slice(-1)[0]
+                        const isAwaiting = latestTouch?.status === 'awaiting_reaction'
+                        const recontactDays = p.recontact_date
+                          ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
+                          : null
+                        const os2Label = latestTouch?.os2Judgment || p.judgment
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            className="card w-full px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:bg-slate-50"
+                            onClick={() => setDrawerItemId(p.id)}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                {p.currentStep} · {p.track} · {channelLabel(p.channel)}
+                              </p>
+                              <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                                {isAwaiting && (
+                                  <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">反応待ち</span>
+                                )}
+                                {p.temperature != null && (
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${tempBadgeStyle(p.temperature)}`}>温度 {p.temperature}</span>
+                                )}
+                                {recontactDays != null && (
+                                  <span className={`text-[9px] ${recontactDays < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                    {recontactDays < 0 ? `${Math.abs(recontactDays)}日超過` : recontactDays === 0 ? '本日再接触' : `あと${recontactDays}日`}
+                                  </span>
+                                )}
+                                {os2Label && <span className="text-[9px] text-slate-500 truncate max-w-[150px]">{os2Label}</span>}
+                              </div>
+                            </div>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(p.state)}`}>
+                              {stateLabel(p.state)}
+                            </span>
+                            <i className="fa-solid fa-chevron-right text-slate-300 text-xs shrink-0" />
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                  {items.map(p => {
-                    const latestTouch = (p.touches || []).slice(-1)[0]
-                    const isAwaiting = latestTouch?.status === 'awaiting_reaction'
-                    const recontactDays = p.recontact_date
-                      ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
-                      : null
-                    const os2Label = latestTouch?.os2Judgment || p.judgment
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="card w-full px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:bg-slate-50"
-                        onClick={() => setDrawerItemId(p.id)}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {p.currentStep} · {p.track} · {channelLabel(p.channel)}
-                          </p>
-                          <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                            {isAwaiting && (
-                              <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">反応待ち</span>
-                            )}
-                            {p.temperature != null && (
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${tempBadgeStyle(p.temperature)}`}>温度 {p.temperature}</span>
-                            )}
-                            {recontactDays != null && (
-                              <span className={`text-[9px] ${recontactDays < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
-                                {recontactDays < 0 ? `${Math.abs(recontactDays)}日超過` : recontactDays === 0 ? '本日再接触' : `あと${recontactDays}日`}
-                              </span>
-                            )}
-                            {os2Label && <span className="text-[9px] text-slate-500 truncate max-w-[150px]">{os2Label}</span>}
-                          </div>
-                        </div>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(p.state)}`}>
-                          {stateLabel(p.state)}
-                        </span>
-                        <i className="fa-solid fa-chevron-right text-slate-300 text-xs shrink-0" />
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         </>
       )}
