@@ -951,7 +951,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   })()
 
   return (
-    <div className="flex flex-col gap-4" style={{ animation: 'fadeIn .2s ease-out' }}>
+    <div className="flex flex-col gap-4 overflow-x-hidden" style={{ animation: 'fadeIn .2s ease-out' }}>
 
       {/* ── ① 本日やること ────────────────────────────────────── */}
       {todayTasks.length > 0 && (
@@ -1308,46 +1308,58 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               />
             ))}
           </div>
-          <div className="sm:hidden flex flex-col gap-2">
-            {sortVisibleItems(filterActive(active)).map(p => {
-              const latestTouch = (p.touches || []).slice(-1)[0]
-              const isAwaiting = latestTouch?.status === 'awaiting_reaction'
-              const recontactDays = p.recontact_date
-                ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
-                : null
-              const os2Label = latestTouch?.os2Judgment || p.judgment
+          <div className="sm:hidden flex flex-col gap-3">
+            {KANBAN_COLS.map(col => {
+              const items = getColItems(col.key)
+              if (items.length === 0) return null
               return (
-                <button
-                  key={p.id}
-                  type="button"
-                  className="card px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:bg-slate-50"
-                  onClick={() => setDrawerItemId(p.id)}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {p.currentStep} · {p.track} · {channelLabel(p.channel)}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-1 mt-1.5">
-                      {isAwaiting && (
-                        <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">反応待ち</span>
-                      )}
-                      {p.temperature != null && (
-                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${tempBadgeStyle(p.temperature)}`}>温度 {p.temperature}</span>
-                      )}
-                      {recontactDays != null && (
-                        <span className={`text-[9px] ${recontactDays < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
-                          {recontactDays < 0 ? `${Math.abs(recontactDays)}日超過` : recontactDays === 0 ? '本日再接触' : `あと${recontactDays}日`}
-                        </span>
-                      )}
-                      {os2Label && <span className="text-[9px] text-slate-500 truncate max-w-[150px]">{os2Label}</span>}
-                    </div>
+                <div key={col.key} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 px-1">
+                    <p className={`text-[11px] font-bold flex-1 ${col.colorClass}`}>{col.label}</p>
+                    <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-medium">{items.length}</span>
                   </div>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(p.state)}`}>
-                    {stateLabel(p.state)}
-                  </span>
-                  <i className="fa-solid fa-chevron-right text-slate-300 text-xs shrink-0" />
-                </button>
+                  {items.map(p => {
+                    const latestTouch = (p.touches || []).slice(-1)[0]
+                    const isAwaiting = latestTouch?.status === 'awaiting_reaction'
+                    const recontactDays = p.recontact_date
+                      ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
+                      : null
+                    const os2Label = latestTouch?.os2Judgment || p.judgment
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className="card w-full px-4 py-3 flex items-center gap-3 text-left cursor-pointer active:bg-slate-50"
+                        onClick={() => setDrawerItemId(p.id)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-sm text-slate-800 truncate">{p.accountName}</p>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {p.currentStep} · {p.track} · {channelLabel(p.channel)}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                            {isAwaiting && (
+                              <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">反応待ち</span>
+                            )}
+                            {p.temperature != null && (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${tempBadgeStyle(p.temperature)}`}>温度 {p.temperature}</span>
+                            )}
+                            {recontactDays != null && (
+                              <span className={`text-[9px] ${recontactDays < 0 ? 'text-rose-600 font-bold' : 'text-slate-500'}`}>
+                                {recontactDays < 0 ? `${Math.abs(recontactDays)}日超過` : recontactDays === 0 ? '本日再接触' : `あと${recontactDays}日`}
+                              </span>
+                            )}
+                            {os2Label && <span className="text-[9px] text-slate-500 truncate max-w-[150px]">{os2Label}</span>}
+                          </div>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${stateBadgeStyle(p.state)}`}>
+                          {stateLabel(p.state)}
+                        </span>
+                        <i className="fa-solid fa-chevron-right text-slate-300 text-xs shrink-0" />
+                      </button>
+                    )
+                  })}
+                </div>
               )
             })}
           </div>
@@ -2883,6 +2895,9 @@ interface TouchItemProps {
 
 function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
+  const [editingLinks, setEditingLinks] = useState(false)
+  const [postUrlInput, setPostUrlInput] = useState(touch.postUrl || '')
+  const [commentUrlInput, setCommentUrlInput] = useState(touch.commentUrl || '')
   const [recordingReaction, setRecordingReaction] = useState(false)
   const [selectedReaction, setSelectedReaction] = useState<TouchReaction[]>([])
   const [reactionNote, setReactionNote] = useState('')
@@ -3423,6 +3438,11 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, on
   // messageValidity display: treat '未評価' as '未判定' for backward compat
   const displayMsgValidity = (!touch.messageValidity || touch.messageValidity === '未評価') ? '未判定' : touch.messageValidity
 
+  useEffect(() => {
+    setPostUrlInput(touch.postUrl || '')
+    setCommentUrlInput(touch.commentUrl || '')
+  }, [touch.postUrl, touch.commentUrl])
+
   return (
     <div className="bg-white border border-slate-100 rounded-xl overflow-hidden">
       {/* ── touch summary ─────────────────── */}
@@ -3490,6 +3510,76 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, on
                 <i className="fa-brands fa-x-twitter text-slate-600 mr-0.5" />自分のコメントを検索
               </a>
             ) : null}
+            {role === 'admin' && (
+              <button
+                type="button"
+                className="btn-sec text-[10px] py-0.5 px-1.5"
+                onClick={() => setEditingLinks(v => !v)}
+              >
+                <i className="fa-solid fa-link mr-0.5 text-slate-400" />URL編集
+              </button>
+            )}
+          </div>
+        )}
+        {!isDMTouch && role === 'admin' && !(touch.postUrl || touch.commentUrl || xSearchUrl) && (
+          <div className="flex gap-1 flex-wrap">
+            <button
+              type="button"
+              className="btn-sec text-[10px] py-0.5 px-1.5"
+              onClick={() => setEditingLinks(v => !v)}
+            >
+              <i className="fa-solid fa-link mr-0.5 text-slate-400" />URLを追加
+            </button>
+          </div>
+        )}
+        {!isDMTouch && editingLinks && (
+          <div className="mt-1 flex flex-col gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-500">投稿URL</label>
+              <input
+                type="text"
+                className="input-base text-xs py-1.5"
+                placeholder="https://..."
+                value={postUrlInput}
+                onChange={e => setPostUrlInput(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-500">コメントURL</label>
+              <input
+                type="text"
+                className="input-base text-xs py-1.5"
+                placeholder="https://..."
+                value={commentUrlInput}
+                onChange={e => setCommentUrlInput(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn-sec text-xs py-1.5 flex-1"
+                onClick={() => {
+                  setEditingLinks(false)
+                  setPostUrlInput(touch.postUrl || '')
+                  setCommentUrlInput(touch.commentUrl || '')
+                }}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="btn-primary text-xs py-1.5 flex-1 justify-center"
+                onClick={() => {
+                  onReactionSaved(touch.id, {
+                    postUrl: postUrlInput.trim() || undefined,
+                    commentUrl: commentUrlInput.trim() || undefined,
+                  }, {})
+                  setEditingLinks(false)
+                }}
+              >
+                <i className="fa-solid fa-check mr-1" />URL保存
+              </button>
+            </div>
           </div>
         )}
 
