@@ -195,7 +195,7 @@ const POST_TYPES: TouchPostType[] = ['課題ツイート', '通常投稿', '達�
 const VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未評価']
 const MSG_VALIDITY_OPTS: TouchValidity[] = ['◯', '△', '✕', '未判定']
 const REACTION_TYPES: TouchReaction[] = ['テキスト返信', 'いいね返り', 'フォロー返し', 'スタンプ・絵文字', '無反応', '公開拒絶（R5）']
-const CLOSE_RESULTS = ['断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', '受注']
+const CLOSE_RESULTS = ['断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', 'HP/LP所有済み', '受注']
 
 // ── KanbanCard ─────────────────────────────────────────────────
 interface KanbanCardProps {
