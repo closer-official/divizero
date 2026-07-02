@@ -57,6 +57,10 @@ src/
       Tab3.tsx                # OS③ 案件検証
       Tab4.tsx                # 集計ダッシュボード
       Tab5.tsx                # 分析履歴
+      Tab6.tsx                # SNS人格OS Ver.4（営業OSとは別系統）
+      TabHome.tsx             # ホーム（要対応案件への直接遷移）
+  services/
+    home/homeTypes.ts         # TabId 型など ホームタブ用の型
     StepSelector.tsx          # ステップ選択 UI 部品
     MdPreviewModal.tsx        # Markdown プレビューモーダル
   utils/
@@ -81,7 +85,17 @@ public/
     OS0_一次選別_v2.md        など（下記一覧参照）
 ```
 
-## The six tabs
+## The eight tabs
+
+ナビは home / tab0〜tab6 の8タブ（`App.tsx` のナビ配列参照）。営業OSの中核は Tab0〜Tab5。
+
+### TabHome — ホーム (`src/components/tabs/TabHome.tsx`)
+
+要対応案件の一覧と各タブへの導線。パイプライン項目を指定して Tab2 を直接開ける（`onGoToTab2WithItem`）。
+
+### Tab6 — SNS人格OS Ver.4 (`src/components/tabs/Tab6.tsx`)
+
+自アカウントの投稿生成・分析系。営業OS（OS⓪〜③）とは別系統で、営業OSのハンドオフ・監査のスコープ外。
 
 ### Tab0 — OS⓪ 一次選別 (`src/components/tabs/Tab0.tsx`)
 
@@ -127,7 +141,7 @@ OS①プロンプト + スクショを外部AI へ → 出力を貼り付け →
 ## S∞ループ構造（PipelineItem の状態管理）
 
 ```
-PipelineItem.state: 'active' | 'waiting' | 'sleeping' | 'archived' | 'closed'
+PipelineItem.state: 'active' | 'waiting' | 'meeting_scheduled' | 'sleeping' | 'archived' | 'closed'
 PipelineItem.temperature: number (0–100)  # 接触温度
 PipelineItem.last_reaction: 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative'
 PipelineItem.recontact_date: string (ISO date)  # waiting/sleeping/archived → active への自動遷移日
@@ -135,12 +149,13 @@ PipelineItem.recontact_date: string (ISO date)  # waiting/sleeping/archived → 
 
 - **active**: 接触アクティブ。再接触日になると自動で active に戻る
 - **waiting**: 再接触日まで待機中（7〜30日後が目安）
+- **meeting_scheduled**: 商談・面談予定あり。`meetingDate <= now` で自動的に active に戻る（`meetingDate` / `meetingUrl` / `meetingNote` を保持）
 - **sleeping**: 低頻度監視（1〜3ヶ月後が目安）。いいね3連続＋フォロー返しなし等で移行
 - **archived**: 長期保管（半年以上）。完全無反応3連続 / 30日反応ゼロで移行
 - **closed**: クローズ済み
 
 起動時チェック（`App.tsx` の `useEffect`）:
-1. `state === 'waiting' | 'sleeping' | 'archived'` かつ `recontact_date <= now` → `state = 'active'` に更新
+1. `state === 'waiting' | 'sleeping' | 'archived'` かつ `recontact_date <= now`、または `state === 'meeting_scheduled'` かつ `meetingDate <= now` → `state = 'active'` に更新
 2. 最新 Touch が `awaiting_reaction` かつ 48h 経過 → `last_reaction = 'none'` に更新
 3. 再接触日が来ているアカウントがあればトースト通知
 
@@ -161,7 +176,7 @@ AppData
 全データは Firestore の `workspace/main` ドキュメントの `payload` フィールドに JSON 文字列として保存。
 
 **Step:** S1 → S2 → S3 → S4 → S5  
-**Track:** FT（ファストトラック＝DM直行）/ NT（通常＝リプ経由）/ SKIP（除外）
+**Track:** FT（ファストトラック＝優先認知維持）/ NT（通常＝リプ経由）/ UT（UTAGEユーザー＝最優先。ただしDM直行はせずS0→S1リプで認知を取ってからOS②へ）/ SKIP（除外）
 
 ## Persistence & Auth
 
