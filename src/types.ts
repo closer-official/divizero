@@ -144,6 +144,18 @@ export interface SalesExpectationFacts {
   hasExistingLpOrHpConfirmed?: boolean;
 }
 
+export interface OpportunityFacts {
+  usesUtageConfirmed?: boolean;
+  sellsProductConfirmed?: boolean;
+  hasExistingLpOrHpConfirmed?: boolean;
+  hasLimitedSalesFlowConfirmed?: boolean;
+  lacksProductInfoConfirmed?: boolean;
+}
+
+export type OpportunityStatus = 'target' | 'hold' | 'out';
+export type PrioritySegment = 'utage' | 'normal' | 'partner';
+export type OpportunityFit = 'high' | 'medium' | 'low';
+
 export interface Target {
   id: string;
   createdAt: string;
@@ -179,6 +191,14 @@ export interface Target {
   salesExpectationReason?: string;
   salesExpectationBreakdown?: string;
   salesExpectationFacts?: SalesExpectationFacts;
+  opportunityStatus?: OpportunityStatus;
+  opportunityStatusReason?: string;
+  prioritySegment?: PrioritySegment;
+  prioritySegmentReason?: string;
+  opportunityFacts?: OpportunityFacts;
+  opportunityFit?: OpportunityFit;
+  opportunityFitReason?: string;
+  opportunityBreakdown?: string;
   // OS①仮説カルテ
   primaryHypothesisPattern?: 'A' | 'B' | 'C' | 'D';
   naturalQuestion?: string;
@@ -275,6 +295,14 @@ export interface PipelineItem {
   salesExpectationReason?: string;  // なぜこのスコアか（OS1判定時に記録、後から参照用）
   salesExpectationBreakdown?: string;
   salesExpectationFacts?: SalesExpectationFacts;
+  opportunityStatus?: OpportunityStatus;
+  opportunityStatusReason?: string;
+  prioritySegment?: PrioritySegment;
+  prioritySegmentReason?: string;
+  opportunityFacts?: OpportunityFacts;
+  opportunityFit?: OpportunityFit;
+  opportunityFitReason?: string;
+  opportunityBreakdown?: string;
   todayTask?: { action: string; addedAt: string };  // 行動判定で「0日後・今日」と出た場合にセット
   // OS①仮説カルテ（確定後変動しない）
   partnerFlag?: string;
@@ -461,6 +489,7 @@ export interface OwnPostPDCA {
   id: string;
   postText: string;
   postedAt?: string;
+  metricsRecordedAt?: string;
   hypothesis?: string;
   usedLens?: string[];
   postType: 'quote' | 'normal';

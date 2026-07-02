@@ -14,7 +14,15 @@ import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '.
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import { buildBatchJudgmentPrompt, parseBatchJudgmentOutput } from '../../utils/batchJudgmentPrompt'
-import { calcSalesExpectationScore, getDisplayScore, SALES_EXP_ITEMS } from '../../utils/salesExpUtils'
+import { getDisplayScore } from '../../utils/salesExpUtils'
+import {
+  getOpportunityFitLabel,
+  getOpportunityStatusLabel,
+  getPrioritySegmentLabel,
+  isStrongOpportunity,
+  isUTAGEPriority,
+  OPPORTUNITY_FACT_ITEMS,
+} from '../../utils/opportunityUtils'
 import {
   getActiveNotifications, setDismissedUntil, createPendingAnalysis,
   markEmergencyAlertRead, buildEmergencyAlertDetail,
@@ -226,12 +234,12 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
         {item.inbound_signal && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
         )}
-        {getDisplayScore(item) !== undefined && (
-          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(getDisplayScore(item) ?? 0) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-            期待{getDisplayScore(item)}
+        {item.prioritySegment && (
+          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isUTAGEPriority(item) ? 'bg-violet-100 text-violet-700' : item.opportunityFit === 'high' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+            {isUTAGEPriority(item) ? 'UTAGE優先' : `適合${getOpportunityFitLabel(item.opportunityFit)}`}
           </span>
         )}
-        {(getDisplayScore(item) ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+        {isStrongOpportunity(item) && (item.state === 'sleeping' || item.state === 'archived') && (
           <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-orange-100 text-orange-600">🛡保護</span>
         )}
         {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
@@ -501,7 +509,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     else if (filter === 'UT') result = result.filter(p => p.track === 'UT')
     else if (filter === 'warn') result = result.filter(p => warnIds.has(p.id))
     else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => t.status === 'awaiting_reaction'))
-    else if (filter === 'elite') result = result.filter(p => (getDisplayScore(p) ?? 0) >= 35)
+    else if (filter === 'elite') result = result.filter(p => isStrongOpportunity(p))
     if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
     if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
     if (searchQuery.trim()) {
@@ -1177,7 +1185,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           {/* トラックフィルタ */}
           <select className="input-base text-xs py-1.5" style={{ maxWidth: 120 }} value={filter} onChange={e => setFilter(e.target.value)}>
             <option value="all">全て ({active.length})</option>
-            <option value="elite">★超優良≥35 ({active.filter(p => (getDisplayScore(p) ?? 0) >= 35).length})</option>
+            <option value="elite">★優先案件 ({active.filter(p => isStrongOpportunity(p)).length})</option>
             <option value="FT">FT ({active.filter(p => p.track === 'FT').length})</option>
             <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
             <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
@@ -2186,14 +2194,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           )}
           {/* 状態バッジ */}
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${stateBadgeStyle(item.state)}`}>{stateLabel(item.state)}</span>
-          {/* 営業期待値バッジ */}
-          {getDisplayScore(item) !== undefined && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${(getDisplayScore(item) ?? 0) >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-              期待値{getDisplayScore(item)}点
+          {/* 案件優先バッジ */}
+          {item.prioritySegment && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${isUTAGEPriority(item) ? 'bg-violet-100 text-violet-700' : item.opportunityFit === 'high' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+              {isUTAGEPriority(item) ? 'UTAGE優先' : `適合度${getOpportunityFitLabel(item.opportunityFit)}`}
             </span>
           )}
-          {/* 超優良案件保護中バッジ */}
-          {(getDisplayScore(item) ?? 0) >= 35 && (item.state === 'sleeping' || item.state === 'archived') && (
+          {/* 優先案件保護中バッジ */}
+          {isStrongOpportunity(item) && (item.state === 'sleeping' || item.state === 'archived') && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-orange-100 text-orange-700">🛡保護中</span>
           )}
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
@@ -2459,65 +2467,69 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               </div>
             )}
 
-            <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-bold text-amber-700">営業期待値チェック</p>
-                <span className={`text-sm font-bold ${(getDisplayScore(item) ?? 0) >= 35 ? 'text-amber-700' : 'text-slate-700'}`}>
-                  {item.salesExpectationFacts
-                    ? calcSalesExpectationScore(item.salesExpectationFacts)
-                    : getDisplayScore(item) ?? 0} / 40点
-                </span>
+            <div className="flex flex-col gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
+                <div className="bg-white/70 rounded-lg p-2">
+                  <p className="text-slate-400 text-[10px]">営業対象判定</p>
+                  <p className="font-bold text-slate-800">{getOpportunityStatusLabel(item.opportunityStatus)}</p>
+                </div>
+                <div className="bg-white/70 rounded-lg p-2">
+                  <p className="text-slate-400 text-[10px]">優先セグメント</p>
+                  <p className={`font-bold ${isUTAGEPriority(item) ? 'text-violet-700' : 'text-slate-800'}`}>{getPrioritySegmentLabel(item.prioritySegment)}</p>
+                </div>
+                <div className="bg-white/70 rounded-lg p-2">
+                  <p className="text-slate-400 text-[10px]">案件適合度</p>
+                  <p className={`font-bold ${item.opportunityFit === 'high' ? 'text-emerald-700' : item.opportunityFit === 'medium' ? 'text-amber-700' : 'text-slate-800'}`}>{getOpportunityFitLabel(item.opportunityFit)}</p>
+                </div>
               </div>
-              {SALES_EXP_ITEMS.map(entry => (
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold text-amber-700">観測事実</p>
+                {item.opportunityBreakdown && <span className="text-[10px] text-slate-500">AIの観測候補あり</span>}
+              </div>
+              {OPPORTUNITY_FACT_ITEMS.map(entry => (
                 <label key={entry.key} className={`flex items-center gap-2 ${role === 'admin' ? 'cursor-pointer' : ''}`}>
                   <input
                     type="checkbox"
                     disabled={role !== 'admin'}
-                    checked={!!item.salesExpectationFacts?.[entry.key]}
+                    checked={!!item.opportunityFacts?.[entry.key]}
                     onChange={event => {
                       const facts = {
-                        ...(item.salesExpectationFacts || {}),
+                        ...(item.opportunityFacts || {}),
                         [entry.key]: event.target.checked,
                       }
                       saveData(prev => ({
                         ...prev,
                         pipeline: prev.pipeline.map(p => p.id === item.id
-                          ? { ...p, salesExpectationFacts: facts }
+                          ? { ...p, opportunityFacts: facts }
                           : p),
                         targets: item.targetId
                           ? prev.targets.map(t => t.id === item.targetId
-                              ? { ...t, salesExpectationFacts: facts }
+                              ? { ...t, opportunityFacts: facts }
                               : t)
                           : prev.targets,
                       }))
                     }}
                   />
                   <span className="text-[11px] text-slate-700">{entry.label}</span>
-                  <span className={`text-[10px] font-bold ml-auto ${entry.score > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-                    {entry.score > 0 ? `+${entry.score}` : entry.score}点
-                  </span>
                 </label>
               ))}
-              {!item.salesExpectationFacts && item.salesExpectation !== undefined && (
+              {item.opportunityStatusReason && <p className="text-[10px] text-slate-600">対象判定理由: {item.opportunityStatusReason}</p>}
+              {item.prioritySegmentReason && <p className="text-[10px] text-slate-600">セグメント理由: {item.prioritySegmentReason}</p>}
+              {item.opportunityFitReason && <p className="text-[10px] text-slate-600">判定メモ: {item.opportunityFitReason}</p>}
+              {!item.opportunityFacts && item.salesExpectation !== undefined && (
                 <p className="text-[10px] text-slate-500">
-                  旧AIスコア：{item.salesExpectation}点（参考）— いずれかをチェックすると新方式へ移行します。
+                  旧AIスコア：{item.salesExpectation}点（参考）— 新方式の観測事実が未設定です。
                 </p>
               )}
-              {item.salesExpectationBreakdown && (
+              {item.opportunityBreakdown && (
                 <details>
-                  <summary className="text-[10px] text-slate-500 cursor-pointer">AIの確認候補（参考）</summary>
-                  <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{item.salesExpectationBreakdown}</pre>
+                  <summary className="text-[10px] text-slate-500 cursor-pointer">AIの観測候補（参考）</summary>
+                  <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{item.opportunityBreakdown}</pre>
                 </details>
               )}
             </div>
 
-            {item.salesExpectationReason && (
-              <div>
-                <p className="text-[10px] text-slate-400 mb-0.5">判定根拠（OS①確定）</p>
-                <p className="text-slate-600 text-[11px] leading-relaxed">{item.salesExpectationReason}</p>
-              </div>
-            )}
-            {item.salesExpectationBreakdown && (
+            {item.opportunityBreakdown && (
               <div>
                 <button
                   className="text-[10px] text-slate-400 hover:text-slate-600 flex items-center gap-1 transition"
@@ -2528,7 +2540,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 </button>
                 {showBreakdown && (
                   <pre className="mt-1 text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap bg-slate-50 rounded-lg p-2 border border-slate-100">
-                    {item.salesExpectationBreakdown}
+                    {item.opportunityBreakdown}
                   </pre>
                 )}
               </div>

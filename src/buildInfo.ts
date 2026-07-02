@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/01 仮説検証の提案文A/B 改行禁止・単一行化でパーサー切り詰め修正";
+export const BUILD_LABEL = "07/02 営業対象判定とUTAGE優先の案件評価導入";

@@ -5,7 +5,13 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
-import { calcSalesExpectationScore, SALES_EXP_ITEMS } from '../../utils/salesExpUtils'
+import {
+  getOpportunityFitLabel,
+  getOpportunityStatusLabel,
+  getPrioritySegmentLabel,
+  isUTAGEPriority,
+  OPPORTUNITY_FACT_ITEMS,
+} from '../../utils/opportunityUtils'
 
 type Mode = 'twitter' | 'instagram' | 'threads'
 type ParseSummary = {
@@ -163,7 +169,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           accountName: newTarget.accountName,
           url: newTarget.url || prefill?.handle || '',
           channel: newTarget.channel,
-          track: newTarget.track as 'FT' | 'NT' | 'SKIP',
+          track: newTarget.track as 'FT' | 'NT' | 'UT' | 'SKIP',
           hypothesis: newTarget.hypothesis,
           startDate: newTarget.startDate || todayStr(),
           currentStep: 'S1',
@@ -180,6 +186,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           salesExpectationReason: newTarget.salesExpectationReason,
           salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
           salesExpectationFacts: newTarget.salesExpectationFacts,
+          opportunityStatus: newTarget.opportunityStatus,
+          opportunityStatusReason: newTarget.opportunityStatusReason,
+          prioritySegment: newTarget.prioritySegment,
+          prioritySegmentReason: newTarget.prioritySegmentReason,
+          opportunityFacts: newTarget.opportunityFacts,
+          opportunityFit: newTarget.opportunityFit,
+          opportunityFitReason: newTarget.opportunityFitReason,
+          opportunityBreakdown: newTarget.opportunityBreakdown,
           partnerFlag: newTarget.partnerFlag,
           trackReason: newTarget.trackReason,
           estimatedProduct: newTarget.estimatedProduct,
@@ -226,7 +240,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           id: pid, targetId: tgt.id,
           caseId: tgt.caseId || null, os1Output: tgt.aiOutput || null,
           accountName: tgt.accountName, url: tgt.url, channel: tgt.channel,
-          track: tgt.track as 'FT' | 'NT' | 'SKIP', hypothesis: tgt.hypothesis,
+          track: tgt.track as 'FT' | 'NT' | 'UT' | 'SKIP', hypothesis: tgt.hypothesis,
           startDate: tgt.startDate || todayStr(),
           currentStep: 'S1', stepHistory: [{ step: 'S1', date: todayStr() }],
           repCount: 0, dmCount: 0, lastContactDate: todayStr(),
@@ -235,6 +249,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           salesExpectationReason: tgt.salesExpectationReason,
           salesExpectationBreakdown: tgt.salesExpectationBreakdown,
           salesExpectationFacts: tgt.salesExpectationFacts,
+          opportunityStatus: tgt.opportunityStatus,
+          opportunityStatusReason: tgt.opportunityStatusReason,
+          prioritySegment: tgt.prioritySegment,
+          prioritySegmentReason: tgt.prioritySegmentReason,
+          opportunityFacts: tgt.opportunityFacts,
+          opportunityFit: tgt.opportunityFit,
+          opportunityFitReason: tgt.opportunityFitReason,
+          opportunityBreakdown: tgt.opportunityBreakdown,
           partnerFlag: tgt.partnerFlag,
           trackReason: tgt.trackReason,
           estimatedProduct: tgt.estimatedProduct,
@@ -319,7 +341,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             accountName: newTarget.accountName,
             url: urlFallback,
             channel: ch,
-            track: newTarget.track as 'FT' | 'NT' | 'SKIP',
+            track: newTarget.track as 'FT' | 'NT' | 'UT' | 'SKIP',
             hypothesis: newTarget.hypothesis,
             startDate: newTarget.startDate || todayStr(),
             currentStep: 'S1',
@@ -332,6 +354,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             salesExpectationReason: newTarget.salesExpectationReason,
             salesExpectationBreakdown: newTarget.salesExpectationBreakdown,
             salesExpectationFacts: newTarget.salesExpectationFacts,
+            opportunityStatus: newTarget.opportunityStatus,
+            opportunityStatusReason: newTarget.opportunityStatusReason,
+            prioritySegment: newTarget.prioritySegment,
+            prioritySegmentReason: newTarget.prioritySegmentReason,
+            opportunityFacts: newTarget.opportunityFacts,
+            opportunityFit: newTarget.opportunityFit,
+            opportunityFitReason: newTarget.opportunityFitReason,
+            opportunityBreakdown: newTarget.opportunityBreakdown,
             partnerFlag: newTarget.partnerFlag,
             trackReason: newTarget.trackReason,
             estimatedProduct: newTarget.estimatedProduct,
@@ -398,6 +428,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         salesExpectationReason: tgt.salesExpectationReason,
         salesExpectationBreakdown: tgt.salesExpectationBreakdown,
         salesExpectationFacts: tgt.salesExpectationFacts,
+        opportunityStatus: tgt.opportunityStatus,
+        opportunityStatusReason: tgt.opportunityStatusReason,
+        prioritySegment: tgt.prioritySegment,
+        prioritySegmentReason: tgt.prioritySegmentReason,
+        opportunityFacts: tgt.opportunityFacts,
+        opportunityFit: tgt.opportunityFit,
+        opportunityFitReason: tgt.opportunityFitReason,
+        opportunityBreakdown: tgt.opportunityBreakdown,
         partnerFlag: tgt.partnerFlag,
         trackReason: tgt.trackReason,
         estimatedProduct: tgt.estimatedProduct,
@@ -490,7 +528,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         accountName: tgt.accountName,
         url: tgt.url,
         channel: tgt.channel,
-        track: tgt.track as 'FT' | 'NT' | 'SKIP',
+        track: tgt.track as 'FT' | 'NT' | 'UT' | 'SKIP',
         hypothesis: tgt.hypothesis,
         startDate: tgt.startDate || todayStr(),
         currentStep: 'S1',
@@ -507,6 +545,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         salesExpectationReason: tgt.salesExpectationReason,
         salesExpectationBreakdown: tgt.salesExpectationBreakdown,
         salesExpectationFacts: tgt.salesExpectationFacts,
+        opportunityStatus: tgt.opportunityStatus,
+        opportunityStatusReason: tgt.opportunityStatusReason,
+        prioritySegment: tgt.prioritySegment,
+        prioritySegmentReason: tgt.prioritySegmentReason,
+        opportunityFacts: tgt.opportunityFacts,
+        opportunityFit: tgt.opportunityFit,
+        opportunityFitReason: tgt.opportunityFitReason,
+        opportunityBreakdown: tgt.opportunityBreakdown,
         partnerFlag: tgt.partnerFlag,
         trackReason: tgt.trackReason,
         estimatedProduct: tgt.estimatedProduct,
@@ -817,10 +863,10 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
               onUpdateFacts={facts => saveData(prev => ({
                 ...prev,
                 targets: prev.targets.map(target => target.id === selectedTarget.id
-                  ? { ...target, salesExpectationFacts: facts }
+                  ? { ...target, opportunityFacts: facts }
                   : target),
                 pipeline: prev.pipeline.map(item => item.targetId === selectedTarget.id
-                  ? { ...item, salesExpectationFacts: facts }
+                  ? { ...item, opportunityFacts: facts }
                   : item),
               }))}
               onToPipeline={() => handleToPipeline(selectedTarget.id)}
@@ -917,7 +963,7 @@ function TargetDetail({ target: t, role, toast, confirm, onUpdateFacts, onToPipe
   role: Role
   toast: ToastAPI
   confirm: ConfirmAPI
-  onUpdateFacts: (facts: NonNullable<Target['salesExpectationFacts']>) => void
+  onUpdateFacts: (facts: NonNullable<Target['opportunityFacts']>) => void
   onToPipeline: () => void
   onBackToOS0: () => void
   onForceToOS2: () => void
@@ -1005,37 +1051,55 @@ function TargetDetail({ target: t, role, toast, confirm, onUpdateFacts, onToPipe
         <p className="text-slate-700">{t.hypothesis || '-'}</p>
       </div>
 
-      <div className="flex flex-col gap-2 bg-amber-50 border border-amber-200 rounded-xl p-3">
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] font-bold text-amber-700">営業期待値チェック</p>
-          <span className="text-sm font-bold text-amber-700">
-            {calcSalesExpectationScore(t.salesExpectationFacts || {})} / 40点
-          </span>
+      <div className="flex flex-col gap-3 bg-amber-50 border border-amber-200 rounded-xl p-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px]">
+          <div className="bg-white/70 rounded-lg p-2">
+            <p className="text-slate-400 text-[10px]">営業対象判定</p>
+            <p className="font-bold text-slate-800">{getOpportunityStatusLabel(t.opportunityStatus)}</p>
+          </div>
+          <div className="bg-white/70 rounded-lg p-2">
+            <p className="text-slate-400 text-[10px]">優先セグメント</p>
+            <p className={`font-bold ${isUTAGEPriority(t) ? 'text-violet-700' : 'text-slate-800'}`}>{getPrioritySegmentLabel(t.prioritySegment)}</p>
+          </div>
+          <div className="bg-white/70 rounded-lg p-2">
+            <p className="text-slate-400 text-[10px]">案件適合度</p>
+            <p className={`font-bold ${t.opportunityFit === 'high' ? 'text-emerald-700' : t.opportunityFit === 'medium' ? 'text-amber-700' : 'text-slate-800'}`}>{getOpportunityFitLabel(t.opportunityFit)}</p>
+          </div>
         </div>
-        {SALES_EXP_ITEMS.map(entry => (
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] font-bold text-amber-700">観測事実</p>
+          {t.opportunityBreakdown && <span className="text-[10px] text-slate-500">AIの観測候補あり</span>}
+        </div>
+        {OPPORTUNITY_FACT_ITEMS.map(entry => (
           <label key={entry.key} className={`flex items-center gap-2 ${role === 'admin' ? 'cursor-pointer' : ''}`}>
             <input
               type="checkbox"
               disabled={role !== 'admin'}
-              checked={!!t.salesExpectationFacts?.[entry.key]}
+              checked={!!t.opportunityFacts?.[entry.key]}
               onChange={event => onUpdateFacts({
-                ...(t.salesExpectationFacts || {}),
+                ...(t.opportunityFacts || {}),
                 [entry.key]: event.target.checked,
               })}
             />
             <span className="text-[11px] text-slate-700">{entry.label}</span>
-            <span className={`text-[10px] font-bold ml-auto ${entry.score > 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
-              {entry.score > 0 ? `+${entry.score}` : entry.score}点
-            </span>
           </label>
         ))}
-        {t.salesExpectationBreakdown && (
+        {t.opportunityStatusReason && (
+          <p className="text-[10px] text-slate-600">対象判定理由: {t.opportunityStatusReason}</p>
+        )}
+        {t.prioritySegmentReason && (
+          <p className="text-[10px] text-slate-600">セグメント理由: {t.prioritySegmentReason}</p>
+        )}
+        {t.opportunityFitReason && (
+          <p className="text-[10px] text-slate-600">判定メモ: {t.opportunityFitReason}</p>
+        )}
+        {t.opportunityBreakdown && (
           <details className="mt-1">
-            <summary className="text-[10px] text-slate-500 cursor-pointer">AIの確認候補を見る</summary>
-            <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{t.salesExpectationBreakdown}</pre>
+            <summary className="text-[10px] text-slate-500 cursor-pointer">AIの観測候補を見る</summary>
+            <pre className="mt-1 text-[10px] text-slate-600 whitespace-pre-wrap">{t.opportunityBreakdown}</pre>
           </details>
         )}
-        {!t.salesExpectationFacts && t.salesExpectation !== undefined && (
+        {!t.opportunityFacts && t.salesExpectation !== undefined && (
           <p className="text-[10px] text-slate-500">旧AIスコア：{t.salesExpectation}点（参考）— チェックすると新方式へ移行します。</p>
         )}
       </div>

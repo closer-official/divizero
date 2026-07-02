@@ -768,6 +768,12 @@ function PdcaSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
   const [rawOutput, setRawOutput] = useState('')
   const [parseError, setParseError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editingMetricsId, setEditingMetricsId] = useState<string | null>(null)
+  const [editPostedAt, setEditPostedAt] = useState('')
+  const [editImpressions, setEditImpressions] = useState('')
+  const [editFollows, setEditFollows] = useState('')
+  const [editSaves, setEditSaves] = useState('')
+  const [editProfileVisits, setEditProfileVisits] = useState('')
 
   function buildPrompt() {
     const spec = prompts.OS04_PDCA || ''
@@ -781,6 +787,7 @@ function PdcaSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
       id: uid(),
       postText: postText.trim(),
       postedAt: postedAt || undefined,
+      metricsRecordedAt: (impressions || follows || saves || profileVisits) ? todayStr() : undefined,
       hypothesis: hypothesis || undefined,
       usedLens: usedLens ? [usedLens] : undefined,
       postType,
@@ -797,6 +804,44 @@ function PdcaSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
     setImpressions(''); setFollows(''); setSaves(''); setProfileVisits(''); setRawOutput('')
     setAddOpen(false)
     toast.show('PDCA記録を追加しました')
+  }
+
+  function beginEditMetrics(p: OwnPostPDCA) {
+    setEditingMetricsId(p.id)
+    setEditPostedAt(p.postedAt || '')
+    setEditImpressions(p.metrics.impressions != null ? String(p.metrics.impressions) : '')
+    setEditFollows(p.metrics.follows != null ? String(p.metrics.follows) : '')
+    setEditSaves(p.metrics.saves != null ? String(p.metrics.saves) : '')
+    setEditProfileVisits(p.metrics.profileVisits != null ? String(p.metrics.profileVisits) : '')
+  }
+
+  function cancelEditMetrics() {
+    setEditingMetricsId(null)
+    setEditPostedAt('')
+    setEditImpressions('')
+    setEditFollows('')
+    setEditSaves('')
+    setEditProfileVisits('')
+  }
+
+  function handleSaveMetrics(id: string) {
+    saveData(prev => ({
+      ...prev,
+      ownPostPdcas: (prev.ownPostPdcas || []).map(p => p.id === id ? {
+        ...p,
+        postedAt: editPostedAt || undefined,
+        metricsRecordedAt: todayStr(),
+        metrics: {
+          ...p.metrics,
+          impressions: editImpressions ? Number(editImpressions) : undefined,
+          follows: editFollows ? Number(editFollows) : undefined,
+          saves: editSaves ? Number(editSaves) : undefined,
+          profileVisits: editProfileVisits ? Number(editProfileVisits) : undefined,
+        },
+      } : p),
+    }))
+    cancelEditMetrics()
+    toast.show('記録を更新しました')
   }
 
   function handleParsePdca(id: string) {
@@ -879,6 +924,7 @@ function PdcaSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
               </div>
             ))}
           </div>
+          <p className="text-[10px] text-slate-400">数値は空欄で追加して、3日後や1週間後に「記録編集」で追記できます。</p>
           <div className="flex gap-2">
             <button className="btn-sec text-xs py-2 flex-1" onClick={() => setAddOpen(false)}>キャンセル</button>
             <button className="btn-primary text-xs py-2 flex-1 justify-center" onClick={handleAdd}>追加</button>
@@ -907,18 +953,53 @@ function PdcaSubTab({ data, saveData, prompts, role, toast }: Tab6Props) {
                     {p.postedAt && <span className="text-[10px] text-slate-400">{p.postedAt}</span>}
                     {p.metrics.impressions != null && <span className="text-[10px] text-slate-500">インプ{p.metrics.impressions}</span>}
                     {p.metrics.follows != null && <span className="text-[10px] text-emerald-600">フォロー{p.metrics.follows}</span>}
+                    {p.metricsRecordedAt && <span className="text-[10px] text-slate-300">記録{p.metricsRecordedAt}</span>}
                   </div>
                   <p className="text-xs text-slate-700 line-clamp-2">{p.postText}</p>
                 </div>
-                {role === 'admin' && (
-                  <button className="shrink-0 text-slate-300 hover:text-rose-500 transition text-sm p-1" onClick={e => { e.stopPropagation(); saveData(prev => ({ ...prev, ownPostPdcas: (prev.ownPostPdcas || []).filter(x => x.id !== p.id) })); toast.show('削除しました') }}>
-                    <i className="fa-solid fa-trash-can" />
+                <div className="flex flex-col gap-2 shrink-0">
+                  <button className="btn-sec text-[10px] py-1 px-2" onClick={e => { e.stopPropagation(); beginEditMetrics(p); setSelectedId(p.id) }}>
+                    <i className="fa-solid fa-pen mr-1" />記録編集
                   </button>
-                )}
+                  {role === 'admin' && (
+                    <button className="shrink-0 text-slate-300 hover:text-rose-500 transition text-sm p-1" onClick={e => { e.stopPropagation(); saveData(prev => ({ ...prev, ownPostPdcas: (prev.ownPostPdcas || []).filter(x => x.id !== p.id) })); toast.show('削除しました') }}>
+                      <i className="fa-solid fa-trash-can" />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {selectedId === p.id && (
                 <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+                  {editingMetricsId === p.id && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col gap-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-bold text-slate-700">記録編集</p>
+                        <span className="text-[10px] text-slate-400">あとから追記してOK</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-500">投稿日時</label>
+                        <input className="input-base text-xs" value={editPostedAt} onChange={e => setEditPostedAt(e.target.value)} placeholder="例: 2026/06/28" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { label: 'インプ', v: editImpressions, set: setEditImpressions },
+                          { label: 'フォロー', v: editFollows, set: setEditFollows },
+                          { label: '保存', v: editSaves, set: setEditSaves },
+                          { label: 'プロフ遷移', v: editProfileVisits, set: setEditProfileVisits },
+                        ] as const).map(({ label, v, set }) => (
+                          <div key={label} className="flex flex-col gap-0.5">
+                            <span className="text-[10px] text-slate-400 text-center">{label}</span>
+                            <input type="number" min="0" className="input-base text-xs text-center py-1 px-1" placeholder="0" value={v} onChange={e => set(e.target.value)} />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button className="btn-sec text-xs py-2 flex-1" onClick={cancelEditMetrics}>キャンセル</button>
+                        <button className="btn-primary text-xs py-2 flex-1 justify-center" onClick={() => handleSaveMetrics(p.id)}>更新</button>
+                      </div>
+                    </div>
+                  )}
                   {p.analysis ? (
                     <div className="flex flex-col gap-2 text-xs">
                       <div className="grid grid-cols-2 gap-2">

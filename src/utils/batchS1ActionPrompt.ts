@@ -1,6 +1,7 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
 import { getDisplayScore } from './salesExpUtils'
+import { formatOpportunityFacts, getOpportunityFitLabel, getOpportunityStatusLabel, getPrioritySegmentLabel } from './opportunityUtils'
 
 export interface BatchS1ActionItem {
   index: number
@@ -36,6 +37,11 @@ function buildCaseSection(item: BatchS1ActionItem): string {
 トラック：${p.track}
 事前仮説：${p.hypothesis || '未設定'}
 営業期待値スコア：${getDisplayScore(p) ?? '未設定'}点
+営業対象判定：${getOpportunityStatusLabel(p.opportunityStatus)}
+優先セグメント：${getPrioritySegmentLabel(p.prioritySegment)}
+案件適合度：${getOpportunityFitLabel(p.opportunityFit)}
+観測事実：
+${formatOpportunityFacts(p.opportunityFacts)}
 
 ■ 接触した投稿
 投稿種別：${t.targetPostType || '—'}

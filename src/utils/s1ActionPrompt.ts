@@ -1,6 +1,12 @@
 import type { Observation, PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
 import { getDisplayScore } from './salesExpUtils'
+import {
+  formatOpportunityFacts,
+  getOpportunityFitLabel,
+  getOpportunityStatusLabel,
+  getPrioritySegmentLabel,
+} from './opportunityUtils'
 
 function formatObservations(observations: Observation[] | undefined): string {
   if (!observations || observations.length === 0) {
@@ -59,6 +65,10 @@ export function buildS1ActionPrompt(
     .replace('{{partnerFlag}}', item.partnerFlag || '（未記録）')
     .replace('{{hypothesis}}', item.hypothesis || '未設定')
     .replace('{{salesExpectation}}', String(getDisplayScore(item) ?? '未設定'))
+    .replace('{{opportunityStatus}}', getOpportunityStatusLabel(item.opportunityStatus))
+    .replace('{{prioritySegment}}', getPrioritySegmentLabel(item.prioritySegment))
+    .replace('{{opportunityFit}}', getOpportunityFitLabel(item.opportunityFit))
+    .replace('{{opportunityFacts}}', formatOpportunityFacts(item.opportunityFacts))
     .replace('{{primaryHypothesisPattern}}', item.primaryHypothesisPattern || '（OS①カルテ未作成）')
     .replace('{{naturalQuestion}}', item.naturalQuestion || '（OS①カルテ未作成 — 仮説から自力で問いを生成すること）')
     .replace('{{forbiddenAngles}}', forbiddenAnglesStr)

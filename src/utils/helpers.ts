@@ -1,5 +1,6 @@
-import type { AppData, ExcludedAccount, TrashItem, TouchReaction, Touch, SalesExpectationFacts } from '../types';
+import type { AppData, ExcludedAccount, TrashItem, TouchReaction, Touch, SalesExpectationFacts, OpportunityFacts, OpportunityFit, OpportunityStatus, PrioritySegment } from '../types';
 import { getDisplayScore } from './salesExpUtils'
+import { formatOpportunityFacts, getOpportunityFitLabel, getOpportunityStatusLabel, getPrioritySegmentLabel } from './opportunityUtils'
 
 export function toReactionArr(r: TouchReaction | TouchReaction[] | string | undefined): TouchReaction[] {
   if (!r) return []
@@ -140,7 +141,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; salesExpectationFacts?: SalesExpectationFacts; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; salesExpectationFacts?: SalesExpectationFacts; opportunityStatus?: OpportunityStatus; prioritySegment?: PrioritySegment; opportunityFit?: OpportunityFit; opportunityFacts?: OpportunityFacts; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
@@ -151,6 +152,10 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     `現在ステップ: ${item.currentStep}`,
     `接触開始: ${item.startDate || '-'}`,
   ];
+  if (item.opportunityStatus) lines.push(`営業対象判定: ${getOpportunityStatusLabel(item.opportunityStatus)}`);
+  if (item.prioritySegment) lines.push(`優先セグメント: ${getPrioritySegmentLabel(item.prioritySegment)}`);
+  if (item.opportunityFit) lines.push(`案件適合度: ${getOpportunityFitLabel(item.opportunityFit)}`);
+  if (item.opportunityFacts) lines.push(`観測事実:\n${formatOpportunityFacts(item.opportunityFacts)}`);
   const displayScore = getDisplayScore(item)
   if (displayScore !== undefined) {
     const scoreLabel = item.salesExpectationFacts ? '（チェック算出）' : '（旧AI判定）'

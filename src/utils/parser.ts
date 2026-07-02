@@ -1,4 +1,5 @@
-import type { Observation } from '../types'
+import type { Observation, OpportunityFacts } from '../types'
+import { normalizeOpportunityFit, normalizeOpportunityStatus, normalizePrioritySegment } from './opportunityUtils'
 
 export function field(text: string, label: string): string {
   const re = new RegExp(label + '[：:]\\s*([^\\n]+)');
@@ -102,11 +103,54 @@ function extractSalesExp(text: string): { salesExpectation?: number; salesExpect
   };
 }
 
+function parseYesNoUnknown(value: string): boolean | undefined {
+  if (!value) return undefined
+  if (/YES|有|確認できる|確認済み/.test(value)) return true
+  if (/NO|無|なし|確認できない/.test(value)) return false
+  return undefined
+}
+
+function extractOpportunityAssessment(text: string): {
+  opportunityStatus?: ReturnType<typeof normalizeOpportunityStatus>;
+  opportunityStatusReason?: string;
+  prioritySegment?: ReturnType<typeof normalizePrioritySegment>;
+  prioritySegmentReason?: string;
+  opportunityFacts?: OpportunityFacts;
+  opportunityFit?: ReturnType<typeof normalizeOpportunityFit>;
+  opportunityFitReason?: string;
+  opportunityBreakdown?: string;
+} {
+  const statusBlock = block(text, '営業対象判定')
+  const segmentBlock = block(text, '優先セグメント')
+  const factsBlock = block(text, '観測事実')
+  const fitBlock = block(text, '案件適合度')
+  const noteBlock = block(text, '判定メモ')
+  const facts: OpportunityFacts = {
+    usesUtageConfirmed: parseYesNoUnknown(field(factsBlock, 'UTAGE利用が確認できる')),
+    sellsProductConfirmed: parseYesNoUnknown(field(factsBlock, '商品販売の実体が確認できる')),
+    hasExistingLpOrHpConfirmed: parseYesNoUnknown(field(factsBlock, '既存LP/HPが確認できる')),
+    hasLimitedSalesFlowConfirmed: parseYesNoUnknown(field(factsBlock, '販売導線が限定的である')),
+    lacksProductInfoConfirmed: parseYesNoUnknown(field(factsBlock, '商品理解に必要な情報不足が確認できる')),
+  }
+  const hasFacts = Object.values(facts).some(v => v !== undefined)
+  return {
+    opportunityStatus: normalizeOpportunityStatus(statusBlock.split('\n')[0]?.trim()),
+    opportunityStatusReason: field(statusBlock, '理由') || undefined,
+    prioritySegment: normalizePrioritySegment(segmentBlock.split('\n')[0]?.trim()),
+    prioritySegmentReason: field(segmentBlock, '理由') || undefined,
+    opportunityFacts: hasFacts ? facts : undefined,
+    opportunityFit: normalizeOpportunityFit(fitBlock.split('\n')[0]?.trim()),
+    opportunityFitReason: noteBlock || undefined,
+    opportunityBreakdown: factsBlock || undefined,
+  }
+}
+
 export function parseOS1(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
   const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
-  const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
+  const trackFirstLine = trackBlock.split('\n')[0].trim();
+  const track = /UT/.test(trackFirstLine) ? 'UT' : trackFirstLine.match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
   const dmSplit = contactBlock.includes('▼初回DM案');
   const replyPart = dmSplit ? contactBlock.split('▼初回DM案')[0] : contactBlock;
@@ -122,6 +166,7 @@ export function parseOS1(text: string) {
   const dmRoute = field(text, 'DM開放');
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
+  const opportunityAssessment = extractOpportunityAssessment(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
@@ -134,6 +179,7 @@ export function parseOS1(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '', dmNote,
     channel: 'twitter' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
+    ...opportunityAssessment,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
@@ -142,7 +188,8 @@ export function parseOS1Instagram(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
   const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
-  const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
+  const trackFirstLine = trackBlock.split('\n')[0].trim();
+  const track = /UT/.test(trackFirstLine) ? 'UT' : trackFirstLine.match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
   const commentPart = contactBlock.split(/▼ストーリー返信案/)[0];
   const caM = commentPart.match(/案A[（(]実行案[）)][:：][ \t]*([\s\S]+?)(?=\n案B|\n▼|\n【|$)/);
@@ -161,6 +208,7 @@ export function parseOS1Instagram(text: string) {
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const caseId = field(text, '案件ID');
   const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
+  const opportunityAssessment = extractOpportunityAssessment(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId, accountName: field(text, 'アカウント名'), url: username,
@@ -174,6 +222,7 @@ export function parseOS1Instagram(text: string) {
     storyA: saM ? cleanMsg(saM[1]) : '', storyB: sbM ? cleanMsg(sbM[1]) : '',
     storyNote, dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'instagram' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
+    ...opportunityAssessment,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }
@@ -182,7 +231,8 @@ export function parseOS1Threads(text: string) {
   const contactJudgeBlock = block(text, '接触判断');
   const skipJudge = resolveSkipJudge(contactJudgeBlock, text);
   const trackBlock = block(text, '優先度判定');
-  const track = trackBlock.split('\n')[0].match(/優先|FT/) ? 'FT' : 'NT';
+  const trackFirstLine = trackBlock.split('\n')[0].trim();
+  const track = /UT/.test(trackFirstLine) ? 'UT' : trackFirstLine.match(/優先|FT/) ? 'FT' : 'NT';
   const contactBlock = block(text, '初回接触案');
   const dmSplit = contactBlock.includes('▼初回DM案');
   const replyPart = dmSplit ? contactBlock.split('▼初回DM案')[0] : contactBlock;
@@ -197,6 +247,7 @@ export function parseOS1Threads(text: string) {
   const partnerFlag = firstLineOf(text, '提携候補フラグ') || field(text, '提携候補フラグ');
   const nextAction = block(text, '次にやること').split('\n').filter(l => l.trim()).join(' ').trim();
   const { salesExpectation, salesExpectationReason, salesExpectationBreakdown } = extractSalesExp(text);
+  const opportunityAssessment = extractOpportunityAssessment(text);
   const { primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations } = extractHypothesisKarte(text);
   return {
     caseId: field(text, '案件ID'),
@@ -210,6 +261,7 @@ export function parseOS1Threads(text: string) {
     contactA: caM ? cleanMsg(caM[1]) : '', contactB: cbM ? cleanMsg(cbM[1]) : '',
     dmA: daM ? cleanMsg(daM[1]) : '', dmB: dbM ? cleanMsg(dbM[1]) : '',
     dmNote, channel: 'threads' as const, salesExpectation, salesExpectationReason, salesExpectationBreakdown,
+    ...opportunityAssessment,
     primaryHypothesisPattern, naturalQuestion, forbiddenAngles, observations,
   };
 }

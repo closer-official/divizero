@@ -13,7 +13,7 @@ import Tab4 from './components/tabs/Tab4'
 import Tab5 from './components/tabs/Tab5'
 import Tab6 from './components/tabs/Tab6'
 import TabHome from './components/tabs/TabHome'
-import type { PipelineItem, SalesExpectationFacts, Screening } from './types'
+import type { OpportunityFacts, OpportunityFit, OpportunityStatus, PipelineItem, PrioritySegment, SalesExpectationFacts, Screening } from './types'
 import type { TabId } from './services/home/homeTypes'
 
 export interface ToastAPI {
@@ -34,6 +34,10 @@ export interface PrefilledOS3 {
   salesExpectation?: number
   salesExpectationReason?: string
   salesExpectationFacts?: SalesExpectationFacts
+  opportunityStatus?: OpportunityStatus
+  prioritySegment?: PrioritySegment
+  opportunityFit?: OpportunityFit
+  opportunityFacts?: OpportunityFacts
 }
 
 export default function App() {
@@ -170,6 +174,10 @@ export default function App() {
       salesExpectationReason: item.salesExpectationReason,
       salesExpectationBreakdown: item.salesExpectationBreakdown,
       salesExpectationFacts: item.salesExpectationFacts,
+      opportunityStatus: item.opportunityStatus,
+      prioritySegment: item.prioritySegment,
+      opportunityFit: item.opportunityFit,
+      opportunityFacts: item.opportunityFacts,
     }
     toast.show(`「${item.accountName}」をクローズしました。OS③（案件検証）に引き継ぎます…`, 2500)
     setTimeout(() => {

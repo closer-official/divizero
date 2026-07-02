@@ -1,6 +1,7 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction } from './helpers'
 import { getDisplayScore } from './salesExpUtils'
+import { formatOpportunityFacts, getOpportunityFitLabel, getOpportunityStatusLabel, getPrioritySegmentLabel } from './opportunityUtils'
 
 export interface OS2ConversationResult {
   judgment: string
@@ -54,7 +55,11 @@ export function buildOS2ConversationPrompt(
     ...((item.isInbound || item.inbound_signal) ? [
       `【起点】インバウンド（${(item.inboundActions?.length ? item.inboundActions : item.inbound_signal ? [item.inbound_signal.type] : []).join('・')}）- ${item.inbound_signal?.date ?? '日付不明'}${item.inbound_signal?.memo ? ' / ' + item.inbound_signal.memo : ''}`,
     ] : []),
-    `【営業期待値スコア】${getDisplayScore(item) ?? '未設定'}点（現在のチェックスコア）`,
+    `【営業期待値スコア】${getDisplayScore(item) ?? '未設定'}点（旧互換参照値）`,
+    `【営業対象判定】${getOpportunityStatusLabel(item.opportunityStatus)}`,
+    `【優先セグメント】${getPrioritySegmentLabel(item.prioritySegment)}`,
+    `【案件適合度】${getOpportunityFitLabel(item.opportunityFit)}`,
+    `【観測事実】\n${formatOpportunityFacts(item.opportunityFacts)}`,
     `【事前仮説】${item.hypothesis ?? '未設定'}`,
     `【接触開始日】${item.startDate ?? '不明'}`,
     `【現在ステップ】${item.currentStep}`,
