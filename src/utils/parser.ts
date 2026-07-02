@@ -325,6 +325,67 @@ export function parseOS0NG(text: string, channel: string) {
   return ngs;
 }
 
+// ── OS② 状態指示行（[SLEEP]/[ARCHIVE]/[CLOSE]）のパース ──────────
+// OS②プロンプトは判定=休眠/保管/クローズ時に必ず対応行を出力する契約。
+// これを取り込み、state と recontact_date の手入力（＝転記漏れ→通知漏れ）を排除する。
+export interface OS2StateDirective {
+  state: 'sleeping' | 'archived' | 'closed';
+  trigger: string;           // 休眠契機 / 保管契機 / クローズ契機
+  recontactTrigger?: string; // 再接触トリガー（[SLEEP]/[ARCHIVE]のみ）
+  recontactDate?: string;    // YYYY-MM-DD。既定：休眠=+30日 / 保管=+180日（CLAUDE.mdの目安の下限）
+  logDate?: string;          // 行内の 日付=
+  caseId?: string;           // 行内の 案件ID=
+}
+
+function pipeField(line: string, key: string): string {
+  const m = line.match(new RegExp(key + '=([^|]*)'));
+  return m ? m[1].trim() : '';
+}
+
+export function parseOS2StateDirective(text: string, now: Date = new Date()): OS2StateDirective | null {
+  const findLine = (tag: string): string => {
+    const m = text.match(new RegExp('^\\[' + tag + '\\][^\\n]*', 'm'));
+    return m ? m[0] : '';
+  };
+  const addDays = (days: number): string => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  const sleepLine = findLine('SLEEP');
+  if (sleepLine) {
+    return {
+      state: 'sleeping',
+      trigger: pipeField(sleepLine, '休眠契機'),
+      recontactTrigger: pipeField(sleepLine, '再接触トリガー'),
+      recontactDate: addDays(30),
+      logDate: pipeField(sleepLine, '日付'),
+      caseId: pipeField(sleepLine, '案件ID'),
+    };
+  }
+  const archiveLine = findLine('ARCHIVE');
+  if (archiveLine) {
+    return {
+      state: 'archived',
+      trigger: pipeField(archiveLine, '保管契機'),
+      recontactTrigger: pipeField(archiveLine, '再接触トリガー'),
+      recontactDate: addDays(180),
+      logDate: pipeField(archiveLine, '日付'),
+      caseId: pipeField(archiveLine, '案件ID'),
+    };
+  }
+  const closeLine = findLine('CLOSE');
+  if (closeLine) {
+    return {
+      state: 'closed',
+      trigger: pipeField(closeLine, 'クローズ契機'),
+      logDate: pipeField(closeLine, '日付'),
+      caseId: pipeField(closeLine, '案件ID'),
+    };
+  }
+  return null;
+}
+
 export function parseOS2(text: string) {
   const replyBlock = block(text, '次の返信案');
   const raM = replyBlock.match(/案A[（(]前進案[）)]：([^\n]+)/);
@@ -340,6 +401,9 @@ export function parseOS2(text: string) {
     replyA: raM ? cleanMsg(raM[1]) : cleanMsg(block(text, '次の返信案').split('\n')[0]),
     replyB: rbM ? cleanMsg(rbM[1]) : '',
     ngAction: firstLineOf(text, '今やってはいけないこと'),
+    // 判定=休眠/保管/クローズ時の状態指示（該当なしは null）。
+    // Tab2側で state / recontact_date への反映に使用する（確認ダイアログ経由を推奨）。
+    stateDirective: parseOS2StateDirective(text),
   };
 }
 

@@ -1,18 +1,18 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
 import { buildTouchConvLog, uid } from './utils/helpers'
 import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
-import Tab0 from './components/tabs/Tab0'
-import Tab1 from './components/tabs/Tab1'
-import Tab2 from './components/tabs/Tab2'
-import Tab3 from './components/tabs/Tab3'
-import Tab4 from './components/tabs/Tab4'
-import Tab5 from './components/tabs/Tab5'
-import Tab6 from './components/tabs/Tab6'
-import TabHome from './components/tabs/TabHome'
+const Tab0 = lazy(() => import('./components/tabs/Tab0'))
+const Tab1 = lazy(() => import('./components/tabs/Tab1'))
+const Tab2 = lazy(() => import('./components/tabs/Tab2'))
+const Tab3 = lazy(() => import('./components/tabs/Tab3'))
+const Tab4 = lazy(() => import('./components/tabs/Tab4'))
+const Tab5 = lazy(() => import('./components/tabs/Tab5'))
+const Tab6 = lazy(() => import('./components/tabs/Tab6'))
+const TabHome = lazy(() => import('./components/tabs/TabHome'))
 import type { OpportunityFacts, OpportunityFit, OpportunityStatus, PipelineItem, PrioritySegment, SalesExpectationFacts, Screening } from './types'
 import type { TabId } from './services/home/homeTypes'
 
@@ -383,21 +383,23 @@ export default function App() {
 
       {/* Main content */}
       <main className="flex-1 w-full max-w-[1600px] 2xl:max-w-[1800px] mx-auto p-4 sm:p-5 xl:p-6 flex flex-col gap-5">
-        {activeTab === 'home' && (
-          <TabHome
-            data={data}
-            onGoTo={setActiveTab}
-            onGoToTab2WithItem={(id) => { setFocusPipelineItemId(id); setActiveTab('tab2') }}
-          />
-        )}
-        {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
-        {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
-        {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} onReturnToOS0={handleReturnToOS0} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
-        {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
-        {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
-        {activeTab === 'tab5' && <Tab5 data={data} role={role} />}
-        {activeTab === 'tab6' && <Tab6 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} />}
-      </main>
+        <Suspense fallback={<div className="card p-6 text-sm text-slate-500">読み込み中...</div>}>
+          {activeTab === 'home' && (
+            <TabHome
+              data={data}
+              onGoTo={setActiveTab}
+              onGoToTab2WithItem={(id) => { setFocusPipelineItemId(id); setActiveTab('tab2') }}
+            />
+          )}
+          {activeTab === 'tab0' && <Tab0 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab1={() => setActiveTab('tab1')} onGoToTab2={() => setActiveTab('tab2')} onCreateInboundPipeline={handleCreateInboundPipeline} />}
+          {activeTab === 'tab1' && <Tab1 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab2={() => setActiveTab('tab2')} />}
+          {activeTab === 'tab2' && <Tab2 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} onGoToTab3={() => setActiveTab('tab3')} onCloseCase={handleCloseCase} onReturnToOS0={handleReturnToOS0} openItemId={focusPipelineItemId} onOpenItemConsumed={() => setFocusPipelineItemId(null)} />}
+          {activeTab === 'tab3' && <Tab3 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} confirm={confirm} prefill={prefilledOS3} onPrefillConsumed={() => setPrefilledOS3(null)} />}
+          {activeTab === 'tab4' && <Tab4 data={data} saveData={saveData} role={role} toast={toast} confirm={confirm} />}
+          {activeTab === 'tab5' && <Tab5 data={data} role={role} />}
+          {activeTab === 'tab6' && <Tab6 data={data} saveData={saveData} prompts={prompts} role={role} toast={toast} />}
+        </Suspense>
+        </main>
 
       {/* Toast */}
       <div

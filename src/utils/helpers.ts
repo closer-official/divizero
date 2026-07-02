@@ -158,8 +158,8 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
   if (item.opportunityFacts) lines.push(`観測事実:\n${formatOpportunityFacts(item.opportunityFacts)}`);
   const displayScore = getDisplayScore(item)
   if (displayScore !== undefined) {
-    const scoreLabel = item.salesExpectationFacts ? '（チェック算出）' : '（旧AI判定）'
-    lines.push(`営業期待値スコア: ${displayScore}点 / 40点${scoreLabel}`);
+    const scoreLabel = item.salesExpectationFacts ? '（チェック算出）' : '（参考）'
+    lines.push(`観測スコア: ${displayScore}点 / 40点${scoreLabel}`);
     if (item.salesExpectationReason) lines.push(`スコア根拠: ${item.salesExpectationReason}`);
   }
   lines.push('', `【タッチ履歴（${touches.length}回）】`);

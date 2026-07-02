@@ -14,7 +14,6 @@ import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '.
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
 import { buildBatchJudgmentPrompt, parseBatchJudgmentOutput } from '../../utils/batchJudgmentPrompt'
-import { getDisplayScore } from '../../utils/salesExpUtils'
 import {
   getOpportunityFitLabel,
   getOpportunityStatusLabel,
@@ -1308,7 +1307,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
               />
             ))}
           </div>
-          <div className="sm:hidden -mx-4 px-4 pb-2 overflow-x-auto overflow-y-hidden touch-pan-x snap-x snap-mandatory">
+          <div className="sm:hidden -mx-4 px-4 pb-2 overflow-x-auto overflow-y-visible snap-x snap-proximity">
             <div className="flex flex-nowrap gap-3 min-w-max">
               {KANBAN_COLS.map(col => {
                 const items = getColItems(col.key)
@@ -2472,7 +2471,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             </div>
           )}
 
-          {/* 案件情報（仮説フルテキスト・営業期待値・判定根拠） */}
+          {/* 案件情報（仮説フルテキスト・観測事実・判定根拠） */}
           <div className="mx-4 mt-3 bg-slate-50 border border-slate-100 rounded-xl p-3 flex flex-col gap-2 text-xs">
             <div className="flex items-center gap-1">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide flex-1">案件情報</p>
@@ -2535,11 +2534,6 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               {item.opportunityStatusReason && <p className="text-[10px] text-slate-600">対象判定理由: {item.opportunityStatusReason}</p>}
               {item.prioritySegmentReason && <p className="text-[10px] text-slate-600">セグメント理由: {item.prioritySegmentReason}</p>}
               {item.opportunityFitReason && <p className="text-[10px] text-slate-600">判定メモ: {item.opportunityFitReason}</p>}
-              {!item.opportunityFacts && item.salesExpectation !== undefined && (
-                <p className="text-[10px] text-slate-500">
-                  旧AIスコア：{item.salesExpectation}点（参考）— 新方式の観測事実が未設定です。
-                </p>
-              )}
               {item.opportunityBreakdown && (
                 <details>
                   <summary className="text-[10px] text-slate-500 cursor-pointer">AIの観測候補（参考）</summary>
@@ -2610,6 +2604,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     myXHandle={myXHandle}
                     prompts={prompts}
                     role={role}
+                    confirm={confirm}
+                    toast={toast}
                     onDelete={() => handleDeleteTouch(touch.id)}
                     onReactionSaved={handleReactionSaved}
                     onGoToTab3={onGoToTab3}
@@ -2893,6 +2889,8 @@ interface TouchItemProps {
   myXHandle?: string
   prompts: Prompts
   role: Role
+  confirm: ConfirmAPI
+  toast: ToastAPI
   onDelete: () => void
   onReactionSaved: (touchId: string, touchUpdates: Partial<Touch>, pipelineUpdates: Partial<PipelineItem>) => void
   onGoToTab3: () => void
@@ -2900,7 +2898,7 @@ interface TouchItemProps {
   onCloseCaseAuto: (result: string) => void
 }
 
-function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
+function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toast, onDelete, onReactionSaved, onGoToTab3, onAddNewTouch, onCloseCaseAuto }: TouchItemProps) {
   const [detailOpen, setDetailOpen] = useState(false)
   const [editingLinks, setEditingLinks] = useState(false)
   const [postUrlInput, setPostUrlInput] = useState(touch.postUrl || '')
@@ -3321,6 +3319,34 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, on
     const parsed = parseOS2CheckpointOutput(os2CpOutput)
     if (!parsed) return
     setOs2CpParsed(parsed)
+    const directive = parsed.stateDirective
+    if (!directive) return
+
+    const stateLabel = directive.state === 'sleeping'
+      ? '休眠'
+      : directive.state === 'archived'
+        ? '保管'
+        : 'クローズ'
+    const recontactLabel = directive.recontactDate ? `（再接触日: ${directive.recontactDate}）` : ''
+    confirm.show(
+      'OS②状態反映',
+      `判定=${stateLabel} です。state と再接触日を反映します${recontactLabel ? ` ${recontactLabel}` : ''}か？`,
+      () => {
+        if (directive.state === 'closed') {
+          onCloseCaseAuto(parsed.judgment || 'クローズ')
+          return
+        }
+        onReactionSaved(touch.id, {}, {
+          state: directive.state,
+          recontact_date: directive.recontactDate || undefined,
+        })
+        toast.show(
+          directive.state === 'sleeping'
+            ? `「${pipelineItem.accountName}」を休眠として反映しました`
+            : `「${pipelineItem.accountName}」を保管として反映しました`
+        )
+      }
+    )
   }
 
   function handleAddSelfTurn() {
@@ -3734,11 +3760,6 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, onDelete, on
                     {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
                     {result.warning && result.warning !== 'なし' && (
                       <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
-                    )}
-                    {(result.dmScore || touch.reactionDmScore) && (
-                      <p className="text-[10px] text-slate-400 border-t border-current border-opacity-10 pt-1 mt-0.5">
-                        DM_SCORE: {result.dmScore || touch.reactionDmScore}
-                      </p>
                     )}
                   </div>
                   {hasReplies && (

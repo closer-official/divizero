@@ -1,7 +1,7 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction } from './helpers'
-import { getDisplayScore } from './salesExpUtils'
 import { formatOpportunityFacts, getOpportunityFitLabel, getOpportunityStatusLabel, getPrioritySegmentLabel } from './opportunityUtils'
+import { parseOS2StateDirective, type OS2StateDirective } from './parser'
 
 export interface OS2ConversationResult {
   judgment: string
@@ -55,7 +55,6 @@ export function buildOS2ConversationPrompt(
     ...((item.isInbound || item.inbound_signal) ? [
       `【起点】インバウンド（${(item.inboundActions?.length ? item.inboundActions : item.inbound_signal ? [item.inbound_signal.type] : []).join('・')}）- ${item.inbound_signal?.date ?? '日付不明'}${item.inbound_signal?.memo ? ' / ' + item.inbound_signal.memo : ''}`,
     ] : []),
-    `【営業期待値スコア】${getDisplayScore(item) ?? '未設定'}点（旧互換参照値）`,
     `【営業対象判定】${getOpportunityStatusLabel(item.opportunityStatus)}`,
     `【優先セグメント】${getPrioritySegmentLabel(item.prioritySegment)}`,
     `【案件適合度】${getOpportunityFitLabel(item.opportunityFit)}`,
@@ -87,6 +86,7 @@ export interface OS2CheckpointResult {
   deadline: string
   warning: string
   rawOutput: string
+  stateDirective?: OS2StateDirective | null
 }
 
 export function parseOS2CheckpointOutput(raw: string): OS2CheckpointResult | null {
@@ -102,6 +102,7 @@ export function parseOS2CheckpointOutput(raw: string): OS2CheckpointResult | nul
     deadline: pick('実行期限'),
     warning: pick('今やってはいけないこと'),
     rawOutput: raw,
+    stateDirective: parseOS2StateDirective(raw),
   }
 }
 

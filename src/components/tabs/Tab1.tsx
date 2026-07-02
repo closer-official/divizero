@@ -1100,7 +1100,7 @@ function TargetDetail({ target: t, role, toast, confirm, onUpdateFacts, onToPipe
           </details>
         )}
         {!t.opportunityFacts && t.salesExpectation !== undefined && (
-          <p className="text-[10px] text-slate-500">旧AIスコア：{t.salesExpectation}点（参考）— チェックすると新方式へ移行します。</p>
+          <p className="text-[10px] text-slate-500">観測スコア：{t.salesExpectation}点（参考）— 観測事実をチェックすると新方式へ移行します。</p>
         )}
       </div>
 
