@@ -25,7 +25,6 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState(todayStr())
   const [result, setResult] = useState('断り')
-  const [rule, setRule] = useState('無')
   const [convText, setConvText] = useState('')
   const [resultPaste, setResultPaste] = useState('')
 
@@ -41,9 +40,23 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
     onPrefillConsumed?.()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [prefill])
+
+  function buildPromptContext() {
+    const lines = [
+      '【案件情報】',
+      `アカウント名：${name || '未設定'}`,
+      `トラック：${track}`,
+      `事前仮説：${hypo || '未設定'}`,
+      `接触開始日：${startDate || '未設定'}`,
+      `クローズ日：${endDate || '未設定'}`,
+      `OS②クローズ結果：${result || '未設定'}`,
+    ]
+    return `\n\n${lines.join('\n')}\n\n`
+  }
+
   function handleCopyPrompt() {
     if (!prompts.OS3) { toast.show('プロンプトを読み込み中です'); return }
-    const full = prompts.OS3 + '\n' + convText
+    const full = prompts.OS3 + buildPromptContext() + convText
     copyText(full, () => toast.show('OS③プロンプトをコピーしました'))
   }
 
@@ -60,7 +73,7 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
       startDate,
       closeDate: endDate,
       result,
-      ruleFired: rule === '有',
+      ruleFired: false,
       rawOutput: text,
       aiOutput: text,
       ...(parsed ?? {}),
@@ -148,11 +161,7 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
             </div>
             <div className="grid grid-cols-2 gap-2">
               <select className="input-base text-xs py-2" value={result} onChange={e => setResult(e.target.value)}>
-                {['受注', '断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック'].map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <select className="input-base text-xs py-2" value={rule} onChange={e => setRule(e.target.value)}>
-                <option value="無">7日/30日ルール：無</option>
-                <option value="有">7日/30日ルール：有</option>
+                {['受注', '断り', 'フェードアウト', '未読', '未到達クローズ', 'ブロック', 'HP/LP所有済み'].map(r => <option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <textarea className="input-base h-28 cs text-xs" placeholder="会話ログ全体＋OS①②のスクリーニング情報を貼り付け" value={convText} onChange={e => setConvText(e.target.value)} />
