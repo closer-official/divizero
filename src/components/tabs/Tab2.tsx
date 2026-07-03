@@ -2160,15 +2160,18 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     confirm.show('クローズ確認', `「${item.accountName}」をクローズしますか？（${closeResult}）`, () => {
       const closeDate = todayStr()
       saveData(prev => {
-        const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, state: 'closed' as const, closedAt: closeDate } : p) }
-        const pFinal = d.pipeline.find(p => p.id === item.id)!
-        d.closed = [...d.closed, {
+        const pFinal = prev.pipeline.find(p => p.id === item.id)!
+        const closedEntry = {
           id: uid(), pipelineId: item.id, createdAt: new Date().toISOString(),
           accountName: pFinal.accountName, track: pFinal.track,
           hypothesis: pFinal.hypothesis, startDate: pFinal.startDate,
           closeDate, result: closeResult, ruleFired: false,
-        }]
-        return d
+        }
+        return {
+          ...prev,
+          pipeline: prev.pipeline.filter(p => p.id !== item.id),
+          closed: [...prev.closed, closedEntry],
+        }
       })
       toast.show(`「${item.accountName}」をクローズしました（${closeResult}）`)
       setTimeout(() => onCloseCase(item, closeResult), 300)
@@ -2178,15 +2181,18 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function handleCloseCaseFromTouch(result: string) {
     const closeDate = todayStr()
     saveData(prev => {
-      const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, state: 'closed' as const, closedAt: closeDate } : p) }
-      const pFinal = d.pipeline.find(p => p.id === item.id)!
-      d.closed = [...d.closed, {
+      const pFinal = prev.pipeline.find(p => p.id === item.id)!
+      const closedEntry = {
         id: uid(), pipelineId: item.id, createdAt: new Date().toISOString(),
         accountName: pFinal.accountName, track: pFinal.track,
         hypothesis: pFinal.hypothesis, startDate: pFinal.startDate,
         closeDate, result, ruleFired: false,
-      }]
-      return d
+      }
+      return {
+        ...prev,
+        pipeline: prev.pipeline.filter(p => p.id !== item.id),
+        closed: [...prev.closed, closedEntry],
+      }
     })
     toast.show(`「${item.accountName}」をクローズしました（${result}）`)
     setTimeout(() => onCloseCase(item, result), 300)

@@ -228,7 +228,7 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
               {selectedItem.closeDate && <span className="text-[11px] text-slate-400 shrink-0">{selectedItem.closeDate}</span>}
             </div>
             <div className="flex items-center gap-1 shrink-0 ml-2 flex-wrap justify-end">
-              {selectedItem.pipelineId && (
+              {selectedItem.pipelineId && data.pipeline.some(p => p.id === selectedItem.pipelineId) && (
                 <button className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 rounded border border-indigo-200 hover:bg-indigo-100 transition" onClick={() => handleRestoreToPipeline(selectedItem)}>
                   <i className="fa-solid fa-rotate-left mr-1" />OS②に戻す
                 </button>
