@@ -410,6 +410,7 @@ export function parseOS2(text: string) {
 export function parseOS3(text: string) {
   const typeBlock = block(text, 'クローズタイプ');
   const typeM = typeBlock.match(/(W-[A-D]|Type[A-K]|TypeI)/);
+  const isTypeF = typeM?.[1] === 'TypeF';
   const hypoBlock = block(text, '事前仮説の答え合わせ');
   const hypoM = hypoBlock.match(/(的中|部分的中|外れ|検証不能)/);
   const timingBlock = block(text, 'タイミング検証');
@@ -429,10 +430,10 @@ export function parseOS3(text: string) {
     roleStart: field(perspBlock, '最初の役割認識'),
     roleEnd: field(perspBlock, '最後の役割認識'),
     roleChange: field(perspBlock, '変化した地点'),
-    wanted: field(perspBlock, '相手が欲しかったもの'),
-    reapproachRating: reapM ? reapM[1] : '',
-    reapproachWait: field(reapBlock, '推奨待機期間'),
-    reapproachHow: field(reapBlock, '再接触の入り方'),
+    wanted: isTypeF ? '何もなし' : field(perspBlock, '相手が欲しかったもの'),
+    reapproachRating: isTypeF ? 'D' : (reapM ? reapM[1] : ''),
+    reapproachWait: isTypeF ? '再接触しない' : field(reapBlock, '推奨待機期間'),
+    reapproachHow: isTypeF ? '再接触しない' : field(reapBlock, '再接触の入り方'),
     conclusionReason: field(conclusionBlock, '失注.受注理由') || field(conclusionBlock, '失注/受注理由'),
     maxLearning: field(conclusionBlock, '最大の学び'),
     nextTypeAction: field(conclusionBlock, '次回同タイプへの最適行動'),
