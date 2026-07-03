@@ -24,6 +24,15 @@ export function weekStartStr(): string {
   return `${ws.getFullYear()}-${String(ws.getMonth() + 1).padStart(2, '0')}-${String(ws.getDate()).padStart(2, '0')}`
 }
 
+export function getWeekElapsedDays(): number {
+  const day = new Date().getDay()
+  return day === 0 ? 7 : day
+}
+
+export function getWeekElapsedRatio(): number {
+  return getWeekElapsedDays() / 7
+}
+
 export function localDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }

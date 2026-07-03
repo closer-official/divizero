@@ -5,6 +5,7 @@ import {
   weekStartStr,
   calcWeeklyFunnel,
   fmtRate,
+  getWeekElapsedRatio,
   calcWaiting,
   countTodayOS0,
   countTodayOS1,
@@ -141,6 +142,39 @@ export function getHomeDashboard(data: AppData): HomeDashboard {
 
   // ── 今週ファネル ──────────────────────────────────────────
   const wf = calcWeeklyFunnel(data)
+  const weekRatio = getWeekElapsedRatio()
+  const weeklyProgress: HomeDashboard['weeklyProgress'] = [
+    {
+      id: 'os0',
+      label: 'OS⓪',
+      tab: 'tab0',
+      count: wf.os0,
+      weeklyTarget: DEFAULT_DAILY_TARGETS.os0 * 7,
+      expectedByNow: Math.round(DEFAULT_DAILY_TARGETS.os0 * 7 * weekRatio),
+      icon: 'fa-layer-group',
+      color: 'fuchsia',
+    },
+    {
+      id: 'os1',
+      label: 'OS①',
+      tab: 'tab1',
+      count: wf.os1,
+      weeklyTarget: DEFAULT_DAILY_TARGETS.os1 * 7,
+      expectedByNow: Math.round(DEFAULT_DAILY_TARGETS.os1 * 7 * weekRatio),
+      icon: 'fa-filter',
+      color: 'violet',
+    },
+    {
+      id: 'os2',
+      label: 'OS②',
+      tab: 'tab2',
+      count: wf.os2,
+      weeklyTarget: DEFAULT_DAILY_TARGETS.os2 * 7,
+      expectedByNow: Math.round(DEFAULT_DAILY_TARGETS.os2 * 7 * weekRatio),
+      icon: 'fa-chart-gantt',
+      color: 'indigo',
+    },
+  ]
   const weeklyFunnel: FunnelStep[] = [
     {
       label: 'OS⓪',
@@ -278,6 +312,7 @@ export function getHomeDashboard(data: AppData): HomeDashboard {
   return {
     mission,
     todayKpi,
+    weeklyProgress,
     weeklyFunnel,
     weekStart: weekStartStr(),
     waiting,

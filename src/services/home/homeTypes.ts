@@ -33,6 +33,18 @@ export interface KpiItem {
   color: string                  // "violet" | "indigo" | "fuchsia" | "emerald"
 }
 
+// ── 週次進捗 ─────────────────────────────────────────────────
+export interface WeeklyProgressItem {
+  id: string
+  label: string
+  tab: TabId
+  count: number                  // 今週実績
+  weeklyTarget: number           // 週目標
+  expectedByNow: number          // 本日時点の理想進捗
+  icon: string
+  color: string
+}
+
 // ── 今週ファネル ──────────────────────────────────────────────
 export interface FunnelStep {
   label: string
@@ -74,6 +86,7 @@ export interface ShortcutItem {
 export interface HomeDashboard {
   mission: MissionItem[]
   todayKpi: KpiItem[]
+  weeklyProgress: WeeklyProgressItem[]
   weeklyFunnel: FunnelStep[]
   weekStart: string              // "YYYY-MM-DD"
   waiting: WaitingSummary

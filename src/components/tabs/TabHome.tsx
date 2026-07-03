@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { AppData } from '../../types'
-import type { TabId, MissionItem, KpiItem, FunnelStep, HomeAlert, ShortcutItem } from '../../services/home/homeTypes'
+import type { TabId, MissionItem, KpiItem, WeeklyProgressItem, FunnelStep, HomeAlert, ShortcutItem } from '../../services/home/homeTypes'
 import { getHomeDashboard } from '../../services/home/HomeService'
 
 interface Props {
@@ -87,6 +87,45 @@ function KpiCard({ item, onClick }: { item: KpiItem; onClick: () => void }) {
         />
       </div>
     </div>
+  )
+}
+
+function WeeklyProgressCard({ item, onClick }: { item: WeeklyProgressItem; onClick: () => void }) {
+  const colors = KPI_COLORS[item.color] ?? KPI_COLORS.indigo
+  const pct = item.weeklyTarget > 0 ? Math.min(100, (item.count / item.weeklyTarget) * 100) : 0
+  const gap = item.count - item.expectedByNow
+  const ahead = gap >= 0
+  const gapLabel = gap === 0 ? '予定どおり' : ahead ? `予定より+${gap}` : `予定より${gap}`
+
+  return (
+    <button
+      type="button"
+      className="w-full text-left cursor-pointer group"
+      onClick={onClick}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-xs font-semibold ${colors.text} flex items-center gap-1`}>
+          <i className={`fa-solid ${item.icon}`} />
+          {item.label}
+        </span>
+        <span className="text-xs text-slate-500 tabular-nums">
+          <span className={`font-bold ${colors.text}`}>{item.count}</span>
+          <span className="text-slate-400"> / {item.weeklyTarget}</span>
+        </span>
+      </div>
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${colors.bar}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between mt-1 text-[10px] text-slate-400">
+        <span>{Math.round(pct)}%</span>
+        <span className={ahead ? 'text-emerald-600' : 'text-rose-500'}>
+          {gapLabel}
+        </span>
+      </div>
+    </button>
   )
 }
 
@@ -198,6 +237,11 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
   const dateLabel = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日（${WEEKDAYS[today.getDay()]}）`
 
   const totalMissionCount = db.mission.reduce((s, m) => s + m.count, 0)
+  const weeklyTotal = db.weeklyProgress.reduce((s, item) => s + item.count, 0)
+  const weeklyTarget = db.weeklyProgress.reduce((s, item) => s + item.weeklyTarget, 0)
+  const weeklyExpected = db.weeklyProgress.reduce((s, item) => s + item.expectedByNow, 0)
+  const weeklyPct = weeklyTarget > 0 ? (weeklyTotal / weeklyTarget) * 100 : 0
+  const weeklyGap = weeklyTotal - weeklyExpected
 
   function handleMissionClick(item: MissionItem) {
     if (item.tab === 'tab2' && item.itemIds && item.itemIds.length > 0) {
@@ -268,6 +312,47 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
             <div className="space-y-3">
               {db.todayKpi.map(item => (
                 <KpiCard
+                  key={item.id}
+                  item={item}
+                  onClick={() => onGoTo(item.tab)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="card p-4">
+            <h2 className="font-semibold text-sm text-slate-700 mb-3 flex items-center gap-1.5">
+              <i className="fa-solid fa-calendar-week text-violet-500" />
+              今週の進捗
+            </h2>
+            <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2 mb-3">
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className="text-[11px] text-slate-400">週累計 / 週目標</p>
+                  <p className="text-base font-bold text-slate-800 tabular-nums">
+                    {weeklyTotal} / {weeklyTarget}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[11px] text-slate-400">達成率</p>
+                  <p className="text-base font-bold text-violet-600 tabular-nums">
+                    {Math.round(weeklyPct)}%
+                  </p>
+                </div>
+              </div>
+              <div className="h-2 bg-slate-200 rounded-full overflow-hidden mt-2">
+                <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.min(100, weeklyPct)}%` }} />
+              </div>
+              <div className="flex items-center justify-between mt-2 text-[11px]">
+                <span className="text-slate-500">今週の理想進捗との差</span>
+                <span className={weeklyGap >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold'}>
+                  {weeklyGap === 0 ? '予定どおり' : weeklyGap > 0 ? `+${weeklyGap}` : `${weeklyGap}`} 件
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {db.weeklyProgress.map(item => (
+                <WeeklyProgressCard
                   key={item.id}
                   item={item}
                   onClick={() => onGoTo(item.tab)}
