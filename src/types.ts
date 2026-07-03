@@ -607,6 +607,7 @@ export type Prompts = {
   OS1_X?: string;
   OS1_IG?: string;
   OS1_TH?: string;
+  OS1_REFRESH_BATCH?: string;
   OS2?: string;
   OS3?: string;
   IG_OCR?: string;

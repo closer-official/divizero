@@ -10,6 +10,7 @@ export async function loadPrompts(): Promise<Prompts> {
     OS1_X: '/prompts/OS1_X_接触スクリーニング_latest.md',
     OS1_IG: '/prompts/OS1_Instagram_接触スクリーニング_latest.md',
     OS1_TH: '/prompts/OS1_Threads_接触スクリーニング_latest.md',
+    OS1_REFRESH_BATCH: '/prompts/OS1_最新仕様一括更新_latest.md',
     OS2: '/prompts/OS2_行動判定_latest.md',
     OS3: '/prompts/OS3_案件検証_latest.md',
     IG_OCR: '/prompts/IG読み取りOCR_latest.md',

@@ -5,6 +5,7 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
+import { buildSpecRefreshBatchPrompt, getLatestSpecMissingLabels, isLatestSpecRefreshTarget, parseSpecRefreshBatchOutput, type SpecRefreshBatchItem, type SpecRefreshParsed } from '../../utils/os1RefreshBatchPrompt'
 import {
   getOpportunityFitLabel,
   getOpportunityStatusLabel,
@@ -116,6 +117,12 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     } catch { return null }
   })
   const [continuousMode, setContinuousMode] = useState(false)
+  const [batchRefreshOpen, setBatchRefreshOpen] = useState(false)
+  const [batchRefreshLimit, setBatchRefreshLimit] = useState<5 | 10>(5)
+  const [batchRefreshOutput, setBatchRefreshOutput] = useState('')
+  const [batchRefreshCopyState, setBatchRefreshCopyState] = useState<'idle' | 'copied'>('idle')
+  const [batchRefreshApplyState, setBatchRefreshApplyState] = useState<'idle' | 'applied'>('idle')
+  const [batchRefreshError, setBatchRefreshError] = useState<string | null>(null)
 
   useEffect(() => {
     setSelectedId(null)
@@ -271,6 +278,146 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     })
     toast.show(`${eligible.length}件をOS②パイプラインに一括移行します…`, 2500)
     setTimeout(() => onGoToTab2(), 2000)
+  }
+
+  function getMergedSpecRefreshTarget(
+    target: Target,
+    parsed: SpecRefreshParsed,
+    rawOutput: string,
+  ): Target {
+    const keepText = (next?: string, current?: string) => next && next.trim() ? next : (current || '')
+    return {
+      ...target,
+      caseId: parsed.caseId || target.caseId,
+      accountName: parsed.accountName || target.accountName,
+      url: parsed.url || target.url,
+      channel: (parsed.channel || target.channel) as Target['channel'],
+      track: (parsed.track || target.track) as Target['track'],
+      hypothesis: parsed.hypothesis || target.hypothesis,
+      startDate: parsed.startDate || target.startDate,
+      trackReason: keepText(parsed.trackReason, target.trackReason),
+      partnerFlag: keepText(parsed.partnerFlag, target.partnerFlag),
+      nextAction: keepText(parsed.nextAction, target.nextAction),
+      dmRoute: keepText(parsed.dmRoute, target.dmRoute),
+      estimatedProduct: keepText(parsed.estimatedProduct, target.estimatedProduct),
+      estimatedPrice: keepText(parsed.estimatedPrice, target.estimatedPrice),
+      contactA: keepText(parsed.contactA, target.contactA),
+      contactB: keepText(parsed.contactB, target.contactB),
+      storyA: keepText(parsed.storyA, target.storyA),
+      storyB: keepText(parsed.storyB, target.storyB),
+      storyNote: keepText(parsed.storyNote, target.storyNote),
+      dmA: keepText(parsed.dmA, target.dmA),
+      dmB: keepText(parsed.dmB, target.dmB),
+      dmNote: keepText(parsed.dmNote, target.dmNote),
+      salesExpectation: target.salesExpectation,
+      salesExpectationReason: target.salesExpectationReason,
+      salesExpectationBreakdown: target.salesExpectationBreakdown,
+      salesExpectationFacts: target.salesExpectationFacts,
+      opportunityStatus: parsed.opportunityStatus || target.opportunityStatus,
+      opportunityStatusReason: keepText(parsed.opportunityStatusReason, target.opportunityStatusReason),
+      prioritySegment: parsed.prioritySegment || target.prioritySegment,
+      prioritySegmentReason: keepText(parsed.prioritySegmentReason, target.prioritySegmentReason),
+      opportunityFacts: parsed.opportunityFacts || target.opportunityFacts,
+      opportunityFit: parsed.opportunityFit || target.opportunityFit,
+      opportunityFitReason: keepText(parsed.opportunityFitReason, target.opportunityFitReason),
+      opportunityBreakdown: keepText(parsed.opportunityBreakdown, target.opportunityBreakdown),
+      primaryHypothesisPattern: parsed.primaryHypothesisPattern || target.primaryHypothesisPattern,
+      naturalQuestion: keepText(parsed.naturalQuestion, target.naturalQuestion),
+      forbiddenAngles: parsed.forbiddenAngles?.length ? parsed.forbiddenAngles : target.forbiddenAngles,
+      observations: parsed.observations?.length ? parsed.observations : target.observations,
+      aiOutput: rawOutput,
+    }
+  }
+
+  function handleCopyLatestSpecRefreshPrompt() {
+    setBatchRefreshError(null)
+    if (latestSpecRefreshItems.length === 0) {
+      toast.show('最新仕様へ更新する対象がありません', 2000)
+      return
+    }
+    if (!prompts.OS1_REFRESH_BATCH) {
+      toast.show('一括更新プロンプトを読み込み中です', 2000)
+      return
+    }
+    const prompt = buildSpecRefreshBatchPrompt(latestSpecRefreshItems, prompts.OS1_REFRESH_BATCH)
+    copyText(prompt).then(() => {
+      setBatchRefreshCopyState('copied')
+      setBatchRefreshOpen(true)
+      setTimeout(() => setBatchRefreshCopyState('idle'), 2500)
+    }).catch(() => {
+      setBatchRefreshError('プロンプトのコピーに失敗しました')
+    })
+  }
+
+  function handleApplyLatestSpecRefresh() {
+    setBatchRefreshError(null)
+    if (!batchRefreshOutput.trim()) {
+      setBatchRefreshError('AI出力を貼り付けてください')
+      return
+    }
+    const results = parseSpecRefreshBatchOutput(batchRefreshOutput, latestSpecRefreshItems)
+    if (results.length === 0) {
+      setBatchRefreshError('AI出力の形式が認識できませんでした。===SPEC_REFRESH_RESULT_START=== を含めて貼り付けてください。')
+      return
+    }
+
+    const total = latestSpecRefreshItems.length
+    const failed = Math.max(0, total - results.length)
+    const byTargetId = new Map(results.map(r => [r.targetId, r]))
+
+    saveData(prev => {
+      const nextTargets = prev.targets.map(target => {
+        const result = byTargetId.get(target.id)
+        if (!result) return target
+        return getMergedSpecRefreshTarget(target, result.parsed, result.rawOutput)
+      })
+      const nextPipeline = prev.pipeline.map(item => {
+        const targetId = item.targetId
+        const result = targetId ? byTargetId.get(targetId) : undefined
+        if (!result) return item
+        const merged = getMergedSpecRefreshTarget(item as unknown as Target, result.parsed, result.rawOutput)
+        const { aiOutput: _aiOutput, rawInput: _rawInput, ...pipelineFields } = merged
+        return {
+          ...item,
+          ...pipelineFields,
+          os1Output: result.rawOutput,
+          targetId: item.targetId,
+          currentStep: item.currentStep,
+          stepHistory: item.stepHistory,
+          repCount: item.repCount,
+          dmCount: item.dmCount,
+          analyses: item.analyses,
+          history: item.history,
+          sentMessages: item.sentMessages,
+          replies: item.replies,
+          isOpen: item.isOpen,
+          closedAt: item.closedAt,
+          closedCaseId: item.closedCaseId,
+          touches: item.touches,
+          lastContactDate: item.lastContactDate,
+          temperature: item.temperature,
+          last_reaction: item.last_reaction,
+          last_reaction_at: item.last_reaction_at,
+          todayTask: item.todayTask,
+        } as typeof item
+      })
+      return { ...prev, targets: nextTargets, pipeline: nextPipeline }
+    })
+
+    setBatchRefreshApplyState('applied')
+    setBatchRefreshOutput('')
+    const summaryMsg = `一括更新完了：${total}件中${results.length}件成功 / ${failed}件失敗`
+    if (failed > 0) {
+      const missing = latestSpecRefreshItems.filter(item => !results.some(r => r.targetId === item.target.id))
+      const detail = missing.slice(0, 3).map(item => item.target.accountName).filter(Boolean)
+      const detailMsg = detail.length > 0 ? `（失敗：${detail.join(' / ')}${missing.length > 3 ? ' / 他あり' : ''}）` : ''
+      setBatchRefreshError(summaryMsg + detailMsg)
+    }
+    toast.show(summaryMsg, 2500)
+    setTimeout(() => {
+      setBatchRefreshApplyState('idle')
+      setBatchRefreshOpen(false)
+    }, 1500)
   }
 
   function buildBatchPrompt(items: Screening[], ch: Mode): string {
@@ -593,6 +740,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const safePage = Math.min(page, Math.max(0, totalPages - 1))
   const pageTargets = allTargets.slice(safePage * 10, safePage * 10 + 10)
   const selectedTarget = selectedId ? data.targets.find(x => x.id === selectedId) : null
+  const latestSpecRefreshCandidates = [...data.targets]
+    .filter(isLatestSpecRefreshTarget)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+  const latestSpecRefreshItems: SpecRefreshBatchItem[] = latestSpecRefreshCandidates.slice(0, batchRefreshLimit).map((target, index) => ({
+    index: index + 1,
+    target,
+  }))
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 639px)')
@@ -758,6 +912,15 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                     </button>
                   )
                 })()}
+                {latestSpecRefreshCandidates.length > 0 && (
+                  <button
+                    className="btn-sec text-xs py-1.5 px-3 border-violet-300 text-violet-700"
+                    onClick={() => setBatchRefreshOpen(true)}
+                    title={`未設定が残る案件を最新仕様へまとめて更新（${latestSpecRefreshCandidates.length}件候補）`}
+                  >
+                    <i className="fa-solid fa-arrows-rotate mr-1" />最新仕様へ更新（{latestSpecRefreshCandidates.length}件）
+                  </button>
+                )}
               </div>
             </div>
             {continuousMode && (() => {
@@ -843,6 +1006,132 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           </div>
         </section>
       </div>
+
+      {/* ── 最新仕様へ一括更新モーダル ───────────────────────── */}
+      {batchRefreshOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 flex items-center gap-2 bg-violet-50 border-b border-violet-100">
+              <i className="fa-solid fa-arrows-rotate text-violet-600" />
+              <p className="font-bold text-sm text-violet-800 flex-1">最新仕様へ一括更新（{latestSpecRefreshItems.length}件 / 候補{latestSpecRefreshCandidates.length}件）</p>
+              <button
+                className="text-slate-400 hover:text-slate-700 p-1"
+                onClick={() => {
+                  setBatchRefreshOpen(false)
+                  setBatchRefreshOutput('')
+                  setBatchRefreshError(null)
+                }}
+              >
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 flex flex-col gap-0">
+              <div className="px-4 pt-4 pb-3 flex flex-col gap-3">
+                <p className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                  旧OS1出力をまとめて最新仕様へ寄せるための再判定です。まずプロンプトをコピーしてAIへ貼り付け、返ってきた結果をそのまま下に貼ってください。
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-slate-500">件数</span>
+                  {[5, 10].map(n => (
+                    <button
+                      key={n}
+                      className={`px-3 py-1.5 rounded-full border text-xs font-bold transition ${
+                        batchRefreshLimit === n
+                          ? 'bg-violet-600 border-violet-600 text-white'
+                          : 'bg-white border-slate-200 text-slate-600 hover:border-violet-300'
+                      }`}
+                      onClick={() => setBatchRefreshLimit(n as 5 | 10)}
+                    >
+                      {n}件
+                    </button>
+                  ))}
+                  <span className="text-[11px] text-slate-400 ml-auto">未設定の多い順に先頭から処理</span>
+                </div>
+                <button
+                  className={`w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
+                    batchRefreshCopyState === 'copied'
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'bg-violet-600 border-violet-600 text-white hover:bg-violet-700'
+                  }`}
+                  onClick={handleCopyLatestSpecRefreshPrompt}
+                >
+                  <i className={`fa-solid ${batchRefreshCopyState === 'copied' ? 'fa-check' : 'fa-copy'}`} />
+                  {batchRefreshCopyState === 'copied'
+                    ? `✓ ${latestSpecRefreshItems.length}件分の更新プロンプトをコピーしました`
+                    : `最新仕様へ更新するプロンプトをコピー（${latestSpecRefreshItems.length}件）`
+                  }
+                </button>
+              </div>
+
+              <div className="border-t border-slate-100 px-4 py-3">
+                <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">AIの出力を貼り付けて取り込む</p>
+                <textarea
+                  className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-violet-300 bg-slate-50"
+                  rows={8}
+                  placeholder={"===SPEC_REFRESH_RESULT_START=== 1 ===\n【アカウント情報】...\n===SPEC_REFRESH_RESULT_END=== 1 ===\n\n===SPEC_REFRESH_RESULT_START=== 2 ===\n..."}
+                  value={batchRefreshOutput}
+                  onChange={e => {
+                    setBatchRefreshOutput(e.target.value)
+                    setBatchRefreshError(null)
+                  }}
+                />
+                {batchRefreshError && (
+                  <p className="text-[11px] text-rose-600 mt-1.5 bg-rose-50 rounded-lg px-3 py-2">{batchRefreshError}</p>
+                )}
+                <button
+                  className={`mt-2 w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
+                    batchRefreshApplyState === 'applied'
+                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                      : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
+                  }`}
+                  onClick={handleApplyLatestSpecRefresh}
+                  disabled={batchRefreshApplyState === 'applied'}
+                >
+                  <i className={`fa-solid ${batchRefreshApplyState === 'applied' ? 'fa-check' : 'fa-file-import'}`} />
+                  {batchRefreshApplyState === 'applied' ? '更新取り込み完了' : '更新結果を取り込む'}
+                </button>
+              </div>
+
+              <div className="border-t border-slate-100">
+                <p className="text-[11px] text-slate-400 px-4 py-2 font-medium">対象案件</p>
+                <div className="divide-y divide-slate-50">
+                  {latestSpecRefreshItems.map(item => {
+                    const target = item.target
+                    const missing = getLatestSpecMissingLabels(target)
+                    return (
+                      <div key={target.id} className="flex items-center gap-3 px-4 py-2.5">
+                        <span className="text-[11px] font-bold text-slate-400 w-5 shrink-0">{item.index}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-xs text-slate-800 truncate">{target.accountName}</p>
+                          <p className="text-[10px] text-slate-400 truncate">
+                            {target.channel.toUpperCase()} / {target.track}
+                            {target.pipelineId && <span className="ml-1 text-indigo-500">・OS②連携済</span>}
+                            {missing.length > 0 && <span className="ml-1 text-violet-500">・未設定: {missing.join(' / ')}</span>}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
+              <button
+                className="btn-sec text-xs py-2 px-4"
+                onClick={() => {
+                  setBatchRefreshOpen(false)
+                  setBatchRefreshOutput('')
+                  setBatchRefreshError(null)
+                }}
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Detail panel */}
       {selectedTarget && (

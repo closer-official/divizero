@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/03 Tab2クローズ選択肢追加";
+export const BUILD_LABEL = "07/03 最新仕様一括更新";
