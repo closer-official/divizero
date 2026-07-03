@@ -5,11 +5,12 @@ import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
 import { addToExcluded, moveToTrash, normalizeHandle, buildProfileUrl, trackBadgeClass, uid, todayStr, buildInitialInboundTouch } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
-import { buildSpecRefreshBatchPrompt, getLatestSpecMissingLabels, isLatestSpecRefreshTarget, parseSpecRefreshBatchOutput, type SpecRefreshBatchItem, type SpecRefreshParsed } from '../../utils/os1RefreshBatchPrompt'
+import { buildSpecRefreshBatchPrompt, getLatestSpecMissingLabels, isLatestSpecRefreshTarget, parseSpecRefreshBatchOutput, type SpecRefreshBatchItem, type SpecRefreshBatchResult, type SpecRefreshParsed } from '../../utils/os1RefreshBatchPrompt'
 import {
   getOpportunityFitLabel,
   getOpportunityStatusLabel,
   getPrioritySegmentLabel,
+  formatOpportunityFacts,
   isUTAGEPriority,
   OPPORTUNITY_FACT_ITEMS,
 } from '../../utils/opportunityUtils'
@@ -121,8 +122,10 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const [batchRefreshLimit, setBatchRefreshLimit] = useState<5 | 10>(5)
   const [batchRefreshOutput, setBatchRefreshOutput] = useState('')
   const [batchRefreshCopyState, setBatchRefreshCopyState] = useState<'idle' | 'copied'>('idle')
-  const [batchRefreshApplyState, setBatchRefreshApplyState] = useState<'idle' | 'applied'>('idle')
   const [batchRefreshError, setBatchRefreshError] = useState<string | null>(null)
+  const [batchRefreshPreviewResults, setBatchRefreshPreviewResults] = useState<SpecRefreshBatchResult[]>([])
+  const [batchRefreshPreviewIndex, setBatchRefreshPreviewIndex] = useState(0)
+  const [batchRefreshApprovedMap, setBatchRefreshApprovedMap] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     setSelectedId(null)
@@ -342,6 +345,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     const prompt = buildSpecRefreshBatchPrompt(latestSpecRefreshItems, prompts.OS1_REFRESH_BATCH)
     copyText(prompt).then(() => {
       setBatchRefreshCopyState('copied')
+      setBatchRefreshPreviewResults([])
+      setBatchRefreshPreviewIndex(0)
+      setBatchRefreshApprovedMap({})
       setBatchRefreshOpen(true)
       setTimeout(() => setBatchRefreshCopyState('idle'), 2500)
     }).catch(() => {
@@ -349,7 +355,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     })
   }
 
-  function handleApplyLatestSpecRefresh() {
+  function handleParseLatestSpecRefresh() {
     setBatchRefreshError(null)
     if (!batchRefreshOutput.trim()) {
       setBatchRefreshError('AI出力を貼り付けてください')
@@ -360,10 +366,37 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       setBatchRefreshError('AI出力の形式が認識できませんでした。===SPEC_REFRESH_RESULT_START=== を含めて貼り付けてください。')
       return
     }
+    const missingCount = Math.max(0, latestSpecRefreshItems.length - results.length)
+    setBatchRefreshPreviewResults(results)
+    setBatchRefreshPreviewIndex(0)
+    setBatchRefreshApprovedMap({})
+    setBatchRefreshError(missingCount > 0
+      ? `AI出力の一部が見つかりませんでした。${missingCount}件は未解析のままです。まず各件を確認してください。`
+      : null)
+  }
 
-    const total = latestSpecRefreshItems.length
-    const failed = Math.max(0, total - results.length)
-    const byTargetId = new Map(results.map(r => [r.targetId, r]))
+  function handleToggleLatestSpecApproval(targetId: string, approved?: boolean) {
+    setBatchRefreshApprovedMap(prev => ({
+      ...prev,
+      [targetId]: approved ?? !prev[targetId],
+    }))
+  }
+
+  function handleApplyLatestSpecRefresh() {
+    setBatchRefreshError(null)
+    if (batchRefreshPreviewResults.length === 0) {
+      setBatchRefreshError('先にAI出力を解析してください')
+      return
+    }
+    const approvedResults = batchRefreshPreviewResults.filter(r => batchRefreshApprovedMap[r.targetId])
+    if (approvedResults.length === 0) {
+      setBatchRefreshError('承認した案件がありません。1件以上承認してください')
+      return
+    }
+
+    const total = batchRefreshPreviewResults.length
+    const approvedCount = approvedResults.length
+    const byTargetId = new Map(approvedResults.map(r => [r.targetId, r]))
 
     saveData(prev => {
       const nextTargets = prev.targets.map(target => {
@@ -404,20 +437,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       return { ...prev, targets: nextTargets, pipeline: nextPipeline }
     })
 
-    setBatchRefreshApplyState('applied')
     setBatchRefreshOutput('')
-    const summaryMsg = `一括更新完了：${total}件中${results.length}件成功 / ${failed}件失敗`
-    if (failed > 0) {
-      const missing = latestSpecRefreshItems.filter(item => !results.some(r => r.targetId === item.target.id))
-      const detail = missing.slice(0, 3).map(item => item.target.accountName).filter(Boolean)
-      const detailMsg = detail.length > 0 ? `（失敗：${detail.join(' / ')}${missing.length > 3 ? ' / 他あり' : ''}）` : ''
-      setBatchRefreshError(summaryMsg + detailMsg)
-    }
+    setBatchRefreshPreviewResults([])
+    setBatchRefreshPreviewIndex(0)
+    setBatchRefreshApprovedMap({})
+    const skipped = Math.max(0, total - approvedCount)
+    const summaryMsg = `一括更新完了：${approvedCount}件承認 / ${skipped}件見送り`
     toast.show(summaryMsg, 2500)
-    setTimeout(() => {
-      setBatchRefreshApplyState('idle')
-      setBatchRefreshOpen(false)
-    }, 1500)
+    setTimeout(() => setBatchRefreshOpen(false), 1200)
   }
 
   function buildBatchPrompt(items: Screening[], ch: Mode): string {
@@ -747,6 +774,13 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     index: index + 1,
     target,
   }))
+  const currentRefreshPreview = batchRefreshPreviewResults[batchRefreshPreviewIndex] || null
+  const currentRefreshTarget = currentRefreshPreview
+    ? data.targets.find(t => t.id === currentRefreshPreview.targetId) || null
+    : null
+  const currentRefreshApproved = currentRefreshPreview ? !!batchRefreshApprovedMap[currentRefreshPreview.targetId] : false
+  const approvedRefreshCount = batchRefreshPreviewResults.filter(r => batchRefreshApprovedMap[r.targetId]).length
+  const refreshHasPreview = batchRefreshPreviewResults.length > 0
 
   useEffect(() => {
     const media = window.matchMedia('(max-width: 639px)')
@@ -1020,6 +1054,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                   setBatchRefreshOpen(false)
                   setBatchRefreshOutput('')
                   setBatchRefreshError(null)
+                  setBatchRefreshPreviewResults([])
+                  setBatchRefreshPreviewIndex(0)
+                  setBatchRefreshApprovedMap({})
                 }}
               >
                 <i className="fa-solid fa-xmark" />
@@ -1074,6 +1111,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                   onChange={e => {
                     setBatchRefreshOutput(e.target.value)
                     setBatchRefreshError(null)
+                    setBatchRefreshPreviewResults([])
+                    setBatchRefreshPreviewIndex(0)
+                    setBatchRefreshApprovedMap({})
                   }}
                 />
                 {batchRefreshError && (
@@ -1081,17 +1121,136 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                 )}
                 <button
                   className={`mt-2 w-full py-2.5 text-sm font-bold rounded-xl border transition flex items-center justify-center gap-2 ${
-                    batchRefreshApplyState === 'applied'
-                      ? 'bg-emerald-500 border-emerald-500 text-white'
+                    refreshHasPreview
+                      ? 'bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700'
                       : 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700'
                   }`}
-                  onClick={handleApplyLatestSpecRefresh}
-                  disabled={batchRefreshApplyState === 'applied'}
+                  onClick={refreshHasPreview ? handleApplyLatestSpecRefresh : handleParseLatestSpecRefresh}
                 >
-                  <i className={`fa-solid ${batchRefreshApplyState === 'applied' ? 'fa-check' : 'fa-file-import'}`} />
-                  {batchRefreshApplyState === 'applied' ? '更新取り込み完了' : '更新結果を取り込む'}
+                  <i className={`fa-solid ${refreshHasPreview ? 'fa-floppy-disk' : 'fa-magnifying-glass'}`} />
+                  {refreshHasPreview
+                    ? `承認済みを保存（${approvedRefreshCount}件）`
+                    : '解析して確認へ'
+                  }
                 </button>
+                {refreshHasPreview && (
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    承認済み {approvedRefreshCount}件 / 全{batchRefreshPreviewResults.length}件。1件ずつ確認してから保存できます。
+                  </p>
+                )}
               </div>
+
+              {refreshHasPreview && currentRefreshPreview && currentRefreshTarget && (() => {
+                const parsed = currentRefreshPreview.parsed
+                const current = currentRefreshTarget
+                const formatFacts = (facts?: typeof current.opportunityFacts) => facts ? formatOpportunityFacts(facts) : '（未設定）'
+                const normalize = (v?: string | null) => v && String(v).trim() ? String(v).trim() : '未設定'
+                const compareRows = [
+                  { label: '営業対象判定', oldValue: getOpportunityStatusLabel(current.opportunityStatus), newValue: getOpportunityStatusLabel(parsed.opportunityStatus), highlighted: current.opportunityStatus !== parsed.opportunityStatus },
+                  { label: '優先セグメント', oldValue: getPrioritySegmentLabel(current.prioritySegment), newValue: getPrioritySegmentLabel(parsed.prioritySegment), highlighted: current.prioritySegment !== parsed.prioritySegment },
+                  { label: '案件適合度', oldValue: getOpportunityFitLabel(current.opportunityFit), newValue: getOpportunityFitLabel(parsed.opportunityFit), highlighted: current.opportunityFit !== parsed.opportunityFit },
+                  { label: '判定メモ', oldValue: normalize(current.opportunityFitReason), newValue: normalize(parsed.opportunityFitReason), highlighted: normalize(current.opportunityFitReason) !== normalize(parsed.opportunityFitReason) },
+                  { label: '観測事実', oldValue: formatFacts(current.opportunityFacts), newValue: formatFacts(parsed.opportunityFacts), highlighted: formatFacts(current.opportunityFacts) !== formatFacts(parsed.opportunityFacts) },
+                  { label: '事前仮説', oldValue: normalize(current.hypothesis), newValue: normalize(parsed.hypothesis), highlighted: normalize(current.hypothesis) !== normalize(parsed.hypothesis) },
+                ]
+                const changedCount = compareRows.filter(row => row.highlighted).length
+                return (
+                  <div className="border-t border-slate-100 px-4 py-3 flex flex-col gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">1件ずつ確認</p>
+                      <span className="badge bg-violet-100 text-violet-700">{batchRefreshPreviewIndex + 1} / {batchRefreshPreviewResults.length}</span>
+                      <span className="badge bg-amber-100 text-amber-700">{changedCount}項目変更</span>
+                      <span className={`badge ${currentRefreshApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        {currentRefreshApproved ? '承認済み' : '未承認'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="text-[11px] font-bold text-slate-500 mb-2">旧</p>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-[10px] text-slate-400">アカウント</p>
+                            <p className="text-sm font-semibold text-slate-800">{current.accountName}</p>
+                          </div>
+                          {compareRows.map(row => (
+                            <div key={`old-${row.label}`}>
+                              <p className="text-[10px] text-slate-400">{row.label}</p>
+                              <p className={`text-xs whitespace-pre-wrap ${row.highlighted ? 'text-slate-800' : 'text-slate-600'}`}>{row.oldValue}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-violet-200 bg-violet-50 p-3">
+                        <p className="text-[11px] font-bold text-violet-700 mb-2">新</p>
+                        <div className="space-y-2">
+                          <div>
+                            <p className="text-[10px] text-violet-400">アカウント</p>
+                            <p className="text-sm font-semibold text-violet-900">{parsed.accountName || current.accountName}</p>
+                          </div>
+                          {compareRows.map(row => (
+                            <div key={`new-${row.label}`}>
+                              <p className="text-[10px] text-violet-400">{row.label}</p>
+                              <p className={`text-xs whitespace-pre-wrap ${row.highlighted ? 'text-violet-900 font-medium' : 'text-violet-700'}`}>{row.newValue}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        className="btn-sec text-xs py-2 px-3"
+                        onClick={() => setBatchRefreshPreviewIndex(i => Math.max(0, i - 1))}
+                        disabled={batchRefreshPreviewIndex === 0}
+                      >
+                        <i className="fa-solid fa-chevron-left mr-1" />前へ
+                      </button>
+                      <button
+                        className="btn-sec text-xs py-2 px-3"
+                        onClick={() => setBatchRefreshPreviewIndex(i => Math.min(batchRefreshPreviewResults.length - 1, i + 1))}
+                        disabled={batchRefreshPreviewIndex >= batchRefreshPreviewResults.length - 1}
+                      >
+                        次へ<i className="fa-solid fa-chevron-right ml-1" />
+                      </button>
+                      <button
+                        className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${currentRefreshApproved ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+                        onClick={() => handleToggleLatestSpecApproval(currentRefreshPreview.targetId)}
+                      >
+                        <i className={`fa-solid ${currentRefreshApproved ? 'fa-check' : 'fa-circle-check'} mr-1`} />
+                        {currentRefreshApproved ? '承認済み' : 'この件を承認'}
+                      </button>
+                      <button
+                        className="btn-sec text-xs py-2 px-3"
+                        onClick={() => {
+                          handleToggleLatestSpecApproval(currentRefreshPreview.targetId, false)
+                          setBatchRefreshPreviewIndex(i => Math.min(batchRefreshPreviewResults.length - 1, i + 1))
+                        }}
+                      >
+                        <i className="fa-solid fa-forward mr-1" />見送り
+                      </button>
+                      <button
+                        className="btn-sec text-xs py-2 px-3"
+                        onClick={() => {
+                          const nextMap: Record<string, boolean> = {}
+                          batchRefreshPreviewResults.forEach(r => { nextMap[r.targetId] = true })
+                          setBatchRefreshApprovedMap(nextMap)
+                        }}
+                      >
+                        <i className="fa-solid fa-list-check mr-1" />全件承認
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                      この件の変更点：
+                      {compareRows.filter(row => row.highlighted).length > 0
+                        ? <span className="ml-1">{compareRows.filter(row => row.highlighted).map(row => row.label).join(' / ')}</span>
+                        : <span className="ml-1">見た目上の差分はありません</span>
+                      }
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="border-t border-slate-100">
                 <p className="text-[11px] text-slate-400 px-4 py-2 font-medium">対象案件</p>
@@ -1099,8 +1258,16 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                   {latestSpecRefreshItems.map(item => {
                     const target = item.target
                     const missing = getLatestSpecMissingLabels(target)
+                    const isApproved = !!batchRefreshApprovedMap[target.id]
                     return (
-                      <div key={target.id} className="flex items-center gap-3 px-4 py-2.5">
+                      <div
+                        key={target.id}
+                        className={`flex items-center gap-3 px-4 py-2.5 ${refreshHasPreview && currentRefreshPreview?.targetId === target.id ? 'bg-violet-50' : ''}`}
+                        onClick={() => {
+                          const idx = batchRefreshPreviewResults.findIndex(r => r.targetId === target.id)
+                          if (idx >= 0) setBatchRefreshPreviewIndex(idx)
+                        }}
+                      >
                         <span className="text-[11px] font-bold text-slate-400 w-5 shrink-0">{item.index}</span>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-xs text-slate-800 truncate">{target.accountName}</p>
@@ -1110,6 +1277,11 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                             {missing.length > 0 && <span className="ml-1 text-violet-500">・未設定: {missing.join(' / ')}</span>}
                           </p>
                         </div>
+                        {refreshHasPreview && (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {isApproved ? '承認' : '未承認'}
+                          </span>
+                        )}
                       </div>
                     )
                   })}
@@ -1124,6 +1296,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                   setBatchRefreshOpen(false)
                   setBatchRefreshOutput('')
                   setBatchRefreshError(null)
+                  setBatchRefreshPreviewResults([])
+                  setBatchRefreshPreviewIndex(0)
+                  setBatchRefreshApprovedMap({})
                 }}
               >
                 閉じる
