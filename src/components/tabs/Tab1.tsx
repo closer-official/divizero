@@ -126,6 +126,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const [batchRefreshPreviewResults, setBatchRefreshPreviewResults] = useState<SpecRefreshBatchResult[]>([])
   const [batchRefreshPreviewIndex, setBatchRefreshPreviewIndex] = useState(0)
   const [batchRefreshApprovedMap, setBatchRefreshApprovedMap] = useState<Record<string, boolean>>({})
+  const [batchRefreshManualEdits, setBatchRefreshManualEdits] = useState<Record<string, Partial<SpecRefreshParsed>>>({})
+  const [batchRefreshManualFacts, setBatchRefreshManualFacts] = useState<Record<string, Partial<NonNullable<Target['opportunityFacts']>>>>({})
 
   useEffect(() => {
     setSelectedId(null)
@@ -348,6 +350,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       setBatchRefreshPreviewResults([])
       setBatchRefreshPreviewIndex(0)
       setBatchRefreshApprovedMap({})
+      setBatchRefreshManualEdits({})
+      setBatchRefreshManualFacts({})
       setBatchRefreshOpen(true)
       setTimeout(() => setBatchRefreshCopyState('idle'), 2500)
     }).catch(() => {
@@ -373,6 +377,26 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     setBatchRefreshError(missingCount > 0
       ? `AI出力の一部が見つかりませんでした。${missingCount}件は未解析のままです。まず各件を確認してください。`
       : null)
+  }
+
+  function handleSetLatestSpecEdit(targetId: string, patch: Partial<SpecRefreshParsed>) {
+    setBatchRefreshManualEdits(prev => ({
+      ...prev,
+      [targetId]: {
+        ...(prev[targetId] || {}),
+        ...patch,
+      },
+    }))
+  }
+
+  function handleSetLatestSpecFacts(targetId: string, patch: Partial<NonNullable<Target['opportunityFacts']>>) {
+    setBatchRefreshManualFacts(prev => ({
+      ...prev,
+      [targetId]: {
+        ...(prev[targetId] || {}),
+        ...patch,
+      },
+    }))
   }
 
   function handleToggleLatestSpecApproval(targetId: string, approved?: boolean) {
@@ -402,13 +426,30 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       const nextTargets = prev.targets.map(target => {
         const result = byTargetId.get(target.id)
         if (!result) return target
-        return getMergedSpecRefreshTarget(target, result.parsed, result.rawOutput)
+        const edited = {
+          ...result.parsed,
+          ...(batchRefreshManualEdits[target.id] || {}),
+          opportunityFacts: {
+            ...(result.parsed.opportunityFacts || {}),
+            ...(batchRefreshManualFacts[target.id] || {}),
+          },
+        } as SpecRefreshParsed
+        return getMergedSpecRefreshTarget(target, edited, result.rawOutput)
       })
       const nextPipeline = prev.pipeline.map(item => {
         const targetId = item.targetId
-        const result = targetId ? byTargetId.get(targetId) : undefined
+        if (!targetId) return item
+        const result = byTargetId.get(targetId)
         if (!result) return item
-        const merged = getMergedSpecRefreshTarget(item as unknown as Target, result.parsed, result.rawOutput)
+        const edited = {
+          ...result.parsed,
+          ...(batchRefreshManualEdits[targetId] || {}),
+          opportunityFacts: {
+            ...(result.parsed.opportunityFacts || {}),
+            ...(batchRefreshManualFacts[targetId] || {}),
+          },
+        } as SpecRefreshParsed
+        const merged = getMergedSpecRefreshTarget(item as unknown as Target, edited, result.rawOutput)
         const { aiOutput: _aiOutput, rawInput: _rawInput, ...pipelineFields } = merged
         return {
           ...item,
@@ -441,6 +482,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     setBatchRefreshPreviewResults([])
     setBatchRefreshPreviewIndex(0)
     setBatchRefreshApprovedMap({})
+    setBatchRefreshManualEdits({})
+    setBatchRefreshManualFacts({})
     const skipped = Math.max(0, total - approvedCount)
     const summaryMsg = `一括更新完了：${approvedCount}件承認 / ${skipped}件見送り`
     toast.show(summaryMsg, 2500)
@@ -777,6 +820,19 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   const currentRefreshPreview = batchRefreshPreviewResults[batchRefreshPreviewIndex] || null
   const currentRefreshTarget = currentRefreshPreview
     ? data.targets.find(t => t.id === currentRefreshPreview.targetId) || null
+    : null
+  const currentRefreshParsed = currentRefreshPreview?.parsed || null
+  const currentRefreshManualEdit = currentRefreshPreview ? (batchRefreshManualEdits[currentRefreshPreview.targetId] || {}) : {}
+  const currentRefreshManualFacts = currentRefreshPreview ? (batchRefreshManualFacts[currentRefreshPreview.targetId] || {}) : {}
+  const currentRefreshMerged = currentRefreshPreview && currentRefreshTarget
+    ? {
+        ...currentRefreshParsed,
+        ...currentRefreshManualEdit,
+        opportunityFacts: {
+          ...(currentRefreshParsed?.opportunityFacts || {}),
+          ...currentRefreshManualFacts,
+        },
+      }
     : null
   const currentRefreshApproved = currentRefreshPreview ? !!batchRefreshApprovedMap[currentRefreshPreview.targetId] : false
   const approvedRefreshCount = batchRefreshPreviewResults.filter(r => batchRefreshApprovedMap[r.targetId]).length
@@ -1141,19 +1197,26 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
               </div>
 
               {refreshHasPreview && currentRefreshPreview && currentRefreshTarget && (() => {
-                const parsed = currentRefreshPreview.parsed
+                const parsed = currentRefreshParsed || currentRefreshPreview.parsed
                 const current = currentRefreshTarget
+                const merged = currentRefreshMerged || parsed
                 const formatFacts = (facts?: typeof current.opportunityFacts) => facts ? formatOpportunityFacts(facts) : '（未設定）'
                 const normalize = (v?: string | null) => v && String(v).trim() ? String(v).trim() : '未設定'
                 const compareRows = [
-                  { label: '営業対象判定', oldValue: getOpportunityStatusLabel(current.opportunityStatus), newValue: getOpportunityStatusLabel(parsed.opportunityStatus), highlighted: current.opportunityStatus !== parsed.opportunityStatus },
-                  { label: '優先セグメント', oldValue: getPrioritySegmentLabel(current.prioritySegment), newValue: getPrioritySegmentLabel(parsed.prioritySegment), highlighted: current.prioritySegment !== parsed.prioritySegment },
-                  { label: '案件適合度', oldValue: getOpportunityFitLabel(current.opportunityFit), newValue: getOpportunityFitLabel(parsed.opportunityFit), highlighted: current.opportunityFit !== parsed.opportunityFit },
-                  { label: '判定メモ', oldValue: normalize(current.opportunityFitReason), newValue: normalize(parsed.opportunityFitReason), highlighted: normalize(current.opportunityFitReason) !== normalize(parsed.opportunityFitReason) },
-                  { label: '観測事実', oldValue: formatFacts(current.opportunityFacts), newValue: formatFacts(parsed.opportunityFacts), highlighted: formatFacts(current.opportunityFacts) !== formatFacts(parsed.opportunityFacts) },
-                  { label: '事前仮説', oldValue: normalize(current.hypothesis), newValue: normalize(parsed.hypothesis), highlighted: normalize(current.hypothesis) !== normalize(parsed.hypothesis) },
+                  { label: '営業対象判定', oldValue: getOpportunityStatusLabel(current.opportunityStatus), newValue: getOpportunityStatusLabel(merged.opportunityStatus), highlighted: current.opportunityStatus !== merged.opportunityStatus },
+                  { label: '優先セグメント', oldValue: getPrioritySegmentLabel(current.prioritySegment), newValue: getPrioritySegmentLabel(merged.prioritySegment), highlighted: current.prioritySegment !== merged.prioritySegment },
+                  { label: '案件適合度', oldValue: getOpportunityFitLabel(current.opportunityFit), newValue: getOpportunityFitLabel(merged.opportunityFit), highlighted: current.opportunityFit !== merged.opportunityFit },
+                  { label: '判定メモ', oldValue: normalize(current.opportunityFitReason), newValue: normalize(merged.opportunityFitReason), highlighted: normalize(current.opportunityFitReason) !== normalize(merged.opportunityFitReason) },
+                  { label: '観測事実', oldValue: formatFacts(current.opportunityFacts), newValue: formatFacts(merged.opportunityFacts), highlighted: formatFacts(current.opportunityFacts) !== formatFacts(merged.opportunityFacts) },
+                  { label: '事前仮説', oldValue: normalize(current.hypothesis), newValue: normalize(merged.hypothesis), highlighted: normalize(current.hypothesis) !== normalize(merged.hypothesis) },
                 ]
                 const changedCount = compareRows.filter(row => row.highlighted).length
+                const unresolvedMissing = [
+                  !merged.opportunityStatus ? '営業対象判定' : '',
+                  !merged.prioritySegment ? '優先セグメント' : '',
+                  !merged.opportunityFit ? '案件適合度' : '',
+                  !merged.opportunityFacts || !Object.values(merged.opportunityFacts).some(v => v !== undefined) ? '観測事実' : '',
+                ].filter(Boolean) as string[]
                 return (
                   <div className="border-t border-slate-100 px-4 py-3 flex flex-col gap-3">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1163,7 +1226,19 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                       <span className={`badge ${currentRefreshApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                         {currentRefreshApproved ? '承認済み' : '未承認'}
                       </span>
+                      {unresolvedMissing.length > 0 && (
+                        <span className="badge bg-amber-100 text-amber-700">不足 {unresolvedMissing.length}件</span>
+                      )}
                     </div>
+
+                    {unresolvedMissing.length > 0 && (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                        <p className="font-bold mb-1">この件は未設定が残っています。</p>
+                        <p className="mb-2">保存する前に必要な情報を入力してください。</p>
+                        <p className="font-semibold mb-1">不足項目: {unresolvedMissing.join(' / ')}</p>
+                        <div className="text-[11px] text-amber-800">※ ここを埋めない限り、この件は承認できません。</div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -1198,6 +1273,71 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                       </div>
                     </div>
 
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 flex flex-col gap-3">
+                      <div>
+                        <p className="text-[11px] font-bold text-emerald-700 mb-1">不足情報を入力</p>
+                        <p className="text-[11px] text-emerald-700">必要な情報を埋めると、未設定のまま残さずに保存できます。</p>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-500">営業対象判定</span>
+                          <select
+                            className="input-base text-sm bg-white"
+                            value={merged.opportunityStatus || ''}
+                            onChange={e => handleSetLatestSpecEdit(currentRefreshPreview.targetId, { opportunityStatus: (e.target.value || undefined) as SpecRefreshParsed['opportunityStatus'] })}
+                          >
+                            <option value="">未設定</option>
+                            <option value="target">対象</option>
+                            <option value="hold">保留</option>
+                            <option value="out">対象外</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-500">優先セグメント</span>
+                          <select
+                            className="input-base text-sm bg-white"
+                            value={merged.prioritySegment || ''}
+                            onChange={e => handleSetLatestSpecEdit(currentRefreshPreview.targetId, { prioritySegment: (e.target.value || undefined) as SpecRefreshParsed['prioritySegment'] })}
+                          >
+                            <option value="">未設定</option>
+                            <option value="utage">UTAGE優先</option>
+                            <option value="normal">通常</option>
+                            <option value="partner">提携候補</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-500">案件適合度</span>
+                          <select
+                            className="input-base text-sm bg-white"
+                            value={merged.opportunityFit || ''}
+                            onChange={e => handleSetLatestSpecEdit(currentRefreshPreview.targetId, { opportunityFit: (e.target.value || undefined) as SpecRefreshParsed['opportunityFit'] })}
+                          >
+                            <option value="">未設定</option>
+                            <option value="high">高</option>
+                            <option value="medium">中</option>
+                            <option value="low">低</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {OPPORTUNITY_FACT_ITEMS.map(entry => (
+                          <label key={entry.key} className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-sm">
+                            <input
+                              type="checkbox"
+                              className="accent-emerald-600"
+                              checked={!!(merged.opportunityFacts?.[entry.key])}
+                              onChange={e => handleSetLatestSpecFacts(currentRefreshPreview.targetId, {
+                                [entry.key]: e.target.checked ? true : undefined,
+                              } as Partial<NonNullable<Target['opportunityFacts']>>)}
+                            />
+                            <span className="text-slate-700">{entry.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap gap-2">
                       <button
                         className="btn-sec text-xs py-2 px-3"
@@ -1215,6 +1355,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                       </button>
                       <button
                         className={`text-xs font-bold py-2 px-3 rounded-xl border transition ${currentRefreshApproved ? 'bg-emerald-500 border-emerald-500 text-white' : 'bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-50'}`}
+                        disabled={unresolvedMissing.length > 0}
                         onClick={() => handleToggleLatestSpecApproval(currentRefreshPreview.targetId)}
                       >
                         <i className={`fa-solid ${currentRefreshApproved ? 'fa-check' : 'fa-circle-check'} mr-1`} />
