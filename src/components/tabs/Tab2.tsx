@@ -417,7 +417,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
   const notifications = getActiveNotifications(data)
 
-  const active = data.pipeline.filter(p => p.isOpen)
+  const active = data.pipeline.filter(p => p.isOpen && p.state !== 'closed')
   const myXHandle = data.settings?.myXHandle?.trim() || ''
   const warnItems = active.filter(p => daysSince(p.startDate) >= 30)
   const unverifiedTouches = data.pipeline
@@ -2160,7 +2160,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     confirm.show('クローズ確認', `「${item.accountName}」をクローズしますか？（${closeResult}）`, () => {
       const closeDate = todayStr()
       saveData(prev => {
-        const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, closedAt: closeDate } : p) }
+        const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, state: 'closed' as const, closedAt: closeDate } : p) }
         const pFinal = d.pipeline.find(p => p.id === item.id)!
         d.closed = [...d.closed, {
           id: uid(), pipelineId: item.id, createdAt: new Date().toISOString(),
@@ -2178,7 +2178,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   function handleCloseCaseFromTouch(result: string) {
     const closeDate = todayStr()
     saveData(prev => {
-      const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, closedAt: closeDate } : p) }
+      const d = { ...prev, pipeline: prev.pipeline.map(p => p.id === item.id ? { ...p, isOpen: false, state: 'closed' as const, closedAt: closeDate } : p) }
       const pFinal = d.pipeline.find(p => p.id === item.id)!
       d.closed = [...d.closed, {
         id: uid(), pipelineId: item.id, createdAt: new Date().toISOString(),

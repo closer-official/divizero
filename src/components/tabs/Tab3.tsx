@@ -108,7 +108,7 @@ export default function Tab3({ data, saveData, prompts, role, toast, confirm, pr
     confirm.show('確認', `「${item.accountName}」をOS②パイプラインに戻しますか？`, () => {
       saveData(prev => ({
         ...prev,
-        pipeline: prev.pipeline.map(p => p.id === item.pipelineId ? { ...p, isOpen: true, closedAt: null } : p),
+        pipeline: prev.pipeline.map(p => p.id === item.pipelineId ? { ...p, isOpen: true, state: 'active', closedAt: null } : p),
         closed: prev.closed.filter(c => c.id !== item.id),
       }))
       setSelectedId(null)
