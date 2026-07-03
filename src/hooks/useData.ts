@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, setDoc, type Firestore } from 'firebase/firestore';
 import { initFirebase } from '../firebase';
 import type { AppData } from '../types';
@@ -18,6 +18,8 @@ export function useData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [db, setDb] = useState<Firestore | null>(null);
+  // Track in-flight Firestore writes so onSnapshot reverts don't overwrite local state
+  const pendingWrites = useRef(0);
 
   useEffect(() => {
     let unsub: (() => void) | null = null;
@@ -29,6 +31,12 @@ export function useData() {
         unsub = onSnapshot(
           docRef,
           snap => {
+            // Skip if a local write is still in-flight to prevent server revert from
+            // overwriting optimistically-committed local state
+            if (pendingWrites.current > 0) {
+              setLoading(false);
+              return;
+            }
             if (snap.exists()) {
               try {
                 const parsed = JSON.parse(snap.data().payload ?? '{}') as AppData;
@@ -79,11 +87,17 @@ export function useData() {
       const next = updater(prev);
       if (db) {
         const docRef = doc(db, 'workspace', 'main');
-        setDoc(docRef, { payload: JSON.stringify(next) }).catch(e => {
-          console.error('Firestore write error', e);
-          // Fallback: save to localStorage
-          localStorage.setItem('os_data_v1', JSON.stringify(next));
-        });
+        pendingWrites.current++;
+        setDoc(docRef, { payload: JSON.stringify(next) })
+          .then(() => {
+            pendingWrites.current--;
+          })
+          .catch(e => {
+            pendingWrites.current--;
+            console.error('Firestore write error', e);
+            // Fallback: save to localStorage so data survives page reload
+            localStorage.setItem('os_data_v1', JSON.stringify(next));
+          });
       } else {
         // No Firestore → save to localStorage
         localStorage.setItem('os_data_v1', JSON.stringify(next));
