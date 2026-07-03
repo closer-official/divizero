@@ -5,6 +5,7 @@ import { usePrompts } from './hooks/usePrompts'
 import { buildTouchConvLog, uid } from './utils/helpers'
 import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
+import { registerExtensionBridge } from './services/extensionBridge'
 const Tab0 = lazy(() => import('./components/tabs/Tab0'))
 const Tab1 = lazy(() => import('./components/tabs/Tab1'))
 const Tab2 = lazy(() => import('./components/tabs/Tab2'))
@@ -52,6 +53,19 @@ export default function App() {
   const [focusPipelineItemId, setFocusPipelineItemId] = useState<string | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(57)
+  const dataRef = useRef(data)
+  dataRef.current = data
+
+  useEffect(() => {
+    if (loading || checking) return
+    return registerExtensionBridge({
+      getData: () => dataRef.current,
+      saveData,
+      prompts,
+      role,
+      buildLabel: BUILD_LABEL,
+    })
+  }, [loading, checking, saveData, prompts, role])
 
   useEffect(() => {
     const header = headerRef.current
