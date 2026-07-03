@@ -6,6 +6,7 @@ import {
   type DivizeroPingReport,
   type GeminiAborted,
   type GeminiCaptured,
+  type GeminiImportResult,
   type GeminiPrepare,
   type PopupCommand,
   type PopupResponse,
@@ -484,6 +485,16 @@ async function doOs1Capture(state: RunState): Promise<boolean> {
   return true
 }
 
+async function notifyGeminiImport(geminiTabId: number | undefined, ok: boolean, message: string): Promise<void> {
+  if (!geminiTabId) return
+  const msg: GeminiImportResult = { cmd: 'GEMINI_IMPORT_RESULT', ok, message }
+  try {
+    await sendTabMessage<GeminiImportResult, unknown>(geminiTabId, msg)
+  } catch {
+    // Gemini tab may be closed or content script not ready — ignore
+  }
+}
+
 async function doOs1Import(state: RunState): Promise<boolean> {
   const queueItem = state.queue[state.currentIndex]
   if (!queueItem) {
@@ -491,21 +502,43 @@ async function doOs1Import(state: RunState): Promise<boolean> {
     return false
   }
 
-  const response = (await bridgeCall('OS1_IMPORT', {
-    aiOutput: state.currentCapturedText ?? '',
-    channel: 'twitter',
-    screeningId: queueItem.screeningId,
-    rawInput: state.currentRawInput ?? '',
-    sourceContext: {
-      platform: 'twitter',
-      pageType: 'profile',
-      url: `https://x.com/${queueItem.handle}`,
-      collectedBy: 'chrome-extension',
-      collectedAt: nowIso(),
-    },
-  })) as { ok: boolean; missing?: string[] }
+  let response: { ok: boolean; missing?: string[]; code?: string }
+  try {
+    response = (await bridgeCall('OS1_IMPORT', {
+      aiOutput: state.currentCapturedText ?? '',
+      channel: 'twitter',
+      screeningId: queueItem.screeningId,
+      rawInput: state.currentRawInput ?? '',
+      sourceContext: {
+        platform: 'twitter',
+        pageType: 'profile',
+        url: `https://x.com/${queueItem.handle}`,
+        collectedBy: 'chrome-extension',
+        collectedAt: nowIso(),
+      },
+    })) as { ok: boolean; missing?: string[]; code?: string }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : 'bridge exception'
+    await notifyGeminiImport(state.geminiTabId, false, `取込失敗: ${errMsg}`)
+    await saveRunState({
+      ...state,
+      phase: 'OS1_NAV',
+      currentIndex: state.currentIndex + 1,
+      currentDraft: undefined,
+      currentRawInput: undefined,
+      currentCapturedText: undefined,
+      errors: [
+        ...state.errors,
+        { at: nowIso(), phase: state.phase, message: `${queueItem.handle}: ${errMsg}` },
+      ],
+      stats: { ...state.stats, os1Failed: state.stats.os1Failed + 1 },
+    })
+    return true
+  }
 
   if (!response.ok) {
+    const reason = (response.missing ?? []).join(', ') || response.code || 'OS1_IMPORT failed'
+    await notifyGeminiImport(state.geminiTabId, false, `取込失敗: ${reason}`)
     await saveRunState({
       ...state,
       phase: 'OS1_NAV',
@@ -518,7 +551,7 @@ async function doOs1Import(state: RunState): Promise<boolean> {
         {
           at: nowIso(),
           phase: state.phase,
-          message: `${queueItem.handle}: ${(response.missing ?? []).join(', ') || 'OS1_IMPORT failed'}`,
+          message: `${queueItem.handle}: ${reason}`,
         },
       ],
       stats: { ...state.stats, os1Failed: state.stats.os1Failed + 1 },
@@ -526,6 +559,7 @@ async function doOs1Import(state: RunState): Promise<boolean> {
     return true
   }
 
+  await notifyGeminiImport(state.geminiTabId, true, `✓ ${queueItem.handle} を取り込みました（OS①・OS②に追加）`)
   await saveRunState({
     ...state,
     phase: 'OS1_NAV',

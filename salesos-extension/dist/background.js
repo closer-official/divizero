@@ -435,26 +435,56 @@ async function doOs1Capture(state) {
   });
   return true;
 }
+async function notifyGeminiImport(geminiTabId, ok, message) {
+  if (!geminiTabId) return;
+  const msg = { cmd: "GEMINI_IMPORT_RESULT", ok, message };
+  try {
+    await sendTabMessage(geminiTabId, msg);
+  } catch {
+  }
+}
 async function doOs1Import(state) {
   const queueItem = state.queue[state.currentIndex];
   if (!queueItem) {
     await saveRunState(handleError(state, "OS\u2460\u5BFE\u8C61\u304C\u3042\u308A\u307E\u305B\u3093"));
     return false;
   }
-  const response = await bridgeCall("OS1_IMPORT", {
-    aiOutput: state.currentCapturedText ?? "",
-    channel: "twitter",
-    screeningId: queueItem.screeningId,
-    rawInput: state.currentRawInput ?? "",
-    sourceContext: {
-      platform: "twitter",
-      pageType: "profile",
-      url: `https://x.com/${queueItem.handle}`,
-      collectedBy: "chrome-extension",
-      collectedAt: nowIso()
-    }
-  });
+  let response;
+  try {
+    response = await bridgeCall("OS1_IMPORT", {
+      aiOutput: state.currentCapturedText ?? "",
+      channel: "twitter",
+      screeningId: queueItem.screeningId,
+      rawInput: state.currentRawInput ?? "",
+      sourceContext: {
+        platform: "twitter",
+        pageType: "profile",
+        url: `https://x.com/${queueItem.handle}`,
+        collectedBy: "chrome-extension",
+        collectedAt: nowIso()
+      }
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "bridge exception";
+    await notifyGeminiImport(state.geminiTabId, false, `\u53D6\u8FBC\u5931\u6557: ${errMsg}`);
+    await saveRunState({
+      ...state,
+      phase: "OS1_NAV",
+      currentIndex: state.currentIndex + 1,
+      currentDraft: void 0,
+      currentRawInput: void 0,
+      currentCapturedText: void 0,
+      errors: [
+        ...state.errors,
+        { at: nowIso(), phase: state.phase, message: `${queueItem.handle}: ${errMsg}` }
+      ],
+      stats: { ...state.stats, os1Failed: state.stats.os1Failed + 1 }
+    });
+    return true;
+  }
   if (!response.ok) {
+    const reason = (response.missing ?? []).join(", ") || response.code || "OS1_IMPORT failed";
+    await notifyGeminiImport(state.geminiTabId, false, `\u53D6\u8FBC\u5931\u6557: ${reason}`);
     await saveRunState({
       ...state,
       phase: "OS1_NAV",
@@ -467,13 +497,14 @@ async function doOs1Import(state) {
         {
           at: nowIso(),
           phase: state.phase,
-          message: `${queueItem.handle}: ${(response.missing ?? []).join(", ") || "OS1_IMPORT failed"}`
+          message: `${queueItem.handle}: ${reason}`
         }
       ],
       stats: { ...state.stats, os1Failed: state.stats.os1Failed + 1 }
     });
     return true;
   }
+  await notifyGeminiImport(state.geminiTabId, true, `\u2713 ${queueItem.handle} \u3092\u53D6\u308A\u8FBC\u307F\u307E\u3057\u305F\uFF08OS\u2460\u30FBOS\u2461\u306B\u8FFD\u52A0\uFF09`);
   await saveRunState({
     ...state,
     phase: "OS1_NAV",

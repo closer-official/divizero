@@ -65,6 +65,12 @@ export interface GeminiAborted {
   reason: 'skip' | 'abort'
 }
 
+export interface GeminiImportResult {
+  cmd: 'GEMINI_IMPORT_RESULT'
+  ok: boolean
+  message: string
+}
+
 export interface DivizeroPingReport {
   cmd: 'DIVIZERO_PING_REPORT'
   ok: boolean

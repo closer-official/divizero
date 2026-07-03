@@ -244,9 +244,20 @@ if (globalThis[GLOBAL_FLAG]) {
     }
   }
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.cmd !== "GEMINI_PREPARE") return false;
-    void prepare(message).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "prepare failed" }));
-    return true;
+    if (message.cmd === "GEMINI_PREPARE") {
+      void prepare(message).then(() => sendResponse({ ok: true })).catch((error) => sendResponse({ ok: false, error: error instanceof Error ? error.message : "prepare failed" }));
+      return true;
+    }
+    if (message.cmd === "GEMINI_IMPORT_RESULT") {
+      const statusEl = ensurePanel().getElementById("status");
+      if (statusEl) {
+        statusEl.textContent = message.message;
+        statusEl.style.color = message.ok ? "#7affb0" : "#ff9090";
+      }
+      sendResponse({ ok: true });
+      return false;
+    }
+    return false;
   });
 }
 var ensurePanel2;

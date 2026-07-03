@@ -1,4 +1,4 @@
-import type { GeminiAborted, GeminiCaptured, GeminiPrepare } from '../shared/protocol'
+import type { GeminiAborted, GeminiCaptured, GeminiImportResult, GeminiPrepare } from '../shared/protocol'
 
 interface SessionState {
   draftText: string
@@ -288,11 +288,22 @@ async function prepare(message: GeminiPrepare): Promise<void> {
   }
 }
 
-chrome.runtime.onMessage.addListener((message: GeminiPrepare, _sender, sendResponse) => {
-  if (message.cmd !== 'GEMINI_PREPARE') return false
-  void prepare(message)
-    .then(() => sendResponse({ ok: true }))
-    .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'prepare failed' }))
-  return true
+chrome.runtime.onMessage.addListener((message: GeminiPrepare | GeminiImportResult, _sender, sendResponse) => {
+  if (message.cmd === 'GEMINI_PREPARE') {
+    void prepare(message)
+      .then(() => sendResponse({ ok: true }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : 'prepare failed' }))
+    return true
+  }
+  if (message.cmd === 'GEMINI_IMPORT_RESULT') {
+    const statusEl = ensurePanel().getElementById('status') as HTMLDivElement | null
+    if (statusEl) {
+      statusEl.textContent = message.message
+      statusEl.style.color = message.ok ? '#7affb0' : '#ff9090'
+    }
+    sendResponse({ ok: true })
+    return false
+  }
+  return false
 })
 }
