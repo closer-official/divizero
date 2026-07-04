@@ -34,7 +34,7 @@ import {
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
   trackBadgeClass, stepsBarData, daysSince, normalizeHandle, buildXSearchUrl,
-  uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay, getLastContactDate,
+  uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay, getLastContactDate, isContactedToday,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -203,8 +203,9 @@ interface KanbanCardProps {
   isActive: boolean
   onClick: () => void
   onInlineReaction?: (touchId: string, r: TouchReaction) => void
+  priorityMeta?: { label: string; className: string; title: string }
 }
-function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardProps) {
+function KanbanCard({ item, isActive, onClick, onInlineReaction, priorityMeta }: KanbanCardProps) {
   const touches = item.touches || []
   const latestOs2 = [...touches].reverse().find(t => t.os2Judgment)
   const displayJ = latestOs2?.os2Judgment || item.judgment
@@ -214,8 +215,9 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
   const daysUntilMeeting = item.state === 'meeting_scheduled' && item.meetingDate
     ? Math.round((new Date(item.meetingDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
-  const daysSinceLast = daysSince(item.lastContactDate || item.startDate)
+  const daysSinceLast = daysSince(getLastContactDate(item) || item.startDate)
   const awaitingTouch = [...touches].reverse().find(t => t.status === 'awaiting_reaction')
+  const priority = priorityMeta || { label: '通常', className: 'bg-slate-100 text-slate-500', title: '優先度未設定' }
 
   return (
     <div
@@ -230,6 +232,9 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction }: KanbanCardPro
         {(item.temperature ?? 0) > 0 && (
           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${tempBadgeStyle(item.temperature ?? 0)}`}>温{item.temperature}</span>
         )}
+        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${priority.className}`} title={priority.title}>
+          優先 {priority.label}
+        </span>
         {item.inbound_signal && (
           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-teal-100 text-teal-700">{item.inbound_signal.type}</span>
         )}
@@ -288,8 +293,9 @@ interface KanbanColumnProps {
   activeId: string | null
   onCardClick: (id: string) => void
   onInlineReaction?: (pipelineId: string, touchId: string, r: TouchReaction) => void
+  getPriorityMeta?: (item: PipelineItem) => { label: string; className: string; title: string }
 }
-function KanbanColumn({ label, colorClass, items, activeId, onCardClick, onInlineReaction }: KanbanColumnProps) {
+function KanbanColumn({ label, colorClass, items, activeId, onCardClick, onInlineReaction, getPriorityMeta }: KanbanColumnProps) {
   const [visible, setVisible] = useState(KANBAN_PAGE)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -327,8 +333,14 @@ function KanbanColumn({ label, colorClass, items, activeId, onCardClick, onInlin
         ) : (
           <>
             {shown.map(item => (
-              <KanbanCard key={item.id} item={item} isActive={item.id === activeId} onClick={() => onCardClick(item.id)}
-                onInlineReaction={onInlineReaction ? (touchId, r) => onInlineReaction(item.id, touchId, r) : undefined} />
+              <KanbanCard
+                key={item.id}
+                item={item}
+                isActive={item.id === activeId}
+                onClick={() => onCardClick(item.id)}
+                priorityMeta={getPriorityMeta ? getPriorityMeta(item) : undefined}
+                onInlineReaction={onInlineReaction ? (touchId, r) => onInlineReaction(item.id, touchId, r) : undefined}
+              />
             ))}
             {visible < items.length && (
               <div ref={sentinelRef} className="py-2 flex justify-center shrink-0">
@@ -479,6 +491,37 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     if (item.currentStep === 'S2') return 's2'
     return 's3plus'
   }
+  function getPriorityMeta(item: PipelineItem): { label: string; className: string; title: string } {
+    const touches = item.touches || []
+    const lastContactDate = getLastContactDate(item)
+    const awaiting = touches.some(t => t.status === 'awaiting_reaction')
+    const warn = warnIds.has(item.id)
+    const recontactDue = !!item.recontact_date && new Date(item.recontact_date) <= tickNow
+    const contactedToday = isContactedToday(item)
+    if (touches.length === 0) {
+      return { label: '初回接触', className: 'bg-emerald-100 text-emerald-700', title: 'まだ接触履歴がありません' }
+    }
+    if (warn) {
+      return { label: '要対応', className: 'bg-rose-100 text-rose-700', title: '30日ルールの注意対象です' }
+    }
+    if (awaiting) {
+      return { label: '反応待ち', className: 'bg-amber-100 text-amber-700', title: '相手の反応待ちです' }
+    }
+    if (recontactDue) {
+      return { label: '再接触', className: 'bg-sky-100 text-sky-700', title: '再接触日が到来しています' }
+    }
+    if (contactedToday) {
+      return { label: '今日接触', className: 'bg-violet-100 text-violet-700', title: '今日はすでに接触済みです' }
+    }
+    const days = daysSince(lastContactDate || item.startDate)
+    if (days >= 7) {
+      return { label: '低優先', className: 'bg-slate-100 text-slate-500', title: 'しばらく接触していないため後回しです' }
+    }
+    if (days >= 3) {
+      return { label: '通常', className: 'bg-slate-100 text-slate-600', title: '通常優先度です' }
+    }
+    return { label: '高優先', className: 'bg-indigo-100 text-indigo-700', title: '直近接触のため優先度高めです' }
+  }
   const warnIds = new Set(warnItems.map(w => w.id))
 
   function urgencySort(a: PipelineItem, b: PipelineItem): number {
@@ -498,7 +541,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     const bAwaiting = bLast?.status === 'awaiting_reaction'
     if (aAwaiting !== bAwaiting) return aAwaiting ? -1 : 1
     // 3. oldest last contact first (b-a: larger daysSince = more urgent = earlier in list)
-    return daysSince(b.lastContactDate || b.startDate) - daysSince(a.lastContactDate || a.startDate)
+    return daysSince(getLastContactDate(b) || b.startDate) - daysSince(getLastContactDate(a) || a.startDate)
   }
 
   function filterActive(items: PipelineItem[]): PipelineItem[] {
@@ -917,9 +960,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     // 24h以上経過（残り24h以下）の反応待ちがあれば追加
     const awaitingUrgent = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
     const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
-    const lastContactDate = getLastContactDate(p)
-    const isNew = !lastContactDate
-    return awaitingUrgent || recontactDue || isNew || !!p.todayTask
+    const isNew = (p.touches || []).length === 0
+    const todayTaskActive = !!p.todayTask && !isContactedToday(p)
+    const recontactActive = !!recontactDue && !isContactedToday(p)
+    return awaitingUrgent || recontactActive || isNew || todayTaskActive
   })
 
   // 未判定一括コピー対象: active かつ次アクション未決定
@@ -975,7 +1019,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 const countdown = awaitingTouch ? awaitingCountdown(awaitingTouch.date) : ''
                 const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
                 const isNew = (p.touches || []).length === 0
-                const hasJudgmentTask = !!p.todayTask && !awaitingTouch && !recontactDue && !isNew
+                const hasJudgmentTask = !!p.todayTask && !isContactedToday(p) && !awaitingTouch && !recontactDue && !isNew
                 return (
                   <div
                     key={p.id}
@@ -992,8 +1036,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                         {awaitingTouch && !isOverdue && (
                           <span className="text-amber-600 font-semibold"><i className="fa-solid fa-hourglass-half mr-1" />{countdown}</span>
                         )}
-                        {recontactDue && !isNew && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
-                        {p.todayTask && <span className="text-orange-600 font-semibold"><i className="fa-solid fa-bolt mr-1" />{p.todayTask.action}</span>}
+                        {recontactDue && !isNew && !isContactedToday(p) && <span><i className="fa-solid fa-calendar-check mr-1" />再接触日</span>}
+                        {p.todayTask && !isContactedToday(p) && <span className="text-orange-600 font-semibold"><i className="fa-solid fa-bolt mr-1" />{p.todayTask.action}</span>}
                       </p>
                     </div>
                     {awaitingTouch && (
@@ -1009,7 +1053,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                         ))}
                       </div>
                     )}
-                    {p.todayTask && (
+                    {p.todayTask && !isContactedToday(p) && (
                       <button
                         className="text-[10px] font-bold py-1 px-2.5 rounded-lg border border-orange-300 bg-white hover:bg-orange-500 hover:text-white hover:border-orange-500 text-orange-600 transition shrink-0"
                         onClick={e => { e.stopPropagation(); handleClearTodayTask(p.id) }}
@@ -1305,6 +1349,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 activeId={drawerItemId}
                 onCardClick={id => setDrawerItemId(id)}
                 onInlineReaction={handleInlineReaction}
+                getPriorityMeta={getPriorityMeta}
               />
             ))}
           </div>

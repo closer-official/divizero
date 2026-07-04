@@ -1,5 +1,5 @@
 import type { AppData, PipelineItem } from '../../types'
-import { todayStr, daysSince, getLastContactDate, isContactedToday } from '../../utils/helpers'
+import { todayStr, daysSince, getLastContactDate } from '../../utils/helpers'
 
 export const DEFAULT_DAILY_TARGETS = {
   os0: 10,
@@ -148,7 +148,7 @@ export function getNeedsOS2Touch(data: AppData): PipelineItem[] {
     const lastContactDate = getLastContactDate(p)
     const touches = p.touches || []
     if (touches.some(t => t.status === 'awaiting_reaction')) return false
-    if (isContactedToday(p)) return false
+    if (touches.length > 0 && touches.some(t => isToday(t.date))) return false
     if (!lastContactDate && touches.some(t => isToday(t.date))) return false
     return true
   })

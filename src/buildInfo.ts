@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 接触日判定修正";
+export const BUILD_LABEL = "07/04 今日タスク表示と優先度表示修正";
