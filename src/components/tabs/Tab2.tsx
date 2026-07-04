@@ -3018,6 +3018,10 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
   const [touchJudgModelName, setTouchJudgModelName] = useState('')
 
   const isAwaiting = touch.status === 'awaiting_reaction'
+  const isMsgLikeOnly = !!msgParsed && (
+    msgParsed.reactionPattern === 'いいねのみ' ||
+    /いいねだけ|いいねのみ/.test([msgParsed.suggestedA, msgParsed.suggestedB, msgParsed.nextAction].join(' '))
+  )
 
   const s1JudgmentResult = s1ActionParsed || (touch.reactionJudgment ? {
     judgment: touch.reactionJudgment,
@@ -3426,15 +3430,17 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
   }
 
   function handleAddSelfTurn() {
-    if (!draftText.trim()) return
+    const resolvedText = draftText.trim() || (isMsgLikeOnly ? '❤️ いいねのみ' : '')
+    if (!resolvedText) return
+    const isLikeOnlyTurn = isMsgLikeOnly && !draftText.trim()
     const newTurn: ConversationTurn = {
       id: uid(),
       role: '自分',
-      text: draftText,
-      editReason: draftEditReason || undefined,
+      text: resolvedText,
+      editReason: isLikeOnlyTurn ? (draftEditReason || '本文返信は送らず、いいねのみ') : (draftEditReason || undefined),
       timestamp: new Date().toISOString(),
       channel: draftChannel,
-      sentStatus: 'sent',
+      sentStatus: isLikeOnlyTurn ? 'skipped' : 'sent',
       sentAt: new Date().toISOString(),
       ...(msgParsed ? {
         dmConversationState: msgParsed.purpose,
@@ -3494,9 +3500,9 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     }
     // OS_現象未来 の「返信パターン判定」から temperature と last_reaction をセット
     if (msgParsed?.reactionPattern) {
-      const tempMap: Record<string, number> = { '反応なし': 0, '❤️': 10, '温度20': 20, '温度50': 50, '温度80以上': 80, '否定': 0 }
+      const tempMap: Record<string, number> = { '反応なし': 0, '❤️': 10, '温度20': 20, 'いいねのみ': 20, '温度50': 50, '温度80以上': 80, '否定': 0 }
       const lrMap: Record<string, 'none' | 'heart' | 'temp20' | 'temp50' | 'temp80' | 'negative'> = {
-        '反応なし': 'none', '❤️': 'heart', '温度20': 'temp20', '温度50': 'temp50', '温度80以上': 'temp80', '否定': 'negative',
+        '反応なし': 'none', '❤️': 'heart', '温度20': 'temp20', 'いいねのみ': 'temp20', '温度50': 'temp50', '温度80以上': 'temp80', '否定': 'negative',
       }
       const temp = tempMap[msgParsed.reactionPattern]
       if (temp !== undefined) pipelineUpdates.temperature = temp
@@ -4329,8 +4335,8 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                             <p className="text-[11px] text-violet-700 flex-1 leading-relaxed">{msgParsed.suggestedA}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-violet-600 border border-violet-300 rounded-lg px-2 py-1 hover:bg-violet-100 transition min-h-[28px]"
-                              onClick={() => setDraftText(msgParsed!.suggestedA)}
-                            >使う</button>
+                              onClick={() => setDraftText(isMsgLikeOnly ? '❤️ いいねのみ' : msgParsed!.suggestedA)}
+                            >{isMsgLikeOnly ? 'いいねのみ' : '使う'}</button>
                           </div>
                         )}
                         {msgParsed.suggestedB && msgParsed.suggestedB !== '（空欄）' && (
@@ -4339,10 +4345,15 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                             <p className="text-[11px] text-indigo-700 flex-1 leading-relaxed">{msgParsed.suggestedB}</p>
                             <button
                               className="shrink-0 text-[10px] font-bold text-indigo-600 border border-indigo-300 rounded-lg px-2 py-1 hover:bg-indigo-100 transition min-h-[28px]"
-                              onClick={() => setDraftText(msgParsed!.suggestedB)}
-                            >使う</button>
+                              onClick={() => setDraftText(isMsgLikeOnly ? '❤️ いいねのみ' : msgParsed!.suggestedB)}
+                            >{isMsgLikeOnly ? 'いいねのみ' : '使う'}</button>
                           </div>
                         )}
+                      </div>
+                    )}
+                    {isMsgLikeOnly && (
+                      <div className="rounded-xl border border-pink-100 bg-pink-50 px-3 py-2 text-[11px] text-pink-700">
+                        これは本文返信ではなく、いいねのみで進める判断です。
                       </div>
                     )}
 
@@ -4416,7 +4427,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                 {/* 実際に送った文章 + 変えた理由 */}
                 <div className="flex flex-col gap-2 mt-1 pt-2 border-t border-slate-100">
                   <div className="flex items-center gap-2">
-                    <label className="text-[11px] text-slate-600 font-bold">実際に送った文章</label>
+                    <label className="text-[11px] text-slate-600 font-bold">{isMsgLikeOnly ? '実際に送った反応' : '実際に送った文章'}</label>
                     <div className="flex gap-1 ml-auto">
                       {(['リプ', 'DM'] as const).map(ch => (
                         <button
@@ -4433,7 +4444,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                   <textarea
                     rows={3}
                     className="input-base cs text-xs resize-y"
-                    placeholder="「使う」で入力、または手入力"
+                    placeholder={isMsgLikeOnly ? 'いいねのみなら空欄でOK。下のボタンで反応として記録できます。' : '「使う」で入力、または手入力'}
                     value={draftText}
                     onChange={e => setDraftText(e.target.value)}
                   />
@@ -4450,9 +4461,10 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                   <button
                     className="btn-primary text-xs py-2.5 justify-center"
                     onClick={handleAddSelfTurn}
-                    disabled={!draftText.trim()}
+                    disabled={isMsgLikeOnly ? false : !draftText.trim()}
                   >
-                    <i className="fa-solid fa-paper-plane mr-1" />✈ 送信完了として追加
+                    <i className={`fa-solid ${isMsgLikeOnly ? 'fa-heart' : 'fa-paper-plane'} mr-1`} />
+                    {isMsgLikeOnly ? 'いいねのみで追加' : '送信完了として追加'}
                   </button>
                 </div>
               </div>
