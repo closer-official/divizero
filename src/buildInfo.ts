@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 OS1プロンプト圧縮: 入力フォーマット削除・Human-Checkをチェックリスト化";
+export const BUILD_LABEL = "07/04 仕様更新バッチ: 観測事実空オブジェクトバグ修正・aiOutput再追加防止";

@@ -288,7 +288,6 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   function getMergedSpecRefreshTarget(
     target: Target,
     parsed: SpecRefreshParsed,
-    rawOutput: string,
   ): Target {
     const keepText = (next?: string, current?: string) => next && next.trim() ? next : (current || '')
     return {
@@ -330,7 +329,7 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       naturalQuestion: keepText(parsed.naturalQuestion, target.naturalQuestion),
       forbiddenAngles: parsed.forbiddenAngles?.length ? parsed.forbiddenAngles : target.forbiddenAngles,
       observations: parsed.observations?.length ? parsed.observations : target.observations,
-      aiOutput: rawOutput,
+      // aiOutput omitted — keep Firestore document size under 1 MB
     }
   }
 
@@ -426,35 +425,31 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       const nextTargets = prev.targets.map(target => {
         const result = byTargetId.get(target.id)
         if (!result) return target
+        const targetFacts = { ...(result.parsed.opportunityFacts || {}), ...(batchRefreshManualFacts[target.id] || {}) }
         const edited = {
           ...result.parsed,
           ...(batchRefreshManualEdits[target.id] || {}),
-          opportunityFacts: {
-            ...(result.parsed.opportunityFacts || {}),
-            ...(batchRefreshManualFacts[target.id] || {}),
-          },
+          opportunityFacts: Object.values(targetFacts).some(v => v !== undefined) ? targetFacts : undefined,
         } as SpecRefreshParsed
-        return getMergedSpecRefreshTarget(target, edited, result.rawOutput)
+        return getMergedSpecRefreshTarget(target, edited)
       })
       const nextPipeline = prev.pipeline.map(item => {
         const targetId = item.targetId
         if (!targetId) return item
         const result = byTargetId.get(targetId)
         if (!result) return item
+        const itemFacts = { ...(result.parsed.opportunityFacts || {}), ...(batchRefreshManualFacts[targetId] || {}) }
         const edited = {
           ...result.parsed,
           ...(batchRefreshManualEdits[targetId] || {}),
-          opportunityFacts: {
-            ...(result.parsed.opportunityFacts || {}),
-            ...(batchRefreshManualFacts[targetId] || {}),
-          },
+          opportunityFacts: Object.values(itemFacts).some(v => v !== undefined) ? itemFacts : undefined,
         } as SpecRefreshParsed
-        const merged = getMergedSpecRefreshTarget(item as unknown as Target, edited, result.rawOutput)
+        const merged = getMergedSpecRefreshTarget(item as unknown as Target, edited)
         const { aiOutput: _aiOutput, rawInput: _rawInput, ...pipelineFields } = merged
         return {
           ...item,
           ...pipelineFields,
-          os1Output: result.rawOutput,
+          os1Output: null, // omitted — keep Firestore document size under 1 MB
           targetId: item.targetId,
           currentStep: item.currentStep,
           stepHistory: item.stepHistory,
