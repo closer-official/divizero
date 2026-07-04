@@ -8,7 +8,7 @@ import {
   getPrioritySegmentLabel,
 } from './opportunityUtils'
 
-function formatObservations(observations: Observation[] | undefined): string {
+export function formatObservations(observations: Observation[] | undefined): string {
   if (!observations || observations.length === 0) {
     return '（なし — 旧形式案件のためnaturalQuestionを使うこと）'
   }
@@ -37,9 +37,10 @@ export function buildS1ActionPrompt(
 ): string {
   const reactionType = reactionDisplay(touch.reactionType)
 
-  const followReturned = (item.touches || []).some(t =>
-    hasReaction(t.reactionType, 'フォロー返し')
-  )
+  const touches = item.touches || []
+  const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
+  const likeTotal = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
+  const replyTotal = touches.filter(t => hasReaction(t.reactionType, 'テキスト返信')).length
 
   const isInboundDM = (item.isInbound || !!item.inbound_signal) &&
     (item.inboundActions?.includes('突然DM') || item.inbound_signal?.type === '突然DM')
@@ -79,8 +80,10 @@ export function buildS1ActionPrompt(
     .replace('{{actualSentText}}', touch.actualSentText || '—')
     .replace('{{reactionType}}', reactionType)
     .replace('{{reactionNote}}', resolvedReactionNote)
-    .replace('{{s1Count}}', String((item.touches || []).length))
+    .replace('{{s1Count}}', String(touches.length))
     .replace('{{likeReturnStreak}}', String(item.likeReturnStreak || 0))
+    .replace('{{likeTotal}}', String(likeTotal))
+    .replace('{{replyTotal}}', String(replyTotal))
     .replace('{{noReactionStreak}}', String(item.noReactionStreak || 0))
     .replace('{{followReturned}}', followReturned ? '有' : '無')
 

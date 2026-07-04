@@ -2,6 +2,7 @@ import type { PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
 import { getDisplayScore } from './salesExpUtils'
 import { formatOpportunityFacts, getOpportunityFitLabel, getOpportunityStatusLabel, getPrioritySegmentLabel } from './opportunityUtils'
+import { formatObservations } from './s1ActionPrompt'
 
 export interface BatchS1ActionItem {
   index: number
@@ -29,7 +30,10 @@ export interface BatchS1ActionResult {
 function buildCaseSection(item: BatchS1ActionItem): string {
   const { pipelineItem: p, touch: t } = item
   const reactionType = reactionDisplay(t.reactionType)
-  const followReturned = (p.touches || []).some(tp => hasReaction(tp.reactionType, 'フォロー返し'))
+  const touches = p.touches || []
+  const followReturned = touches.some(tp => hasReaction(tp.reactionType, 'フォロー返し'))
+  const likeTotal = touches.filter(tp => hasReaction(tp.reactionType, 'いいね返り')).length
+  const replyTotal = touches.filter(tp => hasReaction(tp.reactionType, 'テキスト返信')).length
 
   let section = `■ 案件情報
 アカウント名：${p.accountName}
@@ -42,6 +46,8 @@ function buildCaseSection(item: BatchS1ActionItem): string {
 案件適合度：${getOpportunityFitLabel(p.opportunityFit)}
 観測事実：
 ${formatOpportunityFacts(p.opportunityFacts)}
+OS①Observationリスト（priority昇順）：
+${formatObservations(p.observations)}
 
 ■ 接触した投稿
 投稿種別：${t.targetPostType || '—'}
@@ -58,8 +64,10 @@ ${t.actualSentText || '—'}
 ${t.reactionNote || '（なし）'}
 
 ■ S1接触サマリ
-S1接触数：${(p.touches || []).length}回
+S1接触数：${touches.length}回
 いいね返り連続：${p.likeReturnStreak || 0}回
+いいね累計：${likeTotal}回
+テキスト返信累計：${replyTotal}回
 無反応連続：${p.noReactionStreak || 0}回
 フォロー返し：${followReturned ? '有' : '無'}`
 
