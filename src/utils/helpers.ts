@@ -167,7 +167,7 @@ export function stepsBarData(currentStep: string): Array<{cls: string; tip: stri
   });
 }
 
-export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; salesExpectationFacts?: SalesExpectationFacts; opportunityStatus?: OpportunityStatus; prioritySegment?: PrioritySegment; opportunityFit?: OpportunityFit; opportunityFacts?: OpportunityFacts; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
+export function buildTouchConvLog(item: { accountName: string; channel: string; track: string; hypothesis?: string; startDate?: string; currentStep: string; judgment?: string | null; nextAction?: string | null; salesExpectation?: number; salesExpectationReason?: string; salesExpectationFacts?: SalesExpectationFacts; opportunityStatus?: OpportunityStatus; prioritySegment?: PrioritySegment; opportunityFit?: OpportunityFit; opportunityFacts?: OpportunityFacts; touches?: Array<{ date: string; targetPostType: string; targetValidity: string; targetPostText?: string; actualSentText: string; editReason?: string; messageValidity: string; judgmentReason?: string; improvementSuggestion?: string; reactionType: TouchReaction | TouchReaction[] | string; reactionNote?: string; reactionReplyMode?: 'text' | 'like_only' | 'none'; os2Judgment?: string; os2NextAction?: string; os2ReplyA?: string; os2ReplyB?: string; conversationTurns?: Array<{ role: string; text: string; channel: string; timestamp: string }> }> }): string {
   const touches = item.touches || [];
   const lines: string[] = [
     `【案件情報】`,
@@ -202,6 +202,7 @@ export function buildTouchConvLog(item: { accountName: string; channel: string; 
     if (t.improvementSuggestion && t.improvementSuggestion !== 'なし') lines.push(`改善提案: ${t.improvementSuggestion}`);
     lines.push(`反応: ${reactionDisplay(t.reactionType)}`);
     if (t.reactionNote) lines.push(`反応補足: ${t.reactionNote}`);
+    if (t.reactionReplyMode) lines.push(`返信方法: ${t.reactionReplyMode === 'like_only' ? 'いいねのみ' : t.reactionReplyMode === 'text' ? 'テキスト返信' : 'なし'}`);
     if (t.os2Judgment) lines.push(`OS②判定: ${t.os2Judgment}`);
     if (t.os2NextAction) lines.push(`次アクション: ${t.os2NextAction}`);
     if (t.os2ReplyA) lines.push(`OS②案A: ${t.os2ReplyA}`);

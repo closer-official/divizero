@@ -3024,6 +3024,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     nextStep: touch.reactionNextStep || '',
     warning: touch.reactionWarning || '',
     reason: '',
+    replyMode: touch.reactionReplyMode,
     replyA: touch.reactionReplyA,
     replyB: touch.reactionReplyB,
   } as S1ActionResult : null)
@@ -3185,6 +3186,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       reactionJudgment: parsed.judgment,
       reactionNextStep: parsed.nextStep,
       reactionWarning: parsed.warning,
+      reactionReplyMode: parsed.replyMode,
       reactionReplyA: parsed.replyA,
       reactionReplyB: parsed.replyB,
       reactionDmScore: parsed.dmScore,
@@ -3204,17 +3206,18 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       reactionJudgment: undefined,
       reactionNextStep: undefined,
       reactionWarning: undefined,
+      reactionReplyMode: undefined,
       reactionReplyA: undefined,
       reactionReplyB: undefined,
       reactionDmScore: undefined,
     } as Partial<Touch>, {})
   }
 
-  function handleRecordS1Reply() {
-    const text = s1ActualSentText.trim()
+  function handleRecordS1Reply(mode: 'text' | 'like_only' = 'text') {
+    const text = mode === 'like_only' ? '❤️ いいねのみ' : s1ActualSentText.trim()
     if (!text) return
     const judgment = s1JudgmentResult?.judgment || ''
-    navigator.clipboard.writeText(text).catch(() => {})
+    if (mode === 'text') navigator.clipboard.writeText(text).catch(() => {})
     const now = new Date().toISOString()
 
     if (judgment === 'DM移行') {
@@ -3223,11 +3226,11 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
         aiSuggestedText: '', actualSentText: text, editReason: s1EditReasonForRecord || '',
         messageValidity: '未判定', status: 'reacted',
-        reactionType: '未記録', reactionNote: '',
+        reactionType: '未記録', reactionNote: '', reactionReplyMode: mode,
         touchMode: 'conversation', threadEntry: 's3_direct', threadStatus: 'active',
         conversationTurns: [{
           id: uid(), role: '自分', text,
-          timestamp: now, channel: 'DM', sentStatus: 'sent', sentAt: now,
+          timestamp: now, channel: 'DM', sentStatus: mode === 'like_only' ? 'skipped' : 'sent', sentAt: now,
         } as ConversationTurn],
         dmExchangeCount: 0, repExchangeCount: 0,
       }
@@ -3239,8 +3242,10 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
 
     const continuationTurn: ConversationTurn = {
       id: uid(), role: '自分', text,
-      editReason: s1EditReasonForRecord || undefined,
-      timestamp: now, channel: 'リプ', sentStatus: 'sent', sentAt: now,
+      editReason: mode === 'like_only'
+        ? (s1EditReasonForRecord || '文字返信はせず、いいねのみで反応')
+        : (s1EditReasonForRecord || undefined),
+      timestamp: now, channel: 'リプ', sentStatus: mode === 'like_only' ? 'skipped' : 'sent', sentAt: now,
     }
     const shouldClearTodayTask = !!pipelineItem.todayTask || (pipelineItem.recontact_date != null && pipelineItem.recontact_date <= todayStr())
     setS1ActionParsed(null)
@@ -3252,6 +3257,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       status: 'awaiting_reaction',
       reactionType: '未記録',
       reactionNote: '',
+      reactionReplyMode: mode,
       reactionJudgment: undefined,
       reactionNextStep: undefined,
       reactionWarning: undefined,
@@ -3813,7 +3819,18 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
             if (j === 'クローズ') return 'bg-rose-50 border-rose-200 text-rose-700'
             return 'bg-slate-50 border-slate-200 text-slate-700'
           }
-          const hasReplies = (result?.judgment === 'S1継続' || result?.judgment === '公開リプ継続' || result?.judgment === 'DM移行') && (result?.replyA || result?.replyB)
+          const hasReplies = (result?.judgment === 'S1継続' || result?.judgment === '公開リプ継続' || result?.judgment === 'DM移行') && (result?.replyA || result?.replyB || result?.replyMode === 'like_only')
+          const replyModeLabel = result?.replyMode === 'like_only'
+            ? '返信方法：いいねのみ'
+            : result?.replyMode === 'text'
+              ? '返信方法：テキスト返信'
+              : result?.replyMode === 'none'
+                ? '返信方法：なし'
+                : ''
+          const sentLabel = result?.replyMode === 'like_only' ? '実際に送った反応' : '実際に送った文章'
+          const sentPlaceholder = result?.replyMode === 'like_only'
+            ? 'いいねのみなら空欄のままでもOK。下の「いいねだけで記録」ボタンを使えます。'
+            : '「使う」で転記、または直接入力'
           return (
             <div className="mt-1 flex flex-col gap-1.5">
               {result ? (
@@ -3828,6 +3845,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                       >やり直し入力</button>
                     </div>
                     {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
+                    {replyModeLabel && <p className="text-[11px] font-semibold opacity-80">{replyModeLabel}</p>}
                     {result.warning && result.warning !== 'なし' && (
                       <p className="text-[11px] text-rose-600 font-medium">⚠ {result.warning}</p>
                     )}
@@ -3859,12 +3877,21 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                           </button>
                         </div>
                       )}
+                      {result.replyMode === 'like_only' && !result.replyA && !result.replyB && (
+                        <div className="bg-pink-50 border border-pink-100 rounded-xl px-3 py-2 text-[11px] text-pink-700">
+                          文字で返さず、いいねのみで十分なケースです。
+                        </div>
+                      )}
                       <div className="flex flex-col gap-1.5 mt-1 pt-2 border-t border-slate-100">
-                        <label className="text-xs font-semibold text-slate-700">実際に送った文章 <span className="text-rose-500">*</span></label>
+                        <label className="text-xs font-semibold text-slate-700">
+                          {sentLabel}
+                          {result?.replyMode !== 'like_only' && <span className="text-rose-500"> *</span>}
+                          {result?.replyMode === 'like_only' && <span className="text-slate-400">（任意）</span>}
+                        </label>
                         <textarea
                           rows={3}
                           className="input-base cs text-xs resize-y"
-                          placeholder="「使う」で転記、または直接入力"
+                          placeholder={sentPlaceholder}
                           value={s1ActualSentText}
                           onChange={e => setS1ActualSentText(e.target.value)}
                         />
@@ -3880,9 +3907,15 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                           className="btn-primary text-xs py-2.5 justify-center"
                           disabled={!s1ActualSentText.trim()}
                           style={{ background: s1ActualSentText.trim() ? '#4f46e5' : undefined }}
-                          onClick={handleRecordS1Reply}
+                          onClick={() => handleRecordS1Reply('text')}
                         >
                           <i className="fa-solid fa-paper-plane mr-1" />送信完了として記録
+                        </button>
+                        <button
+                          className={`btn-sec text-xs py-2.5 justify-center ${s1JudgmentResult?.replyMode === 'like_only' ? 'border-pink-300 bg-pink-50 text-pink-700' : ''}`}
+                          onClick={() => handleRecordS1Reply('like_only')}
+                        >
+                          <i className="fa-solid fa-heart mr-1 text-pink-500" />いいねだけで記録
                         </button>
                       </div>
                     </div>

@@ -24,6 +24,7 @@ export interface S1ActionResult {
   nextStep: string
   warning: string
   waitDays?: number
+  replyMode?: 'text' | 'like_only' | 'none'
   replyA?: string
   replyB?: string
   dmScore?: string
@@ -127,6 +128,14 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
 
   const replyA = pick('返信案A')
   const replyB = pick('返信案B')
+  const replyModeRaw = pick('返信方法')
+  const replyMode = replyModeRaw.includes('いいね')
+    ? 'like_only'
+    : replyModeRaw.includes('なし')
+      ? 'none'
+      : replyModeRaw
+        ? 'text'
+        : undefined
 
   const dmScore = pick('DM_SCORE')
   const dmMoveReason = pick('DM移行判断')
@@ -139,6 +148,11 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
     nextStep: pick('推奨アクション'),
     warning: pick('警告'),
     waitDays: waitDays !== undefined && !isNaN(waitDays) ? waitDays : undefined,
+    replyMode: replyMode || (
+      judgment === 'S1継続' || judgment === '公開リプ継続' || judgment === 'DM移行'
+        ? (replyA || replyB ? 'text' : 'none')
+        : 'none'
+    ),
     replyA: replyA && replyA !== 'なし' ? replyA : undefined,
     replyB: replyB && replyB !== 'なし' ? replyB : undefined,
     dmScore: dmScore || undefined,

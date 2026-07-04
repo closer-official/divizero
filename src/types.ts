@@ -60,6 +60,7 @@ export interface Touch {
   status?: 'awaiting_reaction' | 'reacted';
   reactionType: TouchReaction | TouchReaction[];
   reactionNote: string;
+  reactionReplyMode?: 'text' | 'like_only' | 'none';
   reactionJudgment?: string;
   reactionNextStep?: string;
   reactionWarning?: string;
