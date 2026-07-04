@@ -311,8 +311,7 @@ export function registerExtensionBridge({
             createdAt,
             channel: importPayload.channel,
             url: parsed.url || screening?.handle || '',
-            rawInput: importPayload.rawInput,
-            aiOutput: importPayload.aiOutput,
+            // rawInput / aiOutput omitted — keep Firestore document size under 1 MB
             pipelineId,
           } as Target
           const pipelineItem: PipelineItem | null = shouldAddToPipeline && pipelineId
@@ -320,7 +319,7 @@ export function registerExtensionBridge({
                 id: pipelineId,
                 targetId,
                 caseId: target.caseId || null,
-                os1Output: target.aiOutput || null,
+                os1Output: null, // omitted — keep Firestore document size under 1 MB
                 accountName: target.accountName,
                 url: target.url,
                 channel: target.channel,

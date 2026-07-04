@@ -118,6 +118,23 @@ export default function App() {
 
   const confirm: ConfirmAPI = { show: showConfirm }
 
+  // 既存データの aiOutput / rawInput / os1Output を削除して Firestore 1 MB 制限を回避（起動時 1 回のみ）
+  const blobCleanupDone = useRef(false)
+  useEffect(() => {
+    if (loading || blobCleanupDone.current) return
+    blobCleanupDone.current = true
+    const hasBlobs =
+      (data.targets || []).some(t => t.aiOutput || t.rawInput) ||
+      (data.pipeline || []).some(p => p.os1Output)
+    if (hasBlobs) {
+      saveData(prev => ({
+        ...prev,
+        targets: prev.targets.map(t => ({ ...t, aiOutput: undefined, rawInput: undefined })),
+        pipeline: prev.pipeline.map(p => ({ ...p, os1Output: null })),
+      }))
+    }
+  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // waiting → active 自動遷移 & 48h未反応 → last_reaction:none & 再接触日通知（起動時チェック）
   const recontactCheckDone = useRef(false)
   useEffect(() => {
