@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 現象未来をいいねのみ対応";
+export const BUILD_LABEL = "07/04 記録取り消しを追加";

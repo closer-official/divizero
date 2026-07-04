@@ -3151,6 +3151,36 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     setEditReactionNote('')
   }
 
+  function handleUndoSelfRecord() {
+    const turns = touch.conversationTurns || []
+    const lastTurn = turns[turns.length - 1]
+    if (!lastTurn || lastTurn.role !== '自分') {
+      toast.show('取り消せる自分の記録がありません', 1800)
+      return
+    }
+    confirm.show(
+      '記録取り消し',
+      '最後に記録した自分の送信を取り消しますか？',
+      () => {
+        const updatedTurns = turns.slice(0, -1)
+        const hasSelfTurn = updatedTurns.some(t => t.role === '自分')
+        const nextStatus: Touch['status'] = hasSelfTurn ? 'awaiting_reaction' : 'reacted'
+        onReactionSaved(touch.id, {
+          conversationTurns: updatedTurns,
+          status: nextStatus,
+          reactionReplyMode: undefined,
+          reactionJudgment: undefined,
+          reactionNextStep: undefined,
+          reactionWarning: undefined,
+          reactionReplyA: undefined,
+          reactionReplyB: undefined,
+          reactionDmScore: undefined,
+        }, {})
+        toast.show('記録を取り消しました')
+      }
+    )
+  }
+
   function handleCopyS1ActionPrompt() {
     if (!prompts.S1_ACTION) return
     const prompt = buildS1ActionPrompt(pipelineItem, touch, prompts.S1_ACTION)
@@ -3231,7 +3261,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         aiSuggestedText: '', actualSentText: text, editReason: s1EditReasonForRecord || '',
         messageValidity: '未判定', status: 'reacted',
         reactionType: '未記録', reactionNote: '', reactionReplyMode: mode,
-        touchMode: 'conversation', threadEntry: 's3_direct', threadStatus: 'active',
+        touchMode: 'conversation', threadEntry: 's3_direct', threadStatus: mode === 'like_only' ? 'inactive' : 'active',
         conversationTurns: [{
           id: uid(), role: '自分', text,
           timestamp: now, channel: 'DM', sentStatus: mode === 'like_only' ? 'skipped' : 'sent', sentAt: now,
@@ -3258,7 +3288,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     setS1EditReasonForRecord('')
     onReactionSaved(touch.id, {
       conversationTurns: [...(touch.conversationTurns || []), continuationTurn],
-      status: 'awaiting_reaction',
+      status: mode === 'like_only' ? 'reacted' : 'awaiting_reaction',
       reactionType: '未記録',
       reactionNote: '',
       reactionReplyMode: mode,
@@ -3462,7 +3492,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       conversationTurns: updatedTurns,
       repExchangeCount: isRep ? (touch.repExchangeCount || 0) + 1 : touch.repExchangeCount,
       dmExchangeCount: !isRep ? (touch.dmExchangeCount || 0) + 1 : touch.dmExchangeCount,
-      status: 'awaiting_reaction',
+      status: isLikeOnlyTurn ? 'reacted' : 'awaiting_reaction',
       ...(os2CpParsed ? {
         os2Judgment: os2CpParsed.judgment,
         os2NextAction: os2CpParsed.nextAction,
@@ -3849,6 +3879,13 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
                         onClick={handleRedoS1Action}
                         title="行動判定をやり直す"
                       >やり直し入力</button>
+                      {(touch.reactionReplyMode || touch.reactionJudgment || touch.reactionNextStep) && (
+                        <button
+                          className="text-[10px] text-slate-400 hover:text-rose-500 border border-slate-200 hover:border-rose-300 rounded px-1.5 py-0.5 transition shrink-0"
+                          onClick={handleUndoSelfRecord}
+                          title="最後に記録した自分の送信を取り消す"
+                        >記録を取り消す</button>
+                      )}
                     </div>
                     {result.nextStep && <p className="text-[11px] opacity-80">{result.nextStep}</p>}
                     {replyModeLabel && <p className="text-[11px] font-semibold opacity-80">{replyModeLabel}</p>}
