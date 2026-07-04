@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 いいねのみ既存記録を正規化";
+export const BUILD_LABEL = "07/04 アカウント導線を追加";

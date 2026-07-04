@@ -1241,7 +1241,22 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                        <p className="text-[11px] font-bold text-slate-500 mb-2">旧</p>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-[11px] font-bold text-slate-500">旧</p>
+                          {buildProfileUrl(current.url, current.channel) && (
+                            <a
+                              href={buildProfileUrl(current.url, current.channel)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700 transition"
+                              onClick={e => e.stopPropagation()}
+                              title="このアカウントを開く"
+                            >
+                              <i className="fa-solid fa-arrow-up-right-from-square" />
+                              アカウントを開く
+                            </a>
+                          )}
+                        </div>
                         <div className="space-y-2">
                           <div>
                             <p className="text-[10px] text-slate-400">アカウント</p>
@@ -1256,7 +1271,22 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                         </div>
                       </div>
                       <div className="rounded-2xl border border-violet-200 bg-violet-50 p-3">
-                        <p className="text-[11px] font-bold text-violet-700 mb-2">新</p>
+                        <div className="flex items-center gap-2 mb-2">
+                          <p className="text-[11px] font-bold text-violet-700">新</p>
+                          {buildProfileUrl(parsed.url || current.url, parsed.channel || current.channel) && (
+                            <a
+                              href={buildProfileUrl(parsed.url || current.url, parsed.channel || current.channel)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border border-violet-200 bg-white text-violet-700 hover:border-violet-300 hover:bg-violet-50 transition"
+                              onClick={e => e.stopPropagation()}
+                              title="このアカウントを開く"
+                            >
+                              <i className="fa-solid fa-arrow-up-right-from-square" />
+                              アカウントを開く
+                            </a>
+                          )}
+                        </div>
                         <div className="space-y-2">
                           <div>
                             <p className="text-[10px] text-violet-400">アカウント</p>
@@ -1417,6 +1447,19 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
                             {missing.length > 0 && <span className="ml-1 text-violet-500">・未設定: {missing.join(' / ')}</span>}
                           </p>
                         </div>
+                        {buildProfileUrl(target.url, target.channel) && (
+                          <a
+                            href={buildProfileUrl(target.url, target.channel)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full border border-slate-200 bg-white text-slate-600 hover:border-violet-300 hover:text-violet-700 transition shrink-0"
+                            onClick={e => e.stopPropagation()}
+                            title="このアカウントを開く"
+                          >
+                            <i className="fa-solid fa-arrow-up-right-from-square" />
+                            開く
+                          </a>
+                        )}
                         {refreshHasPreview && (
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isApproved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
                             {isApproved ? '承認' : '未承認'}
