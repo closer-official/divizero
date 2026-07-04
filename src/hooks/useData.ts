@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, setDoc, type Firestore } from 'firebase/firestore';
 import { initFirebase } from '../firebase';
-import type { AppData } from '../types';
+import type { AppData, PipelineItem, Touch } from '../types';
 
 const EMPTY_DATA = (): AppData => ({
   screenings: [],
@@ -12,6 +12,50 @@ const EMPTY_DATA = (): AppData => ({
   trash: [],
   logs: [],
 });
+
+function buildLoadedData(raw: Partial<AppData> | null | undefined): AppData {
+  return { ...EMPTY_DATA(), ...(raw || {}) }
+}
+
+function isLikeOnlyTouch(touch: Touch): boolean {
+  if (touch.reactionReplyMode === 'like_only') return true
+  if (touch.status !== 'awaiting_reaction') return false
+  if (/いいねのみ/.test(touch.actualSentText || '')) return true
+  const turns = touch.conversationTurns || []
+  const lastSelfTurn = [...turns].reverse().find(turn => turn.role === '自分')
+  return !!lastSelfTurn && /いいねのみ/.test(lastSelfTurn.text)
+}
+
+function normalizeTouch(touch: Touch): Touch {
+  if (!isLikeOnlyTouch(touch)) return touch
+  return {
+    ...touch,
+    status: 'reacted',
+    reactionReplyMode: 'like_only',
+    ...(touch.touchMode === 'conversation' || (touch.conversationTurns?.length ?? 0) > 0
+      ? { threadStatus: 'inactive' as const }
+      : {}),
+  }
+}
+
+function normalizePipelineItem(item: PipelineItem): PipelineItem {
+  const touches = item.touches
+  if (!touches || touches.length === 0) return item
+  const normalizedTouches = touches.map(normalizeTouch)
+  const changed = normalizedTouches.length !== touches.length
+    || normalizedTouches.some((touch, idx) => touch !== touches[idx])
+  if (!changed) return item
+  return { ...item, touches: normalizedTouches }
+}
+
+function normalizeAppData(data: AppData): AppData {
+  const pipeline = data.pipeline || []
+  const normalizedPipeline = pipeline.map(normalizePipelineItem)
+  const changed = normalizedPipeline.length !== pipeline.length
+    || normalizedPipeline.some((item, idx) => item !== pipeline[idx])
+  if (!changed) return data
+  return { ...data, pipeline: normalizedPipeline }
+}
 
 export function useData() {
   const [data, setData] = useState<AppData>(EMPTY_DATA());
@@ -39,8 +83,21 @@ export function useData() {
             }
             if (snap.exists()) {
               try {
-                const parsed = JSON.parse(snap.data().payload ?? '{}') as AppData;
-                setData({ ...EMPTY_DATA(), ...parsed });
+                const loaded = buildLoadedData(JSON.parse(snap.data().payload ?? '{}') as Partial<AppData>);
+                const normalized = normalizeAppData(loaded);
+                setData(normalized);
+                if (JSON.stringify(normalized) !== JSON.stringify(loaded)) {
+                  pendingWrites.current++;
+                  setDoc(docRef, { payload: JSON.stringify(normalized) })
+                    .then(() => {
+                      pendingWrites.current--;
+                    })
+                    .catch(e => {
+                      pendingWrites.current--;
+                      console.error('Firestore migration write error', e);
+                      localStorage.setItem('os_data_v1', JSON.stringify(normalized));
+                    });
+                }
               } catch {
                 setData(EMPTY_DATA());
               }
@@ -65,8 +122,12 @@ export function useData() {
         const stored = localStorage.getItem('os_data_v1');
         if (stored) {
           try {
-            const parsed = JSON.parse(stored) as AppData;
-            setData({ ...EMPTY_DATA(), ...parsed });
+            const loaded = buildLoadedData(JSON.parse(stored) as Partial<AppData>);
+            const normalized = normalizeAppData(loaded);
+            setData(normalized);
+            if (JSON.stringify(normalized) !== JSON.stringify(loaded)) {
+              localStorage.setItem('os_data_v1', JSON.stringify(normalized));
+            }
           } catch {
             setData(EMPTY_DATA());
           }

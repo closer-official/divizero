@@ -14,7 +14,7 @@ const Tab4 = lazy(() => import('./components/tabs/Tab4'))
 const Tab5 = lazy(() => import('./components/tabs/Tab5'))
 const Tab6 = lazy(() => import('./components/tabs/Tab6'))
 const TabHome = lazy(() => import('./components/tabs/TabHome'))
-import type { OpportunityFacts, OpportunityFit, OpportunityStatus, PipelineItem, PrioritySegment, SalesExpectationFacts, Screening } from './types'
+import type { OpportunityFacts, OpportunityFit, OpportunityStatus, PipelineItem, PrioritySegment, SalesExpectationFacts, Screening, Touch } from './types'
 import type { TabId } from './services/home/homeTypes'
 
 export interface ToastAPI {
@@ -39,6 +39,17 @@ export interface PrefilledOS3 {
   prioritySegment?: PrioritySegment
   opportunityFit?: OpportunityFit
   opportunityFacts?: OpportunityFacts
+}
+
+function isLikeOnlyTouch(touch: Pick<Touch, 'status' | 'reactionReplyMode' | 'conversationTurns'>): boolean {
+  if (touch.reactionReplyMode === 'like_only') return true
+  const turns = touch.conversationTurns || []
+  const lastTurn = turns[turns.length - 1]
+  return touch.status === 'reacted' && !!lastTurn && lastTurn.role === '自分' && /いいねのみ/.test(lastTurn.text)
+}
+
+function isAwaitingReactionTouch(touch: Pick<Touch, 'status' | 'reactionReplyMode' | 'conversationTurns'>): boolean {
+  return touch.status === 'awaiting_reaction' && !isLikeOnlyTouch(touch)
 }
 
 export default function App() {
@@ -149,7 +160,7 @@ export default function App() {
     )
     const needsUpdate = recontactDue.length > 0 || (data.pipeline || []).some(p => {
       const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-      return latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago
+      return latestTouch && isAwaitingReactionTouch(latestTouch) && new Date(latestTouch.date) <= h48ago
     })
     if (needsUpdate) {
       saveData(prev => ({
@@ -163,7 +174,7 @@ export default function App() {
             updated = { ...updated, state: 'active' as const }
           }
           const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-          if (latestTouch && latestTouch.status === 'awaiting_reaction' && new Date(latestTouch.date) <= h48ago) {
+          if (latestTouch && isAwaitingReactionTouch(latestTouch) && new Date(latestTouch.date) <= h48ago) {
             if (!p.last_reaction || p.last_reaction_at !== latestTouch.date) {
               updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
             }
