@@ -1102,12 +1102,16 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
               <button
                 className="text-slate-400 hover:text-slate-700 p-1"
                 onClick={() => {
-                  setBatchRefreshOpen(false)
-                  setBatchRefreshOutput('')
-                  setBatchRefreshError(null)
-                  setBatchRefreshPreviewResults([])
-                  setBatchRefreshPreviewIndex(0)
-                  setBatchRefreshApprovedMap({})
+                  if (approvedRefreshCount > 0) {
+                    handleApplyLatestSpecRefresh()
+                  } else {
+                    setBatchRefreshOpen(false)
+                    setBatchRefreshOutput('')
+                    setBatchRefreshError(null)
+                    setBatchRefreshPreviewResults([])
+                    setBatchRefreshPreviewIndex(0)
+                    setBatchRefreshApprovedMap({})
+                  }
                 }}
               >
                 <i className="fa-solid fa-xmark" />
