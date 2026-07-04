@@ -34,7 +34,7 @@ import {
 import {
   addToExcluded, moveToTrash, buildProfileUrl,
   trackBadgeClass, stepsBarData, daysSince, normalizeHandle, buildXSearchUrl,
-  uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay,
+  uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay, getLastContactDate,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 
@@ -917,7 +917,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     // 24h以上経過（残り24h以下）の反応待ちがあれば追加
     const awaitingUrgent = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
     const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
-    const isNew = (p.touches || []).length === 0
+    const lastContactDate = getLastContactDate(p)
+    const isNew = !lastContactDate
     return awaitingUrgent || recontactDue || isNew || !!p.todayTask
   })
 
@@ -1510,8 +1511,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             </p>
             <div className="overflow-y-auto flex-1 divide-y divide-slate-100">
               {needsNextAction.map((p, idx) => {
-                const isNew = (p.touches || []).length === 0
+                const lastContactDate = getLastContactDate(p)
+                const isNew = !lastContactDate
                 const lastTouch = [...(p.touches || [])].reverse()[0]
+                const displayContactDate = lastTouch?.date || lastContactDate
                 const copyState = nextActionCopyStates[p.id] || 'idle'
                 return (
                   <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50">
@@ -1521,7 +1524,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                       <p className="text-[11px] text-slate-400 truncate">
                         {isNew
                           ? <span className="text-emerald-600 font-bold"><i className="fa-solid fa-star mr-0.5" />初回接触</span>
-                          : <span><i className="fa-solid fa-rotate mr-0.5" />反応後・次アクション未決定（{lastTouch?.date?.slice(0, 10)}）</span>
+                          : <span><i className="fa-solid fa-rotate mr-0.5" />接触済み・次アクション未決定（{displayContactDate?.slice(0, 10)}）</span>
                         }
                         <span className="ml-2">{p.currentStep} / {p.track}</span>
                       </p>

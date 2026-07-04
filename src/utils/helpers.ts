@@ -29,6 +29,32 @@ export function daysSince(dateStr?: string | null): number {
   return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
 }
 
+export function isSameLocalDay(dateA?: string | null, dateB?: string | null): boolean {
+  if (!dateA || !dateB) return false
+  const key = (value: string): string | null => {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`
+    const d = new Date(value)
+    if (isNaN(d.getTime())) return null
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const a = key(dateA)
+  const b = key(dateB)
+  return !!a && a === b
+}
+
+export function getLastContactDate(item: { lastContactDate?: string | null; touches?: Array<{ date: string }> }): string | null {
+  const touches = item.touches || []
+  if (touches.length > 0) {
+    return touches.reduce((latest, touch) => (touch.date > latest ? touch.date : latest), touches[0].date)
+  }
+  return item.lastContactDate || null
+}
+
+export function isContactedToday(item: { lastContactDate?: string | null; touches?: Array<{ date: string }> }): boolean {
+  return isSameLocalDay(getLastContactDate(item), todayStr())
+}
+
 export function urgencyClass(days: number): string {
   if (days < 4) return 'urgency-ok';
   if (days < 7) return 'urgency-warn';
