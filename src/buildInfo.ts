@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 Firestore 1MB超過修正: aiOutput/rawInput/os1Output削除";
+export const BUILD_LABEL = "07/04 OS1プロンプト圧縮: 入力フォーマット削除・Human-Checkをチェックリスト化";
