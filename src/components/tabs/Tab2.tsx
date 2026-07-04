@@ -2083,6 +2083,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       status: 'stocked',
     } : null
 
+    const shouldClearTodayTask = !pipelineUpdates.todayTask && !pipelineUpdates.recontact_date && (
+      !!item.todayTask || (item.recontact_date != null && item.recontact_date <= todayStr())
+    )
+    if (shouldClearTodayTask) {
+      pipelineUpdates = { ...pipelineUpdates, todayTask: undefined, recontact_date: undefined }
+    }
+
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
@@ -2131,10 +2138,18 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   }
 
   function handleAddNewTouch(touch: Touch, pipelineUpdates?: Partial<PipelineItem>) {
+    const nextPipelineUpdates: Partial<PipelineItem> = { ...(pipelineUpdates || {}) }
+    const shouldClearTodayTask = !nextPipelineUpdates.todayTask && !nextPipelineUpdates.recontact_date && (
+      !!item.todayTask || (item.recontact_date != null && item.recontact_date <= todayStr())
+    )
+    if (shouldClearTodayTask) {
+      nextPipelineUpdates.todayTask = undefined
+      nextPipelineUpdates.recontact_date = undefined
+    }
     saveData(prev => ({
       ...prev,
       pipeline: prev.pipeline.map(p => p.id === item.id
-        ? { ...p, ...(pipelineUpdates || {}), touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
+        ? { ...p, ...nextPipelineUpdates, touches: [...(p.touches || []), touch], lastContactDate: todayStr() }
         : p
       ),
     }))
@@ -3179,6 +3194,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       editReason: s1EditReasonForRecord || undefined,
       timestamp: now, channel: 'リプ', sentStatus: 'sent', sentAt: now,
     }
+    const shouldClearTodayTask = !!pipelineItem.todayTask || (pipelineItem.recontact_date != null && pipelineItem.recontact_date <= todayStr())
     setS1ActionParsed(null)
     setS1ActionInputOpen(false)
     setS1ActualSentText('')
@@ -3193,7 +3209,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       reactionWarning: undefined,
       reactionReplyA: undefined,
       reactionReplyB: undefined,
-    }, {})
+    }, shouldClearTodayTask ? { todayTask: undefined, recontact_date: undefined } : {})
   }
 
   function handleCopyDMJudgPrompt(turnId: string) {
