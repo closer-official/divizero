@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/04 記録取り消しを追加";
+export const BUILD_LABEL = "07/04 いいねのみ待ち状態除外";

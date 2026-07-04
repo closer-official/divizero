@@ -83,6 +83,17 @@ export function countTodayOS3(data: AppData): number {
 
 // ── ミッション系計算 ──────────────────────────────────────────
 
+function isLikeOnlyTouch(t: { status?: string; reactionReplyMode?: string; conversationTurns?: Array<{ role: string; text: string }> }): boolean {
+  if (t.reactionReplyMode === 'like_only') return true
+  const turns = t.conversationTurns || []
+  const last = turns[turns.length - 1]
+  return t.status === 'reacted' && !!last && last.role === '自分' && /いいねのみ/.test(last.text)
+}
+
+function isAwaitingReactionTouch(t: { status?: string; reactionReplyMode?: string; conversationTurns?: Array<{ role: string; text: string }> }): boolean {
+  return t.status === 'awaiting_reaction' && !isLikeOnlyTouch(t)
+}
+
 // 面談待ち・日程確定済みは「今、自分が動く案件」ではない。
 export function isMeetingWaitingItem(item: PipelineItem): boolean {
   return item.state === 'meeting_scheduled'
@@ -109,7 +120,7 @@ export function get48hExpiredItems(data: AppData): PipelineItem[] {
   return (data.pipeline || []).filter(p =>
     p.isOpen &&
     !isMeetingWaitingItem(p) &&
-    (p.touches || []).some(t => t.status === 'awaiting_reaction' && is48hExpired(t.date))
+    (p.touches || []).some(t => isAwaitingReactionTouch(t) && is48hExpired(t.date))
   )
 }
 
@@ -147,7 +158,7 @@ export function getNeedsOS2Touch(data: AppData): PipelineItem[] {
     if (!p.isOpen || isMeetingWaitingItem(p) || (p.state && p.state !== 'active')) return false
     const lastContactDate = getLastContactDate(p)
     const touches = p.touches || []
-    if (touches.some(t => t.status === 'awaiting_reaction')) return false
+    if (touches.some(t => isAwaitingReactionTouch(t))) return false
     if (touches.length > 0 && touches.some(t => isToday(t.date))) return false
     if (!lastContactDate && touches.some(t => isToday(t.date))) return false
     return true
@@ -193,8 +204,8 @@ export function calcWaiting(data: AppData) {
   const open = (data.pipeline || []).filter(p => p.isOpen && !isMeetingWaitingItem(p))
   const allTouches = open.flatMap(p => p.touches || [])
 
-  const awaitingReaction = allTouches.filter(t => t.status === 'awaiting_reaction').length
-  const expired48h = allTouches.filter(t => t.status === 'awaiting_reaction' && is48hExpired(t.date)).length
+  const awaitingReaction = allTouches.filter(t => isAwaitingReactionTouch(t)).length
+  const expired48h = allTouches.filter(t => isAwaitingReactionTouch(t) && is48hExpired(t.date)).length
   const waiting7d = open.filter(p => p.state === 'waiting').length
   const sleeping = open.filter(p => p.state === 'sleeping' || p.state === 'archived').length
   const s1Stalled = getS1StalledItems(data).length

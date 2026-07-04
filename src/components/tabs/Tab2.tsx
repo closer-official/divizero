@@ -163,6 +163,17 @@ function temperatureBucket(temp?: number | null): Exclude<TemperatureFilter, 'al
   return null
 }
 
+function isLikeOnlyTouch(touch: Pick<Touch, 'reactionReplyMode' | 'conversationTurns' | 'status'>): boolean {
+  if (touch.reactionReplyMode === 'like_only') return true
+  const turns = touch.conversationTurns || []
+  const lastTurn = turns[turns.length - 1]
+  return touch.status === 'reacted' && !!lastTurn && lastTurn.role === '自分' && /いいねのみ/.test(lastTurn.text)
+}
+
+function isAwaitingReactionTouch(touch: Pick<Touch, 'status' | 'reactionReplyMode' | 'conversationTurns'>): boolean {
+  return touch.status === 'awaiting_reaction' && !isLikeOnlyTouch(touch)
+}
+
 // ── chip ───────────────────────────────────────────────────────
 function Chip({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
   return (
@@ -216,7 +227,7 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction, priorityMeta }:
     ? Math.round((new Date(item.meetingDate).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
   const daysSinceLast = daysSince(getLastContactDate(item) || item.startDate)
-  const awaitingTouch = [...touches].reverse().find(t => t.status === 'awaiting_reaction')
+  const awaitingTouch = [...touches].reverse().find(t => isAwaitingReactionTouch(t))
   const priority = priorityMeta || { label: '通常', className: 'bg-slate-100 text-slate-500', title: '優先度未設定' }
 
   return (
@@ -494,7 +505,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   function getPriorityMeta(item: PipelineItem): { label: string; className: string; title: string } {
     const touches = item.touches || []
     const lastContactDate = getLastContactDate(item)
-    const awaiting = touches.some(t => t.status === 'awaiting_reaction')
+    const awaiting = touches.some(t => isAwaitingReactionTouch(t))
     const warn = warnIds.has(item.id)
     const recontactDue = !!item.recontact_date && new Date(item.recontact_date) <= tickNow
     const contactedToday = isContactedToday(item)
@@ -537,8 +548,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     // 2. awaiting_reaction (longer elapsed first)
     const aLast = (a.touches || []).slice(-1)[0]
     const bLast = (b.touches || []).slice(-1)[0]
-    const aAwaiting = aLast?.status === 'awaiting_reaction'
-    const bAwaiting = bLast?.status === 'awaiting_reaction'
+    const aAwaiting = !!aLast && isAwaitingReactionTouch(aLast)
+    const bAwaiting = !!bLast && isAwaitingReactionTouch(bLast)
     if (aAwaiting !== bAwaiting) return aAwaiting ? -1 : 1
     // 3. oldest last contact first (b-a: larger daysSince = more urgent = earlier in list)
     return daysSince(getLastContactDate(b) || b.startDate) - daysSince(getLastContactDate(a) || a.startDate)
@@ -550,7 +561,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     else if (filter === 'NT') result = result.filter(p => p.track === 'NT')
     else if (filter === 'UT') result = result.filter(p => p.track === 'UT')
     else if (filter === 'warn') result = result.filter(p => warnIds.has(p.id))
-    else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => t.status === 'awaiting_reaction'))
+    else if (filter === 'awaiting') result = result.filter(p => (p.touches || []).some(t => isAwaitingReactionTouch(t)))
     else if (filter === 'elite') result = result.filter(p => isStrongOpportunity(p))
     if (stateFilter !== 'all') result = result.filter(p => (p.state || 'active') === stateFilter)
     if (channelFilter !== 'all') result = result.filter(p => p.channel === channelFilter)
@@ -958,7 +969,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
   const todayTasks = active.filter(p => {
     // 24h以上経過（残り24h以下）の反応待ちがあれば追加
-    const awaitingUrgent = (p.touches || []).some(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
+    const awaitingUrgent = (p.touches || []).some(t => isAwaitingReactionTouch(t) && new Date(t.date) <= now24hAgo)
     const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
     const isNew = (p.touches || []).length === 0
     const todayTaskActive = !!p.todayTask && !isContactedToday(p)
@@ -983,7 +994,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       if (!p.isOpen) continue
       for (const t of (p.touches || [])) {
         if (
-          t.status !== 'awaiting_reaction' &&
+          !isAwaitingReactionTouch(t) &&
+          t.reactionReplyMode !== 'like_only' &&
           (!t.threadEntry || t.threadEntry === 's1_story_reply') &&
           !t.reactionJudgment
         ) {
@@ -1014,7 +1026,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           {todayOpen && (
             <div className="border-t border-indigo-200 divide-y divide-indigo-100">
               {todayTasks.map(p => {
-                const awaitingTouch = (p.touches || []).find(t => t.status === 'awaiting_reaction' && new Date(t.date) <= now24hAgo)
+                const awaitingTouch = (p.touches || []).find(t => isAwaitingReactionTouch(t) && new Date(t.date) <= now24hAgo)
                 const isOverdue = awaitingTouch ? new Date(awaitingTouch.date) <= now48hAgo : false
                 const countdown = awaitingTouch ? awaitingCountdown(awaitingTouch.date) : ''
                 const recontactDue = p.recontact_date && new Date(p.recontact_date) <= tickNow
@@ -1234,7 +1246,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
             <option value="NT">NT ({active.filter(p => p.track === 'NT').length})</option>
             <option value="UT">UT ({active.filter(p => p.track === 'UT').length})</option>
             <option value="warn">警告 ({warnItems.length})</option>
-            <option value="awaiting">反応待ち ({active.filter(p => (p.touches||[]).some(t=>t.status==='awaiting_reaction')).length})</option>
+            <option value="awaiting">反応待ち ({active.filter(p => (p.touches||[]).some(t=>isAwaitingReactionTouch(t))).length})</option>
           </select>
           {/* stateフィルタ */}
           <select className="input-base text-xs py-1.5" style={{ maxWidth: 110 }} value={stateFilter} onChange={e => setStateFilter(e.target.value)}>
@@ -1370,7 +1382,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                     <div className="flex flex-col gap-2">
                       {items.map(p => {
                         const latestTouch = (p.touches || []).slice(-1)[0]
-                        const isAwaiting = latestTouch?.status === 'awaiting_reaction'
+                        const isAwaiting = latestTouch ? isAwaitingReactionTouch(latestTouch) : false
                         const recontactDays = p.recontact_date
                           ? Math.ceil((new Date(`${p.recontact_date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000)
                           : null
@@ -3017,7 +3029,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
   const [touchJudgError, setTouchJudgError] = useState<string | null>(null)
   const [touchJudgModelName, setTouchJudgModelName] = useState('')
 
-  const isAwaiting = touch.status === 'awaiting_reaction'
+  const isAwaiting = isAwaitingReactionTouch(touch)
   const isMsgLikeOnly = !!msgParsed && (
     msgParsed.reactionPattern === 'いいねのみ' ||
     /いいねだけ|いいねのみ/.test([msgParsed.suggestedA, msgParsed.suggestedB, msgParsed.nextAction].join(' '))
@@ -4165,7 +4177,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         const turns = touch.conversationTurns || []
         const lastTurn = turns[turns.length - 1]
         const showOS2Section = lastTurn?.role === '相手' && !!touch.threadEntry
-        const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply && !!touch.threadEntry
+        const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply && !!touch.threadEntry && !isLikeOnlyTouch(touch)
         const repCount = touch.repExchangeCount || 0
         const dmCount = touch.dmExchangeCount || 0
 
