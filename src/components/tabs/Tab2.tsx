@@ -37,6 +37,8 @@ import {
   uid, shortPostId, todayStr, hasReaction, toReactionArr, reactionDisplay, getLastContactDate, isContactedToday,
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
+import { useReceive } from '../../services/receive/useReceive'
+import type { OS2TouchPayload } from '../../services/receive/types'
 
 // ── thread helpers ─────────────────────────────────────────────
 type LogTurn = { role: '自分' | '相手'; text: string; date: string; channel: 'リプ' | 'DM' }
@@ -1917,6 +1919,7 @@ interface CardProps {
 }
 
 function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone, myXHandle }: CardProps) {
+  const { os2Pending, markCompleted, setGeminiPrompt, connected: extConnected } = useReceive()
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
@@ -1957,6 +1960,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tImpressions, setTImpressions] = useState('')
   const [tPostUrl, setTPostUrl] = useState('')
   const [tCommentUrl, setTCommentUrl] = useState('')
+  const [geminiCopyState, setGeminiCopyState] = useState<'idle' | 'copied'>('idle')
+  const [os2Applied, setOs2Applied] = useState(false)
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -1979,6 +1984,25 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const displayNextAction = latestOs2Touch?.os2NextAction || item.nextAction
   const displayReplyA = latestOs2Touch?.os2ReplyA || item.replyA
   const displayReplyB = latestOs2Touch?.os2ReplyB || item.replyB
+
+  // 案件が変わったら os2Applied をリセット
+  useEffect(() => { setOs2Applied(false) }, [item.id])
+
+  // 拡張機能から選択されたツイートURLをフォームに自動入力
+  useEffect(() => {
+    if (os2Applied || !addingTouch || os2Pending.length === 0) return
+    const handle = normalizeHandle(item.url)
+    const match = os2Pending.find(qi =>
+      normalizeHandle((qi.payload as OS2TouchPayload).account.handle) === handle
+    )
+    if (!match) return
+    const payload = match.payload as OS2TouchPayload
+    setTPostUrl(payload.postUrl)
+    if (payload.postText) setTPostText(payload.postText.slice(0, 100))
+    setOs2Applied(true)
+    markCompleted(match.id).catch(() => {})
+    toast.show('拡張機能からツイートURLを自動入力しました', 3000)
+  }, [os2Pending, item.id, item.url, addingTouch, os2Applied, markCompleted, toast])
 
   function resetForm() {
     setAiOutput(''); setSuggestionA(''); setSuggestionB(''); setPJudgmentA(''); setPJudgmentB('')
@@ -2018,6 +2042,20 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       await copyText(prompt)
       setCopyBtnState('copied')
       setTimeout(() => setCopyBtnState('idle'), 2000)
+    } catch {
+      setAutoFillError('プロンプトのコピーに失敗しました。')
+    }
+  }
+
+  async function handleCopyAndOpenGemini() {
+    setAutoFillError(null)
+    try {
+      const prompt = await buildTouchPrompt(item, touches)
+      await copyText(prompt)
+      if (extConnected) await setGeminiPrompt(prompt).catch(() => {})
+      setGeminiCopyState('copied')
+      setTimeout(() => setGeminiCopyState('idle'), 2500)
+      window.open('https://gemini.google.com/', '_blank')
     } catch {
       setAutoFillError('プロンプトのコピーに失敗しました。')
     }
@@ -2739,8 +2777,21 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <i className={`fa-solid ${copyBtnState === 'copied' ? 'fa-check' : 'fa-clipboard'} mr-1`} />
                   {copyBtnState === 'copied' ? '✓ コピーしました' : tTouchMode === 'dm' ? 'OS_現象未来プロンプトをコピー' : 'プロンプトをコピー'}
                 </button>
+                {tTouchMode !== 'dm' && (
+                  <button
+                    className={`btn-sec text-xs py-2 justify-center ${
+                      geminiCopyState === 'copied'
+                        ? 'text-emerald-600 border-emerald-300 bg-emerald-50'
+                        : 'text-indigo-700 border-indigo-300 bg-indigo-50 hover:bg-indigo-100'
+                    }`}
+                    onClick={handleCopyAndOpenGemini}
+                  >
+                    <i className={`fa-solid ${geminiCopyState === 'copied' ? 'fa-check' : 'fa-paper-plane'} mr-1`} />
+                    {geminiCopyState === 'copied' ? '✓ Geminiを開きました' : 'コピー＆Geminiへ送る'}
+                  </button>
+                )}
                 <p className="text-[10px] text-slate-400 text-center">
-                  {tTouchMode === 'dm' ? '↓ ChatGPT等に貼り付けて実行' : '↓ ChatGPT等に貼り付け＋投稿スクショを添付して実行'}
+                  {tTouchMode === 'dm' ? '↓ ChatGPT等に貼り付けて実行' : '↓ 「Geminiへ送る」で自動入力 → スクショを追加して実行'}
                 </p>
 
                 <p className="text-xs font-bold text-indigo-700 mt-1">② AI出力を貼り付け</p>
@@ -2816,7 +2867,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                         </div>
 
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs text-slate-500">投稿URL（任意）<span className="ml-1 text-slate-400">← 保存しておくと後で一発で開ける</span></label>
+                          <label className="text-xs text-slate-500 flex items-center gap-1.5">
+                            投稿URL（任意）
+                            {os2Applied && tPostUrl && (
+                              <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
+                                <i className="fa-solid fa-puzzle-piece mr-0.5" />拡張機能から取得
+                              </span>
+                            )}
+                          </label>
                           <div className="flex items-center gap-1.5">
                             <input
                               type="url"

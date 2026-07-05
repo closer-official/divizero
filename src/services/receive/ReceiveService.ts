@@ -83,4 +83,12 @@ export class ReceiveService {
       return null
     }
   }
+
+  async setGeminiPrompt(text: string): Promise<void> {
+    await this.sendMessage({ type: 'set_gemini_prompt', text })
+  }
+
+  async setPipelineHandles(handles: string[]): Promise<void> {
+    await this.sendMessage({ type: 'set_pipeline_handles', handles })
+  }
 }

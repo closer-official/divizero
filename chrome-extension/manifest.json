@@ -1,24 +1,40 @@
 {
   "manifest_version": 3,
   "name": "営業OS Bridge",
-  "version": "1.2.0",
-  "description": "X/TwitterのユーザーをOS⓪プロンプトに変換してGeminiへ送る",
+  "version": "1.3.0",
+  "description": "X/TwitterのユーザーをOS⓪〜OS②プロンプトに変換してGeminiへ送る",
 
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "scripting"],
 
   "host_permissions": [
     "https://x.com/*",
     "https://twitter.com/*",
+    "https://gemini.google.com/*",
     "https://divizero.vercel.app/*",
     "http://localhost:5173/*"
   ],
 
+  "externally_connectable": {
+    "matches": [
+      "https://divizero.vercel.app/*",
+      "http://localhost:5173/*"
+    ]
+  },
+
   "content_scripts": [
     {
       "matches": ["https://x.com/*", "https://twitter.com/*"],
-      "js": ["content/twitter_scraper.js"],
+      "js": ["content/twitter_scraper.js", "content/profile_panel.js"],
       "css": ["content/twitter.css"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://divizero.vercel.app/*", "http://localhost:5173/*"],
+      "js": ["content/id_shim.js"]
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content/gemini_filler.js"]
     }
   ],
 

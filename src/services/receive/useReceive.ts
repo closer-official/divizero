@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ReceiveService } from './ReceiveService'
-import type { ExtQueueItem, ExtQueueItemStatus, OS0QueueItem } from './types'
+import type { ExtQueueItem, ExtQueueItemStatus, OS0QueueItem, OS2TouchPayload } from './types'
+
+export type OS2TouchQueueItem = ExtQueueItem & {
+  type: 'os2_touch'
+  payload: OS2TouchPayload
+}
 
 const POLL_INTERVAL_MS = 3000
 
@@ -99,6 +104,16 @@ export function useReceive() {
   const history    = queue.filter(i => i.status !== 'pending')
   const os0Pending = pending.filter(i => i.type === 'os0_candidates') as OS0QueueItem[]
   const os0History = history.filter(i => i.type === 'os0_candidates') as OS0QueueItem[]
+  const os2Pending = pending.filter(i => i.type === 'os2_touch') as OS2TouchQueueItem[]
+  const os2History = history.filter(i => i.type === 'os2_touch') as OS2TouchQueueItem[]
+
+  const setGeminiPrompt = useCallback(async (text: string) => {
+    await service.setGeminiPrompt(text)
+  }, [service])
+
+  const setPipelineHandles = useCallback(async (handles: string[]) => {
+    await service.setPipelineHandles(handles)
+  }, [service])
 
   return {
     queue,
@@ -106,11 +121,15 @@ export function useReceive() {
     history,
     os0Pending,
     os0History,
+    os2Pending,
+    os2History,
     connected,
     refresh,
     markCompleted,
     markDismissed,
     restore,
     clearHistory,
+    setGeminiPrompt,
+    setPipelineHandles,
   }
 }

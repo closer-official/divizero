@@ -8,6 +8,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ユーザーがプロフィールデータや会話ログを貼り付け → アプリがプロンプトを組み立て → ユーザーが外部AI（Gemini等）で実行 → AI出力を貼り付けて記録・管理、という手動ループで動く。**アプリ自体はAI APIを呼ばない。**
 
+## Latest spec sources
+
+この `CLAUDE.md` はリポジトリ全体の案内であり、営業OSの最新仕様そのものは `public/prompts/` を優先してください。
+
+特に次を見れば、現在のOS仕様に追いつけます。
+
+- `public/prompts/OS1_最新仕様一括更新_latest.md`
+- `public/prompts/OS2_行動判定_latest.md`
+- `public/prompts/OS_S1行動判定_バッチ_latest.md`
+- `public/prompts/OS_S1リアクション後行動判定_latest.md`
+- `public/prompts/OS_DM文面判定_latest.md`
+- `public/prompts/OS_文面再判定_latest.md`
+
+Claude にこのリポジトリの「最新仕様」を渡す場合は、`CLAUDE.md` 単体ではなく、上の最新プロンプト群も併せて参照してください。
+
 ## Tech stack
 
 | 項目 | 内容 |

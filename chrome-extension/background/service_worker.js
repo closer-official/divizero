@@ -130,4 +130,22 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
     })
     return true
   }
+
+  if (message.type === 'set_gemini_prompt') {
+    chrome.storage.local.set({
+      os2_gemini_prompt: { text: message.text || '', setAt: Date.now() },
+    }, () => {
+      sendResponse({ ok: true })
+    })
+    return true
+  }
+
+  if (message.type === 'set_pipeline_handles') {
+    chrome.storage.local.set({
+      os2_pipeline_handles: { handles: message.handles || [], updatedAt: Date.now() },
+    }, () => {
+      sendResponse({ ok: true })
+    })
+    return true
+  }
 })
