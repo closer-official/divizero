@@ -831,21 +831,30 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         const pResults = byPipeline[p.id]
         if (!pResults || pResults.length === 0) return p
         let extra: Partial<PipelineItem> = {}
+        let sawDmMove = false
         const addDaysBatch = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10) }
         for (const r of pResults) {
-          if (r.judgment === '休眠') {
+          if (r.judgment === 'DM移行') {
+            sawDmMove = true
+            extra = {
+              currentStep: 'S2',
+              state: 'active',
+              recontact_date: undefined,
+              todayTask: undefined,
+            }
+          } else if (!sawDmMove && r.judgment === '休眠') {
             extra = { state: 'sleeping', recontact_date: addDaysBatch(r.waitDays ?? 30) }
-          } else if (r.judgment === '保管') {
+          } else if (!sawDmMove && r.judgment === '保管') {
             extra = { state: 'archived', recontact_date: addDaysBatch(r.waitDays ?? 180) }
-          } else if ((r.judgment === '次投稿再接触' || r.judgment === 'S1継続') && r.waitDays && r.waitDays > 0) {
+          } else if (!sawDmMove && (r.judgment === '次投稿再接触' || r.judgment === 'S1継続') && r.waitDays && r.waitDays > 0) {
             extra = { state: 'waiting', recontact_date: addDaysBatch(r.waitDays) }
           }
           // 0日後（今日）判定: 休眠・保管以外でwaitDaysが0または未指定のもの
-          const isToday = r.judgment !== '休眠' && r.judgment !== '保管' && !(r.waitDays && r.waitDays > 0)
+          const isToday = !sawDmMove && r.judgment !== '休眠' && r.judgment !== '保管' && !(r.waitDays && r.waitDays > 0)
           if (isToday && r.nextStep) {
             extra.todayTask = { action: r.nextStep, addedAt: todayStr() }
           }
-          if (r.temperature !== undefined) {
+          if (!sawDmMove && r.temperature !== undefined) {
             extra.temperature = r.temperature
           }
         }
@@ -3507,6 +3516,11 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     } else if (parsed.judgment === '保管') {
       pipelineUpdates.state = 'archived'
       pipelineUpdates.recontact_date = addDays(parsed.waitDays ?? 180)
+    } else if (parsed.judgment === 'DM移行') {
+      pipelineUpdates.currentStep = 'S2' as Step
+      pipelineUpdates.state = 'active'
+      pipelineUpdates.recontact_date = undefined
+      pipelineUpdates.todayTask = undefined
     } else if ((parsed.judgment === '次投稿再接触' || parsed.judgment === 'S1継続') && parsed.waitDays && parsed.waitDays > 0) {
       pipelineUpdates.state = 'waiting'
       pipelineUpdates.recontact_date = addDays(parsed.waitDays)
@@ -3571,7 +3585,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         } as ConversationTurn],
         dmExchangeCount: 0, repExchangeCount: 0,
       }
-      onAddNewTouch(newTouch, { currentStep: 'S3' as Step })
+      onAddNewTouch(newTouch, { currentStep: 'S2' as Step, state: 'active', recontact_date: undefined, todayTask: undefined })
       setS1ActualSentText('')
       setS1EditReasonForRecord('')
       return

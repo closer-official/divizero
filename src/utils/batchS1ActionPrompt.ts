@@ -102,23 +102,21 @@ export function parseBatchS1ActionOutput(
   items: BatchS1ActionItem[]
 ): BatchS1ActionResult[] {
   const results: BatchS1ActionResult[] = []
+  const blocks = [...raw.matchAll(/===S1_RESULT_START===\s*(\d+)?\s*===([\s\S]*?)===S1_RESULT_END===\s*(\d+)?\s*===/g)].map(m => ({
+    index: m[1] ? parseInt(m[1], 10) : (m[3] ? parseInt(m[3], 10) : undefined),
+    block: m[2],
+  }))
 
-  for (const item of items) {
-    const blockMatch = raw.match(
-      new RegExp(
-        `===S1_RESULT_START===\\s*${item.index}\\s*===([\\s\\S]*?)===S1_RESULT_END===\\s*${item.index}\\s*===`
-      )
-    )
-    if (!blockMatch) continue
+  const usedBlockIndexes = new Set<number>()
 
-    const block = blockMatch[1]
+  const parseBlock = (block: string, item: BatchS1ActionItem): BatchS1ActionResult | null => {
     const pick = (label: string): string => {
       const m = block.match(new RegExp(`${label}:\\s*(.+)`))
       return m ? m[1].trim() : ''
     }
 
     const judgment = pick('判定')
-    if (!judgment) continue
+    if (!judgment) return null
 
     const replyA = pick('返信案A')
     const replyB = pick('返信案B')
@@ -137,7 +135,7 @@ export function parseBatchS1ActionOutput(
     const waitDays = waitDaysRaw ? parseInt(waitDaysRaw, 10) : undefined
     const tempMatch = dmScore.match(/関係温度(\d+)点/)
     const temperature = tempMatch ? parseInt(tempMatch[1], 10) : undefined
-    results.push({
+    return {
       index: item.index,
       pipelineId: item.pipelineId,
       touchId: item.touchId,
@@ -156,7 +154,18 @@ export function parseBatchS1ActionOutput(
       dmScore: dmScore || undefined,
       dmMoveReason: dmMoveReason || undefined,
       temperature,
-    })
+    }
+  }
+
+  for (const item of items) {
+    const exactBlockIdx = blocks.findIndex((b, idx) => !usedBlockIndexes.has(idx) && b.index === item.index)
+    const fallbackBlockIdx = exactBlockIdx >= 0
+      ? exactBlockIdx
+      : blocks.findIndex((_, idx) => !usedBlockIndexes.has(idx))
+    if (fallbackBlockIdx < 0) continue
+    usedBlockIndexes.add(fallbackBlockIdx)
+    const parsed = parseBlock(blocks[fallbackBlockIdx].block, item)
+    if (parsed) results.push(parsed)
   }
 
   return results
