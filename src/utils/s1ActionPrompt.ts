@@ -29,6 +29,7 @@ export interface S1ActionResult {
   replyB?: string
   dmScore?: string
   dmMoveReason?: string
+  temperature?: number
 }
 
 export function buildS1ActionPrompt(
@@ -141,6 +142,8 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
   const dmMoveReason = pick('DM移行判断')
   const waitDaysRaw = pick('待機日数')
   const waitDays = waitDaysRaw ? parseInt(waitDaysRaw, 10) : undefined
+  const tempMatch = dmScore.match(/関係温度(\d+)点/)
+  const temperature = tempMatch ? parseInt(tempMatch[1], 10) : undefined
 
   return {
     judgment,
@@ -157,5 +160,6 @@ export function parseS1ActionOutput(raw: string): S1ActionResult | null {
     replyB: replyB && replyB !== 'なし' ? replyB : undefined,
     dmScore: dmScore || undefined,
     dmMoveReason: dmMoveReason || undefined,
+    temperature,
   }
 }

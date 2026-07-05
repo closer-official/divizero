@@ -837,6 +837,9 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
           if (isToday && r.nextStep) {
             extra.todayTask = { action: r.nextStep, addedAt: todayStr() }
           }
+          if (r.temperature !== undefined) {
+            extra.temperature = r.temperature
+          }
         }
         return {
           ...p,
@@ -3285,6 +3288,9 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
     const s1IsToday = parsed.judgment !== '休眠' && parsed.judgment !== '保管' && !(parsed.waitDays && parsed.waitDays > 0)
     if (s1IsToday && parsed.nextStep) {
       pipelineUpdates.todayTask = { action: parsed.nextStep, addedAt: todayStr() }
+    }
+    if (parsed.temperature !== undefined) {
+      pipelineUpdates.temperature = parsed.temperature
     }
     onReactionSaved(touch.id, {
       reactionJudgment: parsed.judgment,
