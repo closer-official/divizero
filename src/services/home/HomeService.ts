@@ -18,10 +18,16 @@ import {
   getNeedsOS2Touch,
   countOS1Pending,
   countUnverifiedClosed,
+  calcTrackSummary,
+  calcTemperatureSummary,
+  calcS1ActionSummary,
+  calcS1AgeSummary,
+  calcAuditSummary,
 } from './homeCalculators'
+import type { Prompts } from '../../types'
 import { getActiveNotifications } from '../../utils/analysisNotification'
 
-export function getHomeDashboard(data: AppData): HomeDashboard {
+export function getHomeDashboard(data: AppData, prompts?: Prompts): HomeDashboard {
   // ── ミッション計算 ────────────────────────────────────────
   const dmReply = getDMReplyNeeded(data)
   const expired48h = get48hExpiredItems(data)
@@ -309,6 +315,12 @@ export function getHomeDashboard(data: AppData): HomeDashboard {
     },
   ]
 
+  const trackSummary = calcTrackSummary(data)
+  const temperatureSummary = calcTemperatureSummary(data)
+  const s1ActionSummary = calcS1ActionSummary(data)
+  const s1AgeSummary = calcS1AgeSummary(data)
+  const auditSummary = calcAuditSummary(prompts)
+
   return {
     mission,
     todayKpi,
@@ -318,6 +330,11 @@ export function getHomeDashboard(data: AppData): HomeDashboard {
     waiting,
     alerts,
     shortcuts,
+    trackSummary,
+    temperatureSummary,
+    s1ActionSummary,
+    s1AgeSummary,
+    auditSummary,
     generatedAt: new Date().toISOString(),
   }
 }

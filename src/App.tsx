@@ -429,6 +429,7 @@ export default function App() {
           {activeTab === 'home' && (
             <TabHome
               data={data}
+              prompts={prompts}
               onGoTo={setActiveTab}
               onGoToTab2WithItem={(id) => { setFocusPipelineItemId(id); setActiveTab('tab2') }}
             />

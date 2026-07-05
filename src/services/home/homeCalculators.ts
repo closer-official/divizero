@@ -1,4 +1,13 @@
-import type { AppData, PipelineItem } from '../../types'
+import type { AppData, PipelineItem, Prompts, Touch } from '../../types'
+import type {
+  AuditSummary,
+  PromptCheckItem,
+  PromptCheckSummary,
+  S1ActionSummary,
+  S1AgeSummary,
+  TemperatureSummary,
+  TrackSummaryItem,
+} from './homeTypes'
 import { todayStr, daysSince, getLastContactDate } from '../../utils/helpers'
 
 export const DEFAULT_DAILY_TARGETS = {
@@ -212,4 +221,227 @@ export function calcWaiting(data: AppData) {
   const meetingScheduled = (data.pipeline || []).filter(p => p.isOpen && p.state === 'meeting_scheduled').length
 
   return { awaitingReaction, expired48h, waiting7d, sleeping, s1Stalled, meetingScheduled }
+}
+
+// ── ホーム監査用ダッシュボード ───────────────────────────────
+
+function getOpenPipeline(data: AppData): PipelineItem[] {
+  return (data.pipeline || []).filter(p => p.isOpen)
+}
+
+function getTouchKind(touch: Touch): S1ActionSummary['items'][number]['kind'] {
+  if (touch.threadEntry === 's1_story_reply' || touch.targetPostType === 'ストーリー') return 'story_reply'
+  if (touch.reactionReplyMode === 'like_only') return 'like_only'
+  const text = `${touch.actualSentText || ''} ${touch.reactionNote || ''}`
+  if (/いいねのみ/.test(text)) return 'like_only'
+  if (touch.touchMode === 'conversation' || touch.threadEntry === 's3_direct') return 'dm_or_other'
+  return 'comment'
+}
+
+export function calcTrackSummary(data: AppData): TrackSummaryItem[] {
+  const open = getOpenPipeline(data)
+  const total = open.length || 1
+  const order: Array<{ id: TrackSummaryItem['id']; label: string }> = [
+    { id: 'UT', label: 'UT' },
+    { id: 'FT', label: 'FT' },
+    { id: 'NT', label: 'NT' },
+    { id: 'SKIP', label: 'SKIP' },
+  ]
+  return order.map(({ id, label }) => {
+    const itemIds = open.filter(p => p.track === id).map(p => p.id)
+    return {
+      id,
+      label,
+      count: itemIds.length,
+      ratio: Math.round((itemIds.length / total) * 100),
+      itemIds,
+    }
+  })
+}
+
+export function calcTemperatureSummary(data: AppData): TemperatureSummary {
+  const open = getOpenPipeline(data)
+  const withTemp = open
+    .filter(p => typeof p.temperature === 'number' && !Number.isNaN(p.temperature))
+    .map(p => ({
+      id: p.id,
+      accountName: p.accountName,
+      track: p.track,
+      temperature: p.temperature as number,
+      daysSinceStart: daysSince(p.startDate),
+      state: p.state,
+    }))
+    .sort((a, b) => b.temperature - a.temperature || b.daysSinceStart - a.daysSinceStart)
+
+  const max = withTemp.length > 0 ? withTemp[0].temperature : null
+  const maxCount = max == null ? 0 : withTemp.filter(item => item.temperature === max).length
+  const min = withTemp.length > 0 ? withTemp[withTemp.length - 1].temperature : null
+  const average = withTemp.length > 0
+    ? Math.round(withTemp.reduce((sum, item) => sum + item.temperature, 0) / withTemp.length)
+    : null
+
+  const bucketDefs: Array<{ label: string; min: number; max: number | null }> = [
+    { label: '0-19', min: 0, max: 19 },
+    { label: '20-39', min: 20, max: 39 },
+    { label: '40-59', min: 40, max: 59 },
+    { label: '60-79', min: 60, max: 79 },
+    { label: '80+', min: 80, max: null },
+  ]
+  const buckets = bucketDefs.map(def => {
+    const itemIds = open.filter(p => {
+      if (typeof p.temperature !== 'number' || Number.isNaN(p.temperature)) return false
+      if (def.max == null) return (p.temperature as number) >= def.min
+      return (p.temperature as number) >= def.min && (p.temperature as number) <= def.max
+    }).map(p => p.id)
+    return {
+      label: def.label,
+      min: def.min,
+      max: def.max,
+      count: itemIds.length,
+      itemIds,
+    }
+  })
+
+  return {
+    total: open.length,
+    withTemperature: withTemp.length,
+    missing: open.length - withTemp.length,
+    min,
+    max,
+    maxCount,
+    average,
+    items: withTemp,
+    buckets,
+  }
+}
+
+export function calcS1ActionSummary(data: AppData): S1ActionSummary {
+  const open = getOpenPipeline(data)
+  const items = open
+    .filter(p => String(p.currentStep || '').startsWith('S1'))
+    .flatMap(p => (p.touches || []).map(touch => ({
+      id: `${p.id}_${touch.id}`,
+      accountName: p.accountName,
+      track: p.track,
+      currentStep: p.currentStep,
+      kind: getTouchKind(touch),
+      date: touch.date,
+    })))
+    .sort((a, b) => b.date.localeCompare(a.date))
+
+  const counts = items.reduce((acc, item) => {
+    acc[item.kind] += 1
+    return acc
+  }, { like_only: 0, comment: 0, story_reply: 0, dm_or_other: 0 })
+
+  const touchingItems = new Set(items.map(item => item.id.split('_')[0])).size
+
+  return {
+    totalTouches: items.length,
+    touchingItems,
+    likeOnly: counts.like_only,
+    comment: counts.comment,
+    storyReply: counts.story_reply,
+    dmOrOther: counts.dm_or_other,
+    items,
+  }
+}
+
+export function calcS1AgeSummary(data: AppData): S1AgeSummary {
+  const open = getOpenPipeline(data)
+  const items = open
+    .filter(p => String(p.currentStep || '').startsWith('S1'))
+    .map(p => ({
+      id: p.id,
+      accountName: p.accountName,
+      track: p.track,
+      currentStep: p.currentStep,
+      days: daysSince(p.startDate),
+      startDate: p.startDate,
+    }))
+    .sort((a, b) => b.days - a.days || a.accountName.localeCompare(b.accountName))
+
+  const averageDays = items.length > 0
+    ? Math.round(items.reduce((sum, item) => sum + item.days, 0) / items.length)
+    : null
+  const maxDays = items.length > 0 ? items[0].days : null
+
+  const bucketDefs: Array<{ label: string; min: number; max: number | null }> = [
+    { label: '0-6日', min: 0, max: 6 },
+    { label: '7-13日', min: 7, max: 13 },
+    { label: '14-29日', min: 14, max: 29 },
+    { label: '30日以上', min: 30, max: null },
+  ]
+  const buckets = bucketDefs.map(def => {
+    const itemIds = items.filter(item => {
+      if (def.max == null) return item.days >= def.min
+      return item.days >= def.min && item.days <= def.max
+    }).map(item => item.id)
+    return {
+      label: def.label,
+      min: def.min,
+      max: def.max,
+      count: itemIds.length,
+      itemIds,
+    }
+  })
+
+  return {
+    totalItems: items.length,
+    averageDays,
+    maxDays,
+    buckets,
+    items,
+  }
+}
+
+function assessPrompt(label: string, prompt?: string): PromptCheckItem {
+  const text = prompt || ''
+  const hasDmMove = /DM移行/.test(text)
+  const hasUtageThreshold = /関係温度15以上/.test(text)
+  const hasNormalThreshold = /関係温度25以上/.test(text)
+  const hasConditionRules = /営業対象判定.*対象/.test(text) && /仮説検証価値/.test(text)
+
+  if (!text.trim()) {
+    return { id: label, label, status: 'missing', detail: 'プロンプト未読込', evidence: ['読み込み失敗'] }
+  }
+  if (hasDmMove && hasUtageThreshold && hasNormalThreshold && hasConditionRules) {
+    return {
+      id: label,
+      label,
+      status: 'ok',
+      detail: 'UTAGE 15 / 通常 25 の条件式を確認',
+      evidence: ['DM移行', '関係温度15以上', '関係温度25以上', '営業対象判定が対象'],
+    }
+  }
+  return {
+    id: label,
+    label,
+    status: 'warning',
+    detail: 'DM移行条件は見えるが、必要要素が一部不足',
+    evidence: [
+      hasDmMove ? 'DM移行あり' : 'DM移行なし',
+      hasUtageThreshold ? 'UTAGE閾値あり' : 'UTAGE閾値なし',
+      hasNormalThreshold ? '通常閾値あり' : '通常閾値なし',
+    ],
+  }
+}
+
+export function calcAuditSummary(prompts?: Prompts): AuditSummary {
+  const items = [
+    assessPrompt('OS2_行動判定', prompts?.OS2),
+    assessPrompt('S1_ACTION', prompts?.S1_ACTION),
+    assessPrompt('S1_ACTION_BATCH', prompts?.S1_ACTION_BATCH),
+  ]
+  const status: PromptCheckSummary['status'] = items.every(item => item.status === 'ok')
+    ? 'ok'
+    : items.some(item => item.status === 'ok')
+      ? 'warning'
+      : 'missing'
+  const summary = status === 'ok'
+    ? 'DM移行ロジック関連の条件式は現行プロンプトで確認できました。'
+    : status === 'warning'
+      ? '一部のプロンプトは条件式が確認できましたが、抜けがあります。'
+      : 'DM移行ロジックの確認材料が見つかりませんでした。'
+  return { dmMigration: { status, summary, items } }
 }

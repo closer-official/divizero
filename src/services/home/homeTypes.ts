@@ -63,6 +63,105 @@ export interface WaitingSummary {
   meetingScheduled: number       // state === 'meeting_scheduled'
 }
 
+export interface TrackSummaryItem {
+  id: string
+  label: string
+  count: number
+  ratio: number
+  itemIds: string[]
+}
+
+export interface TemperatureBucketItem {
+  label: string
+  min: number
+  max: number | null
+  count: number
+  itemIds: string[]
+}
+
+export interface TemperatureSummaryItem {
+  id: string
+  accountName: string
+  track: string
+  temperature: number
+  daysSinceStart: number
+  state?: string
+}
+
+export interface TemperatureSummary {
+  total: number
+  withTemperature: number
+  missing: number
+  min: number | null
+  max: number | null
+  maxCount: number
+  average: number | null
+  items: TemperatureSummaryItem[]
+  buckets: TemperatureBucketItem[]
+}
+
+export interface S1ActionItem {
+  id: string
+  accountName: string
+  track: string
+  currentStep: string
+  kind: 'like_only' | 'comment' | 'story_reply' | 'dm_or_other'
+  date: string
+}
+
+export interface S1ActionSummary {
+  totalTouches: number
+  touchingItems: number
+  likeOnly: number
+  comment: number
+  storyReply: number
+  dmOrOther: number
+  items: S1ActionItem[]
+}
+
+export interface S1AgeBucketItem {
+  label: string
+  min: number
+  max: number | null
+  count: number
+  itemIds: string[]
+}
+
+export interface S1AgeItem {
+  id: string
+  accountName: string
+  track: string
+  days: number
+  currentStep: string
+  startDate?: string
+}
+
+export interface S1AgeSummary {
+  totalItems: number
+  averageDays: number | null
+  maxDays: number | null
+  buckets: S1AgeBucketItem[]
+  items: S1AgeItem[]
+}
+
+export interface PromptCheckItem {
+  id: string
+  label: string
+  status: 'ok' | 'warning' | 'missing'
+  detail: string
+  evidence: string[]
+}
+
+export interface PromptCheckSummary {
+  status: 'ok' | 'warning' | 'missing'
+  summary: string
+  items: PromptCheckItem[]
+}
+
+export interface AuditSummary {
+  dmMigration: PromptCheckSummary
+}
+
 // ── アラート ─────────────────────────────────────────────────
 export interface HomeAlert {
   id: string
@@ -92,5 +191,10 @@ export interface HomeDashboard {
   waiting: WaitingSummary
   alerts: HomeAlert[]
   shortcuts: ShortcutItem[]
+  trackSummary: TrackSummaryItem[]
+  temperatureSummary: TemperatureSummary
+  s1ActionSummary: S1ActionSummary
+  s1AgeSummary: S1AgeSummary
+  auditSummary: AuditSummary
   generatedAt: string            // ISO datetime
 }

@@ -1,10 +1,21 @@
 import { useMemo } from 'react'
-import type { AppData } from '../../types'
-import type { TabId, MissionItem, KpiItem, WeeklyProgressItem, FunnelStep, HomeAlert, ShortcutItem } from '../../services/home/homeTypes'
+import type { AppData, Prompts } from '../../types'
+import type {
+  TabId,
+  MissionItem,
+  KpiItem,
+  WeeklyProgressItem,
+  FunnelStep,
+  HomeAlert,
+  ShortcutItem,
+  TrackSummaryItem,
+  PromptCheckSummary,
+} from '../../services/home/homeTypes'
 import { getHomeDashboard } from '../../services/home/HomeService'
 
 interface Props {
   data: AppData
+  prompts: Prompts
   onGoTo: (tab: TabId) => void
   onGoToTab2WithItem: (itemId: string) => void
 }
@@ -227,10 +238,77 @@ function ShortcutCard({ sc, onClick }: { sc: ShortcutItem; onClick: () => void }
   )
 }
 
+function TrackCard({ item, onClick }: { item: TrackSummaryItem; onClick: () => void }) {
+  const colorClass = item.id === 'UT'
+    ? 'bg-amber-500'
+    : item.id === 'FT'
+      ? 'bg-violet-500'
+      : item.id === 'NT'
+        ? 'bg-indigo-500'
+        : 'bg-slate-400'
+  const labelClass = item.id === 'UT'
+    ? 'text-amber-700 bg-amber-50 border-amber-100'
+    : item.id === 'FT'
+      ? 'text-violet-700 bg-violet-50 border-violet-100'
+      : item.id === 'NT'
+        ? 'text-indigo-700 bg-indigo-50 border-indigo-100'
+        : 'text-slate-500 bg-slate-50 border-slate-100'
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left rounded-xl border border-slate-200 bg-white p-3 hover:shadow-sm transition"
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${labelClass}`}>{item.label}</span>
+        <span className="text-[10px] text-slate-400 tabular-nums">{item.ratio}%</span>
+      </div>
+      <div className="flex items-end justify-between gap-2 mb-2">
+        <div>
+          <p className="text-2xl font-bold text-slate-900 tabular-nums">{item.count}</p>
+          <p className="text-[10px] text-slate-400">件</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] text-slate-400">進行中比率</p>
+          <p className={`text-sm font-semibold ${item.id === 'UT' ? 'text-amber-600' : 'text-slate-600'}`}>{item.ratio}%</p>
+        </div>
+      </div>
+      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${colorClass}`} style={{ width: `${Math.max(item.ratio, item.count > 0 ? 8 : 0)}%` }} />
+      </div>
+    </button>
+  )
+}
+
+function HorizontalBar({ label, count, max, tone, note }: { label: string; count: number; max: number; tone: string; note?: string }) {
+  const width = max > 0 ? Math.max(4, Math.round((count / max) * 100)) : 0
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      <span className="w-14 shrink-0 text-slate-500">{label}</span>
+      <div className="flex-1 bg-slate-100 rounded-full h-3 overflow-hidden">
+        <div className={`h-3 rounded-full ${tone}`} style={{ width: `${width}%` }} />
+      </div>
+      <span className="w-10 text-right tabular-nums text-slate-700">{count}</span>
+      {note && <span className="w-14 text-right text-[10px] text-slate-400">{note}</span>}
+    </div>
+  )
+}
+
+function StatePill({ status }: { status: PromptCheckSummary['status'] }) {
+  const map = {
+    ok: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    warning: 'bg-amber-100 text-amber-700 border-amber-200',
+    missing: 'bg-rose-100 text-rose-700 border-rose-200',
+  } as const
+  const label = status === 'ok' ? '反映済み' : status === 'warning' ? '要確認' : '未着手'
+  return <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${map[status]}`}>{label}</span>
+}
+
 // ── メインコンポーネント ──────────────────────────────────────
 
-export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
-  const db = useMemo(() => getHomeDashboard(data), [data])
+export default function TabHome({ data, prompts, onGoTo, onGoToTab2WithItem }: Props) {
+  const db = useMemo(() => getHomeDashboard(data, prompts), [data, prompts])
 
   const today = new Date()
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土']
@@ -242,6 +320,16 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
   const weeklyExpected = db.weeklyProgress.reduce((s, item) => s + item.expectedByNow, 0)
   const weeklyPct = weeklyTarget > 0 ? (weeklyTotal / weeklyTarget) * 100 : 0
   const weeklyGap = weeklyTotal - weeklyExpected
+  const temperatureGroups = useMemo(() => {
+    const map = new Map<number, number>()
+    db.temperatureSummary.items.forEach(item => {
+      map.set(item.temperature, (map.get(item.temperature) || 0) + 1)
+    })
+    return [...map.entries()]
+      .map(([temperature, count]) => ({ temperature, count }))
+      .sort((a, b) => b.temperature - a.temperature)
+  }, [db.temperatureSummary.items])
+  const temperatureMaxCount = temperatureGroups[0]?.count || 1
 
   function handleMissionClick(item: MissionItem) {
     if (item.tab === 'tab2' && item.itemIds && item.itemIds.length > 0) {
@@ -392,6 +480,232 @@ export default function TabHome({ data, onGoTo, onGoToTab2WithItem }: Props) {
         <div className="flex items-start gap-0 overflow-x-auto pb-1">
           {db.weeklyFunnel.map((step, i) => (
             <FunnelStepBlock key={step.label} step={step} isFirst={i === 0} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── 監査ダッシュボード ─────────────────────────────── */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="card p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+              <i className="fa-solid fa-layer-group text-amber-500" />
+              UT / FT / NT の振り分け
+            </h2>
+            <span className="text-xs text-slate-400 tabular-nums">{db.trackSummary.reduce((sum, item) => sum + item.count, 0)}件</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {db.trackSummary.map(item => (
+              <TrackCard key={item.id} item={item} onClick={() => onGoTo('tab2')} />
+            ))}
+          </div>
+          <div className="mt-3 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+            <i className="fa-solid fa-circle-info mt-0.5 text-amber-500" />
+            <p>
+              UT に乗っている件数をまず確認し、そのうえで FT / NT の偏りを見ます。
+              現在の進行中案件は <span className="font-bold">{db.trackSummary.find(item => item.id === 'UT')?.count || 0}</span> 件です。
+            </p>
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+              <i className="fa-solid fa-fire text-orange-500" />
+              関係温度の分布
+            </h2>
+            <div className="text-right">
+              <p className="text-[10px] text-slate-400">最高 / 平均</p>
+              <p className="text-sm font-bold text-slate-800 tabular-nums">
+                {db.temperatureSummary.max ?? '-'} / {db.temperatureSummary.average ?? '-'}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">対象件数</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.temperatureSummary.total}</p>
+              <p className="text-[10px] text-slate-400">進行中の案件</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">温度あり</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.temperatureSummary.withTemperature}</p>
+              <p className="text-[10px] text-slate-400">温度未設定 {db.temperatureSummary.missing}件</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">最高温度</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.temperatureSummary.max ?? '-'}</p>
+              <p className="text-[10px] text-slate-400">同値 {db.temperatureSummary.maxCount}件</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">最小温度</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.temperatureSummary.min ?? '-'}</p>
+              <p className="text-[10px] text-slate-400">平均 {db.temperatureSummary.average ?? '-'}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {temperatureGroups.length > 0 ? (
+              temperatureGroups.slice(0, 8).map(row => (
+                <HorizontalBar
+                  key={row.temperature}
+                  label={`温${row.temperature}`}
+                  count={row.count}
+                  max={temperatureMaxCount}
+                  tone={row.temperature >= 80 ? 'bg-orange-500' : row.temperature >= 50 ? 'bg-emerald-500' : row.temperature >= 20 ? 'bg-indigo-500' : 'bg-slate-400'}
+                  note={`${Math.round((row.count / Math.max(1, db.temperatureSummary.withTemperature)) * 100)}%`}
+                />
+              ))
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-400">温度データがありません</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="card p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+              <i className="fa-solid fa-comment-dots text-pink-500" />
+              S1で実際にやっている行動
+            </h2>
+            <span className="text-xs text-slate-400 tabular-nums">{db.s1ActionSummary.totalTouches}件</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">S1案件数</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.s1ActionSummary.touchingItems}</p>
+              <p className="text-[10px] text-slate-400">S1中の案件</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">いいねのみ</p>
+              <p className="text-2xl font-bold text-pink-700 tabular-nums">{db.s1ActionSummary.likeOnly}</p>
+              <p className="text-[10px] text-slate-400">{db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.likeOnly / db.s1ActionSummary.totalTouches) * 100) : 0}%</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">コメント</p>
+              <p className="text-2xl font-bold text-indigo-700 tabular-nums">{db.s1ActionSummary.comment}</p>
+              <p className="text-[10px] text-slate-400">{db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.comment / db.s1ActionSummary.totalTouches) * 100) : 0}%</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">ストーリー反応</p>
+              <p className="text-2xl font-bold text-amber-700 tabular-nums">{db.s1ActionSummary.storyReply}</p>
+              <p className="text-[10px] text-slate-400">{db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.storyReply / db.s1ActionSummary.totalTouches) * 100) : 0}%</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <HorizontalBar
+              label="いいねのみ"
+              count={db.s1ActionSummary.likeOnly}
+              max={Math.max(db.s1ActionSummary.totalTouches, 1)}
+              tone="bg-pink-500"
+              note={`${db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.likeOnly / db.s1ActionSummary.totalTouches) * 100) : 0}%`}
+            />
+            <HorizontalBar
+              label="コメント"
+              count={db.s1ActionSummary.comment}
+              max={Math.max(db.s1ActionSummary.totalTouches, 1)}
+              tone="bg-indigo-500"
+              note={`${db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.comment / db.s1ActionSummary.totalTouches) * 100) : 0}%`}
+            />
+            <HorizontalBar
+              label="ストーリー"
+              count={db.s1ActionSummary.storyReply}
+              max={Math.max(db.s1ActionSummary.totalTouches, 1)}
+              tone="bg-amber-500"
+              note={`${db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.storyReply / db.s1ActionSummary.totalTouches) * 100) : 0}%`}
+            />
+            <HorizontalBar
+              label="DM/その他"
+              count={db.s1ActionSummary.dmOrOther}
+              max={Math.max(db.s1ActionSummary.totalTouches, 1)}
+              tone="bg-slate-400"
+              note={`${db.s1ActionSummary.totalTouches ? Math.round((db.s1ActionSummary.dmOrOther / db.s1ActionSummary.totalTouches) * 100) : 0}%`}
+            />
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+              <i className="fa-solid fa-hourglass-half text-violet-500" />
+              S1開始からの経過日数
+            </h2>
+            <div className="text-right">
+              <p className="text-[10px] text-slate-400">最長 / 平均</p>
+              <p className="text-sm font-bold text-slate-800 tabular-nums">
+                {db.s1AgeSummary.maxDays ?? '-'}日 / {db.s1AgeSummary.averageDays ?? '-'}日
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">S1案件数</p>
+              <p className="text-2xl font-bold text-slate-900 tabular-nums">{db.s1AgeSummary.totalItems}</p>
+              <p className="text-[10px] text-slate-400">判定対象</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">14日超え</p>
+              <p className="text-2xl font-bold text-amber-700 tabular-nums">{db.s1AgeSummary.buckets.find(b => b.label === '14-29日')?.count || 0}</p>
+              <p className="text-[10px] text-slate-400">S1滞留候補</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">30日以上</p>
+              <p className="text-2xl font-bold text-rose-700 tabular-nums">{db.s1AgeSummary.buckets.find(b => b.label === '30日以上')?.count || 0}</p>
+              <p className="text-[10px] text-slate-400">かなり長い滞留</p>
+            </div>
+            <div className="metric-card">
+              <p className="text-[10px] text-slate-400 uppercase tracking-wide">判定タイミング</p>
+              <p className="text-sm font-bold text-slate-900">
+                {db.s1AgeSummary.maxDays != null && db.s1AgeSummary.maxDays <= 6 ? '未到達の可能性' : '到達済みが含まれる'}
+              </p>
+              <p className="text-[10px] text-slate-400">直近7日以内だけなら様子見</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            {db.s1AgeSummary.buckets.map(bucket => (
+              <HorizontalBar
+                key={bucket.label}
+                label={bucket.label}
+                count={bucket.count}
+                max={Math.max(...db.s1AgeSummary.buckets.map(b => b.count), 1)}
+                tone={bucket.label === '30日以上' ? 'bg-rose-500' : bucket.label === '14-29日' ? 'bg-amber-500' : bucket.label === '7-13日' ? 'bg-violet-500' : 'bg-emerald-500'}
+                note={`${bucket.itemIds.length}件`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="card p-4">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2 className="font-semibold text-sm text-slate-700 flex items-center gap-1.5">
+            <i className="fa-solid fa-shield-halved text-emerald-500" />
+            監査 22 タスクのうち DM移行ロジック関連
+          </h2>
+          <StatePill status={db.auditSummary.dmMigration.status} />
+        </div>
+        <p className="text-xs text-slate-500 mb-3">
+          {db.auditSummary.dmMigration.summary}
+          {' '}
+          ここでは、実際に読み込まれているプロンプト内容を確認しています。
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {db.auditSummary.dmMigration.items.map(item => (
+            <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs font-semibold text-slate-700">{item.label}</p>
+                <StatePill status={item.status} />
+              </div>
+              <p className="text-[11px] text-slate-500">{item.detail}</p>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {item.evidence.map(ev => (
+                  <span key={ev} className="text-[10px] px-2 py-0.5 rounded-full bg-white border border-slate-200 text-slate-500">
+                    {ev}
+                  </span>
+                ))}
+              </div>
+            </div>
           ))}
         </div>
       </div>
