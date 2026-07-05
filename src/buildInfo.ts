@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/06 再判定とDM移行の状態更新修正";
+export const BUILD_LABEL = "07/06 Tab2: 接触回数バッジを一覧に追加";

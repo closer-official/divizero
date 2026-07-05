@@ -261,10 +261,10 @@ function KanbanCard({ item, isActive, onClick, onInlineReaction, priorityMeta }:
         )}
         {awaitingTouch && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-amber-100 text-amber-600">反応待ち</span>}
         {item.state === 'meeting_scheduled' && <span className="text-[9px] font-bold px-1 py-0.5 rounded shrink-0 bg-sky-100 text-sky-700">面談待ち</span>}
+        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-slate-100 text-slate-500">接触{touches.length}回</span>
       </div>
       <p className="text-xs font-semibold text-slate-800 leading-tight line-clamp-2">{item.accountName}</p>
       <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
-        <span>{touches.length}T</span>
         {daysUntilMeeting !== null ? (
           <span className={`${daysUntilMeeting < 0 ? 'text-rose-500' : 'text-sky-500'} font-medium`}>
             {daysUntilMeeting < 0 ? `面談${Math.abs(daysUntilMeeting)}日前` : daysUntilMeeting === 0 ? '本日面談' : `面談あと${daysUntilMeeting}日`}
@@ -2582,6 +2582,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           )}
           {totalDays >= 30 && <span className="text-[10px] font-bold bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded shrink-0">30日超</span>}
           {item.inbound_signal && <span className="text-[10px] font-bold bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded shrink-0">{item.inbound_signal.type}</span>}
+          <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded shrink-0">接触{(item.touches || []).length}回</span>
           {profileUrl && (
             <a
               href={profileUrl}
