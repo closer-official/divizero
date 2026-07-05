@@ -467,6 +467,14 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [batchS1ApplyState, setBatchS1ApplyState] = useState<'idle' | 'applied'>('idle')
   const [batchS1Error, setBatchS1Error] = useState<string | null>(null)
 
+  // 温度再判定（temperature未設定の過去S1案件を10件ずつ再判定）
+  const [tempRetryOpen, setTempRetryOpen] = useState(false)
+  const [tempRetryBatch, setTempRetryBatch] = useState(0)
+  const [tempRetryOutputs, setTempRetryOutputs] = useState<Record<number, string>>({})
+  const [tempRetryCopyStates, setTempRetryCopyStates] = useState<Record<number, 'idle' | 'copied'>>({})
+  const [tempRetryApplied, setTempRetryApplied] = useState<Record<number, boolean>>({})
+  const [tempRetryError, setTempRetryError] = useState<string | null>(null)
+
   // ① 本日やること
   const [todayOpen, setTodayOpen] = useState(true)
 
@@ -871,6 +879,59 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     setTimeout(() => { setBatchS1ApplyState('idle'); setBatchS1Open(false) }, 1500)
   }
 
+  function handleTempRetryCopy(batchIdx: number) {
+    if (!prompts.S1_ACTION_BATCH) { toast.show('プロンプトを読み込み中です', 2000); return }
+    const batch = tempRetryBatches[batchIdx]
+    if (!batch || batch.length === 0) return
+    const prompt = buildBatchS1ActionPrompt(batch, prompts.S1_ACTION_BATCH)
+    copyText(prompt).then(() => {
+      setTempRetryCopyStates(prev => ({ ...prev, [batchIdx]: 'copied' }))
+      setTimeout(() => setTempRetryCopyStates(prev => ({ ...prev, [batchIdx]: 'idle' })), 2500)
+    }).catch(() => toast.show('コピーに失敗しました', 2000))
+  }
+
+  function handleTempRetryApply(batchIdx: number) {
+    setTempRetryError(null)
+    const output = (tempRetryOutputs[batchIdx] ?? '').trim()
+    if (!output) { setTempRetryError('AI出力を貼り付けてください'); return }
+    const batch = tempRetryBatches[batchIdx]
+    const results = parseBatchS1ActionOutput(output, batch)
+    if (results.length === 0) {
+      setTempRetryError('AI出力の形式が認識できませんでした。===S1_RESULT_START=== を含む出力を貼り付けてください。')
+      return
+    }
+    const byPipeline: Record<string, typeof results> = {}
+    for (const r of results) {
+      if (!byPipeline[r.pipelineId]) byPipeline[r.pipelineId] = []
+      byPipeline[r.pipelineId].push(r)
+    }
+    saveData(prev => ({
+      ...prev,
+      pipeline: prev.pipeline.map(p => {
+        const pResults = byPipeline[p.id]
+        if (!pResults || pResults.length === 0) return p
+        const temp = pResults.find(r => r.temperature !== undefined)?.temperature
+        if (temp === undefined) return p
+        return { ...p, temperature: temp }
+      }),
+    }))
+    setTempRetryApplied(prev => ({ ...prev, [batchIdx]: true }))
+    setTempRetryOutputs(prev => ({ ...prev, [batchIdx]: '' }))
+    toast.show(`バッチ${batchIdx + 1} 取り込み完了：${results.length}件に温度を設定しました`)
+    // 全バッチ完了したらモーダルを閉じる
+    const nextPending = tempRetryBatches.findIndex((_, i) => i !== batchIdx && !tempRetryApplied[i])
+    if (nextPending === -1) {
+      setTimeout(() => {
+        setTempRetryOpen(false)
+        setTempRetryBatch(0)
+        setTempRetryOutputs({})
+        setTempRetryApplied({})
+      }, 1500)
+    } else {
+      setTempRetryBatch(nextPending)
+    }
+  }
+
   function handleBulkTouchSubmit() {
     if (!bulkPostText.trim()) { toast.show('投稿テキストを入力してください', 2000); return }
     if (bulkSelectedIds.size === 0) { toast.show('対象アカウントを選択してください', 2000); return }
@@ -990,6 +1051,33 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     const lastTouch = [...touches].reverse()[0]
     return lastTouch.status === 'reacted' && !p.recontact_date
   })
+
+  // 温度未設定の過去S1案件一覧（温度再判定バッチ対象）
+  const tempRetryItems: BatchS1ActionItem[] = (() => {
+    const items: BatchS1ActionItem[] = []
+    let idx = 1
+    for (const p of data.pipeline) {
+      if (p.temperature != null) continue
+      const touches = p.touches || []
+      if (touches.length === 0) continue
+      // 最新のタッチを選択（日付降順）
+      const latestTouch = [...touches].sort((a, b) => b.date.localeCompare(a.date))[0]
+      items.push({ index: idx++, pipelineId: p.id, touchId: latestTouch.id, pipelineItem: p, touch: latestTouch })
+    }
+    return items
+  })()
+
+  const TEMP_RETRY_BATCH_SIZE = 10
+  const tempRetryBatches: BatchS1ActionItem[][] = (() => {
+    const batches: BatchS1ActionItem[][] = []
+    for (let i = 0; i < tempRetryItems.length; i += TEMP_RETRY_BATCH_SIZE) {
+      batches.push(tempRetryItems.slice(i, i + TEMP_RETRY_BATCH_SIZE).map((item, j) => ({
+        ...item,
+        index: j + 1, // バッチ内での連番にリセット
+      })))
+    }
+    return batches
+  })()
 
   // S1行動判定が未完了のタッチ一覧（一括バッチ対象）
   const pendingS1Touches: BatchS1ActionItem[] = (() => {
@@ -1333,6 +1421,17 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                 <i className="fa-solid fa-bolt text-sky-500" />
                 <span className="hidden sm:inline ml-1">行動判定{pendingS1Touches.length}件</span>
                 <span className="sm:hidden ml-1">{pendingS1Touches.length}</span>
+              </button>
+            )}
+            {tempRetryItems.length > 0 && (
+              <button
+                className="btn-sec text-[11px] py-1.5 px-2 text-orange-700 border-orange-300"
+                onClick={() => { setTempRetryOpen(true); setTempRetryBatch(0) }}
+                title="温度未設定の過去S1案件を10件ずつ再判定して温度を補完する"
+              >
+                <i className="fa-solid fa-fire text-orange-500" />
+                <span className="hidden sm:inline ml-1">温度再判定{tempRetryItems.length}件</span>
+                <span className="sm:hidden ml-1">{tempRetryItems.length}</span>
               </button>
             )}
             <button className="btn-sec text-[11px] py-1.5 px-2" onClick={exportAllMD} title="全件MD出力">
@@ -1710,6 +1809,134 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
 
             <div className="p-3 border-t border-slate-100 bg-slate-50 text-right">
               <button className="btn-sec text-xs py-2 px-4" onClick={() => { setBatchS1Open(false); setBatchS1Output(''); setBatchS1Error(null) }}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 温度再判定モーダル ─────────────────────────────────── */}
+      {tempRetryOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-2xl border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            {/* ヘッダー */}
+            <div className="p-4 flex items-center gap-2 bg-orange-50 border-b border-orange-100">
+              <i className="fa-solid fa-fire text-orange-500" />
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-sm text-orange-800">温度再判定（{tempRetryItems.length}件 / {tempRetryBatches.length}バッチ）</p>
+                <p className="text-[10px] text-orange-600 mt-0.5">温度未設定の過去案件に温度を補完します。state・再接触日は変更しません。</p>
+              </div>
+              <button className="text-slate-400 hover:text-slate-700 p-1" onClick={() => { setTempRetryOpen(false); setTempRetryBatch(0); setTempRetryOutputs({}); setTempRetryApplied({}); setTempRetryError(null) }}>
+                <i className="fa-solid fa-xmark" />
+              </button>
+            </div>
+
+            {/* バッチナビ */}
+            {tempRetryBatches.length > 1 && (
+              <div className="flex gap-1 px-4 pt-3 flex-wrap">
+                {tempRetryBatches.map((batch, i) => (
+                  <button
+                    key={i}
+                    className={`text-[11px] px-2.5 py-1 rounded-full border font-bold transition ${
+                      tempRetryApplied[i]
+                        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
+                        : i === tempRetryBatch
+                          ? 'bg-orange-500 text-white border-orange-500'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-orange-300'
+                    }`}
+                    onClick={() => { setTempRetryBatch(i); setTempRetryError(null) }}
+                  >
+                    {tempRetryApplied[i] ? <i className="fa-solid fa-check mr-1" /> : null}
+                    バッチ{i + 1}（{batch.length}件）
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="p-4 overflow-y-auto flex flex-col gap-3 flex-1">
+              {tempRetryBatches.length > 0 ? (() => {
+                const batchIdx = tempRetryBatch
+                const batch = tempRetryBatches[batchIdx]
+                const copyState = tempRetryCopyStates[batchIdx] ?? 'idle'
+                const isApplied = tempRetryApplied[batchIdx] ?? false
+
+                return (
+                  <>
+                    {/* 対象一覧 */}
+                    <div className="border border-slate-100 rounded-xl overflow-hidden">
+                      <p className="text-[11px] text-slate-400 px-3 py-2 font-medium bg-slate-50 border-b border-slate-100">
+                        バッチ{batchIdx + 1} の対象（{batch.length}件）
+                      </p>
+                      <div className="divide-y divide-slate-50 max-h-32 overflow-y-auto">
+                        {batch.map(item => (
+                          <div key={item.pipelineId} className="flex items-center gap-2 px-3 py-1.5">
+                            <span className="text-[10px] font-bold text-slate-400 w-4 shrink-0">{item.index}</span>
+                            <span className="text-[11px] text-slate-700 font-medium truncate flex-1">{item.pipelineItem.accountName}</span>
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${trackBadgeClass(item.pipelineItem.track)}`}>{item.pipelineItem.track}</span>
+                            <span className="text-[9px] text-slate-400 shrink-0">{item.touch.date.slice(0, 10)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* STEP1: プロンプトコピー */}
+                    <div>
+                      <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">STEP 1 — プロンプトをコピーしてAIで実行</p>
+                      <button
+                        className={`w-full py-2.5 rounded-xl border font-bold text-sm transition flex items-center justify-center gap-2 ${
+                          copyState === 'copied'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                            : 'bg-orange-500 border-orange-500 text-white hover:bg-orange-600'
+                        }`}
+                        onClick={() => handleTempRetryCopy(batchIdx)}
+                      >
+                        <i className={`fa-solid ${copyState === 'copied' ? 'fa-check' : 'fa-copy'}`} />
+                        {copyState === 'copied'
+                          ? `✓ バッチ${batchIdx + 1}（${batch.length}件）コピーしました`
+                          : `バッチ${batchIdx + 1}をコピー（${batch.length}件）`
+                        }
+                      </button>
+                    </div>
+
+                    {/* STEP2: AI出力貼り付け */}
+                    {!isApplied ? (
+                      <div>
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-2">STEP 2 — AI出力を貼り付けて取り込む</p>
+                        <textarea
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-orange-300 bg-slate-50"
+                          rows={5}
+                          placeholder={"===S1_RESULT_START=== 1 ===\n判定: ...\nDM_SCORE: 営業期待値20点＋関係温度10点＋...\n===S1_RESULT_END=== 1 ==="}
+                          value={tempRetryOutputs[batchIdx] ?? ''}
+                          onChange={e => { setTempRetryOutputs(prev => ({ ...prev, [batchIdx]: e.target.value })); setTempRetryError(null) }}
+                        />
+                        {tempRetryError && (
+                          <p className="text-[11px] text-rose-600 mt-1.5">{tempRetryError}</p>
+                        )}
+                        <button
+                          className="mt-2 w-full py-2.5 rounded-xl border font-bold text-sm bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+                          onClick={() => handleTempRetryApply(batchIdx)}
+                        >
+                          <i className="fa-solid fa-fire-flame-curved" />
+                          温度を取り込む（バッチ{batchIdx + 1}）
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-emerald-700 bg-emerald-50 rounded-xl px-4 py-3 border border-emerald-200">
+                        <i className="fa-solid fa-circle-check text-lg" />
+                        <span className="text-sm font-bold">バッチ{batchIdx + 1} 完了</span>
+                      </div>
+                    )}
+                  </>
+                )
+              })() : (
+                <p className="text-sm text-slate-400 text-center py-8">温度未設定の案件がありません</p>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              <p className="text-[11px] text-slate-400">
+                完了: {Object.values(tempRetryApplied).filter(Boolean).length} / {tempRetryBatches.length} バッチ
+              </p>
+              <button className="btn-sec text-xs py-2 px-4" onClick={() => { setTempRetryOpen(false); setTempRetryBatch(0); setTempRetryOutputs({}); setTempRetryApplied({}); setTempRetryError(null) }}>閉じる</button>
             </div>
           </div>
         </div>

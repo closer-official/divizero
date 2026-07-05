@@ -2,8 +2,8 @@
  * 遡及温度計算スクリプト（読み取り専用・本番データ書き込みなし）
  *
  * 使い方:
- *   1. npm run dev でアプリを起動しておく（/api/config エンドポイントが必要）
- *   2. node scripts/retroactiveTemperature.mjs
+ *   node scripts/retroactiveTemperature.mjs
+ *   ※ .env.local に VITE_FIREBASE_* が設定されていれば dev サーバー不要
  *
  * 出力: temperature が未設定の pipeline 案件について、
  *       touch履歴から算出した推定温度を一覧表示する。
@@ -19,20 +19,70 @@
  *   ※ 最も高い1段階のみ採用（加算しない）
  */
 
+import { readFileSync, existsSync } from 'fs'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
 import { initializeApp } from 'firebase/app'
 import { getFirestore, doc, getDoc } from 'firebase/firestore'
 
-// --- Firebase 設定取得 ---
-async function fetchFirebaseConfig() {
-  try {
-    const res = await fetch('http://localhost:5173/api/config')
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
-    return await res.json()
-  } catch (e) {
-    console.error('❌ /api/config の取得に失敗しました。npm run dev が起動中か確認してください。')
-    console.error(e.message)
-    process.exit(1)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const ROOT = resolve(__dirname, '..')
+
+// --- CLI 引数: --url https://xxx.vercel.app ---
+const urlArgIdx = process.argv.indexOf('--url')
+const VERCEL_URL = urlArgIdx !== -1 ? process.argv[urlArgIdx + 1] : null
+
+// --- .env.local から VITE_FIREBASE_* を読み込む ---
+function loadEnvLocal() {
+  const envPath = resolve(ROOT, '.env.local')
+  if (!existsSync(envPath)) return null
+  const lines = readFileSync(envPath, 'utf-8').split('\n')
+  const env = {}
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const idx = trimmed.indexOf('=')
+    if (idx === -1) continue
+    const key = trimmed.slice(0, idx).trim()
+    const val = trimmed.slice(idx + 1).trim().replace(/^["']|["']$/g, '')
+    env[key] = val
   }
+  return env
+}
+
+// --- Firebase 設定取得（.env.local → Vercel URL の順で試みる） ---
+async function resolveFirebaseConfig() {
+  // ① .env.local から
+  const env = loadEnvLocal()
+  if (env && env['VITE_FIREBASE_API_KEY'] && env['VITE_FIREBASE_PROJECT_ID']) {
+    console.log('📂 .env.local から Firebase 設定を読み込みます')
+    return {
+      apiKey:            env['VITE_FIREBASE_API_KEY'],
+      authDomain:        env['VITE_FIREBASE_AUTH_DOMAIN'],
+      projectId:         env['VITE_FIREBASE_PROJECT_ID'],
+      storageBucket:     env['VITE_FIREBASE_STORAGE_BUCKET'],
+      messagingSenderId: env['VITE_FIREBASE_MESSAGING_SENDER_ID'],
+      appId:             env['VITE_FIREBASE_APP_ID'],
+    }
+  }
+
+  // ② --url オプション（Vercel 本番 URL）から /api/config を取得
+  if (VERCEL_URL) {
+    const url = VERCEL_URL.replace(/\/$/, '') + '/api/config'
+    console.log(`🌐 ${url} から Firebase 設定を取得します`)
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`)
+    return await res.json()
+  }
+
+  // どちらもない場合は使い方を案内して終了
+  console.error('❌ Firebase 設定が見つかりません。以下のいずれかを行ってください:')
+  console.error('')
+  console.error('  A) .env.local に VITE_FIREBASE_* を設定する（.env.local.example 参照）')
+  console.error('')
+  console.error('  B) デプロイ済み Vercel URL を --url で渡す:')
+  console.error('     node scripts/retroactiveTemperature.mjs --url https://your-app.vercel.app')
+  process.exit(1)
 }
 
 // --- 温度算出（touch履歴から） ---
@@ -59,7 +109,9 @@ function computeTemperatureFromTouches(touches) {
 
 // --- メイン ---
 async function main() {
-  const config = await fetchFirebaseConfig()
+  const config = await resolveFirebaseConfig()
+
+  console.log(`📡 Firebase projectId: ${config.projectId} に接続中...`)
   const app = initializeApp(config)
   const db  = getFirestore(app)
 
@@ -69,34 +121,34 @@ async function main() {
     process.exit(1)
   }
 
-  const raw  = snap.data().payload
-  const data = typeof raw === 'string' ? JSON.parse(raw) : raw
+  const raw      = snap.data().payload
+  const data     = typeof raw === 'string' ? JSON.parse(raw) : raw
   const pipeline = data.pipeline || []
 
-  // temperature が未設定（undefined / null）の案件のみ対象
-  const targets = pipeline.filter(p => p.temperature == null)
+  const targets    = pipeline.filter(p => p.temperature == null)
   const alreadySet = pipeline.filter(p => p.temperature != null)
 
   console.log(`\n=== 遡及温度計算レポート ===`)
   console.log(`パイプライン総件数   : ${pipeline.length}件`)
-  console.log(`温度設定済み         : ${alreadySet.length}件`)
+  console.log(`温度設定済み         : ${alreadySet.length}件（内訳: ${alreadySet.map(p => `${p.accountName}=${p.temperature}`).slice(0,5).join(', ')}${alreadySet.length > 5 ? '...' : ''}）`)
   console.log(`温度未設定（対象）   : ${targets.length}件`)
   console.log(``)
 
   if (targets.length === 0) {
-    console.log('温度未設定の案件はありません。')
+    console.log('✅ 温度未設定の案件はありません。')
     process.exit(0)
   }
 
-  // 計算結果テーブル
+  // 計算結果
   const rows = targets.map(p => {
     const touches  = p.touches || []
     const computed = computeTemperatureFromTouches(touches)
-    const hasFollow  = touches.some(t => [].concat(t.reactionType || []).includes('フォロー返し'))
-    const replyTotal = touches.filter(t => [].concat(t.reactionType || []).includes('テキスト返信')).length
-    const likeTotal  = touches.filter(t => [].concat(t.reactionType || []).includes('いいね返り')).length
-    const noReact    = touches.filter(t => [].concat(t.reactionType || []).includes('無反応')).length
-    const judgments  = touches.map(t => t.reactionJudgment).filter(Boolean).join(' / ') || '—'
+    const toArr    = r => Array.isArray(r) ? r : (r ? [r] : [])
+    const hasFollow  = touches.some(t => toArr(t.reactionType).includes('フォロー返し'))
+    const replyTotal = touches.filter(t => toArr(t.reactionType).includes('テキスト返信')).length
+    const likeTotal  = touches.filter(t => toArr(t.reactionType).includes('いいね返り')).length
+    const noReact    = touches.filter(t => toArr(t.reactionType).includes('無反応')).length
+    const judgments  = [...new Set(touches.map(t => t.reactionJudgment).filter(Boolean))].join(' / ') || '—'
 
     return {
       id          : p.id,
@@ -113,7 +165,7 @@ async function main() {
     }
   })
 
-  // 計算後温度の分布
+  // 温度分布
   const dist = {}
   for (const r of rows) {
     dist[r.computedTemp] = (dist[r.computedTemp] || 0) + 1
@@ -128,46 +180,46 @@ async function main() {
     })
   console.log('')
 
-  // 詳細一覧（温度 > 0 の案件を先に表示）
+  // 詳細一覧（温度降順）
   const sorted = [...rows].sort((a, b) => b.computedTemp - a.computedTemp)
 
+  const W = { name:20, track:6, state:14, touch:6, like:6, reply:4, follow:8, no:6, temp:8, judge:1 }
   console.log('--- 詳細一覧（温度降順）---')
   console.log(
-    'アカウント名'.padEnd(20) +
-    'トラック'.padEnd(6) +
-    '状態'.padEnd(14) +
-    'タッチ'.padEnd(6) +
-    'いいね'.padEnd(6) +
-    '返信'.padEnd(4) +
-    'フォロー'.padEnd(8) +
-    '無反応'.padEnd(6) +
-    '算出温度'.padEnd(8) +
+    'アカウント名'.padEnd(W.name) +
+    'トラック'.padEnd(W.track) +
+    '状態'.padEnd(W.state) +
+    'タッチ'.padEnd(W.touch) +
+    'いいね'.padEnd(W.like) +
+    '返信'.padEnd(W.reply) +
+    'フォロー'.padEnd(W.follow) +
+    '無反応'.padEnd(W.no) +
+    '算出温度'.padEnd(W.temp) +
     '最新S1判定'
   )
   console.log('─'.repeat(110))
 
   for (const r of sorted) {
     console.log(
-      r.name.slice(0, 18).padEnd(20) +
-      r.track.padEnd(6) +
-      r.state.padEnd(14) +
-      String(r.touchCount).padEnd(6) +
-      String(r.likeTotal).padEnd(6) +
-      String(r.replyTotal).padEnd(4) +
-      r.hasFollow.padEnd(8) +
-      String(r.noReact).padEnd(6) +
-      String(r.computedTemp).padEnd(8) +
+      r.name.slice(0, W.name - 2).padEnd(W.name) +
+      r.track.padEnd(W.track) +
+      r.state.padEnd(W.state) +
+      String(r.touchCount).padEnd(W.touch) +
+      String(r.likeTotal).padEnd(W.like) +
+      String(r.replyTotal).padEnd(W.reply) +
+      r.hasFollow.padEnd(W.follow) +
+      String(r.noReact).padEnd(W.no) +
+      String(r.computedTemp).padEnd(W.temp) +
       r.judgments
     )
   }
 
   console.log('')
-  console.log('─'.repeat(110))
   console.log(`算出温度 > 0 の案件: ${rows.filter(r => r.computedTemp > 0).length}件`)
   console.log(`算出温度 = 0 の案件: ${rows.filter(r => r.computedTemp === 0).length}件`)
   console.log('')
   console.log('⚠️  このスクリプトは読み取り専用です。実データへの書き込みは行っていません。')
-  console.log('   反映する場合は scripts/applyRetroactiveTemperature.mjs を別途実行してください。')
+  console.log('   反映する場合は「遡及反映してください」と伝えてください。')
 }
 
 main().catch(e => { console.error(e); process.exit(1) })
