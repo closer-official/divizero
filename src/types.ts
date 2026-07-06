@@ -188,6 +188,11 @@ export interface Target {
   pipelineId?: string | null;
   rawInput?: string;
   aiOutput?: string;
+  is_inbound?: boolean;
+  inbound_actions?: string[];
+  signal_type?: string;
+  signal_date?: string;
+  signal_memo?: string;
   salesExpectation?: number;
   salesExpectationReason?: string;
   salesExpectationBreakdown?: string;

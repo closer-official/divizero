@@ -169,6 +169,11 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       createdAt: new Date().toISOString(),
       aiOutput: text,
       pipelineId: pid,
+      is_inbound: prefill?.is_inbound,
+      inbound_actions: prefill?.inbound_actions,
+      signal_type: prefill?.signal_type,
+      signal_date: prefill?.signal_date,
+      signal_memo: prefill?.signal_memo,
     } as Target
     saveData(prev => {
       const d = { ...prev, targets: [...prev.targets, newTarget] }
@@ -277,6 +282,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           naturalQuestion: tgt.naturalQuestion,
           forbiddenAngles: tgt.forbiddenAngles,
           observations: tgt.observations,
+          isInbound: tgt.is_inbound || false,
+          inboundActions: tgt.inbound_actions?.length ? tgt.inbound_actions : (tgt.signal_type ? [tgt.signal_type] : []),
+          inbound_signal: tgt.is_inbound && tgt.signal_type ? {
+            type: tgt.signal_type,
+            date: tgt.signal_date || todayStr(),
+            memo: tgt.signal_memo,
+          } : undefined,
+          touches: tgt.is_inbound ? [buildInitialInboundTouch(tgt, todayStr())] : [],
         })
       })
       return d
@@ -565,6 +578,11 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
           pipelineId: pid,
           channel: ch,
           url: urlFallback,
+          is_inbound: screening.is_inbound,
+          inbound_actions: screening.inbound_actions,
+          signal_type: screening.signal_type,
+          signal_date: screening.signal_date,
+          signal_memo: screening.signal_memo,
         } as Target
         d.targets.push(newTarget)
 
@@ -671,6 +689,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         naturalQuestion: tgt.naturalQuestion,
         forbiddenAngles: tgt.forbiddenAngles,
         observations: tgt.observations,
+        isInbound: tgt.is_inbound || false,
+        inboundActions: tgt.inbound_actions?.length ? tgt.inbound_actions : (tgt.signal_type ? [tgt.signal_type] : []),
+        inbound_signal: tgt.is_inbound && tgt.signal_type ? {
+          type: tgt.signal_type,
+          date: tgt.signal_date || todayStr(),
+          memo: tgt.signal_memo,
+        } : undefined,
+        touches: tgt.is_inbound ? [buildInitialInboundTouch(tgt, todayStr())] : [],
       })
       return d
     })
@@ -788,6 +814,14 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
         naturalQuestion: tgt.naturalQuestion,
         forbiddenAngles: tgt.forbiddenAngles,
         observations: tgt.observations,
+        isInbound: tgt.is_inbound || false,
+        inboundActions: tgt.inbound_actions?.length ? tgt.inbound_actions : (tgt.signal_type ? [tgt.signal_type] : []),
+        inbound_signal: tgt.is_inbound && tgt.signal_type ? {
+          type: tgt.signal_type,
+          date: tgt.signal_date || todayStr(),
+          memo: tgt.signal_memo,
+        } : undefined,
+        touches: tgt.is_inbound ? [buildInitialInboundTouch(tgt, todayStr())] : [],
       })
       return d
     })
