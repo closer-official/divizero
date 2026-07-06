@@ -4309,7 +4309,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         )}
 
         {/* S1行動判定セクション */}
-        {!isAwaiting && (!touch.threadEntry || touch.threadEntry === 's1_story_reply' || touch.threadEntry === 'inbound') && (() => {
+        {!isAwaiting && (!touch.threadEntry || touch.threadEntry === 's1_story_reply' || touch.threadEntry === 'inbound') && (!touch.threadEntry || touch.conversationTurns?.slice(-1)[0]?.role !== '自分') && (() => {
           const saved = touch.reactionJudgment
           const result = s1ActionParsed || (saved ? {
             judgment: saved,
@@ -4637,7 +4637,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
       {touch.threadStatus === 'active' && (() => {
         const turns = touch.conversationTurns || []
         const lastTurn = turns[turns.length - 1]
-        const showOS2Section = lastTurn?.role === '相手' && !!touch.threadEntry
+        const showOS2Section = lastTurn?.role === '相手' && !!touch.threadEntry && (touch.conversationTurns?.length ?? 0) > 1
         const showAddReplyBtn = lastTurn?.role === '自分' && !addingReply && !!touch.threadEntry && !isLikeOnlyTouch(touch)
         const repCount = touch.repExchangeCount || 0
         const dmCount = touch.dmExchangeCount || 0
