@@ -2183,7 +2183,8 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [autoFillWarning, setAutoFillWarning] = useState<string | null>(null)
 
   // touch add form
-  const [tTouchMode, setTTouchMode] = useState<'rep' | 'story' | 'dm'>('rep')
+  const [tTouchMode, setTTouchMode] = useState<'rep' | 'story' | 'dm' | 'inbound'>('rep')
+  const [tInboundChannel, setTInboundChannel] = useState<'リプ' | 'DM'>('DM')
   const [tPostText, setTPostText] = useState('')
   const [tPostRawText, setTPostRawText] = useState('')
   const [tPostType, setTPostType] = useState<TouchPostType>('通常投稿')
@@ -2253,6 +2254,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setTPostUrl('')
     setTCommentUrl('')
     setTLikes(''); setTComments(''); setTRetweets(''); setTSaves(''); setTImpressions('')
+    setTInboundChannel('DM')
     setTTouchMode('rep')
   }
 
@@ -2343,12 +2345,38 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   }
 
   function handleAddTouch() {
-    if (!tSentText.trim()) { toast.show('実際に送った文章は必須です', 2000); return }
+    if (!tSentText.trim()) {
+      toast.show(tTouchMode === 'inbound' ? '相手から来た内容は必須です' : '実際に送った文章は必須です', 2000)
+      return
+    }
     const now = new Date().toISOString()
     let touch: Touch
     let pipelineUpdates: Partial<PipelineItem> = {}
 
-    if (tTouchMode === 'dm') {
+    if (tTouchMode === 'inbound') {
+      touch = {
+        id: uid(), date: now,
+        targetPostText: tInboundChannel === 'DM' ? '（インバウンドDM）' : '（インバウンド返信）',
+        targetPostType: 'その他', targetValidity: '◯',
+        aiSuggestedText: tAiText, actualSentText: '', editReason: tEditReason,
+        messageValidity: '未評価',
+        commentUrl: tCommentUrl.trim() || undefined,
+        status: 'reacted',
+        reactionType: 'テキスト返信',
+        reactionNote: tSentText.trim(),
+        reactionReplyMode: 'text',
+        touchMode: 'conversation',
+        threadEntry: 'inbound',
+        threadStatus: 'active',
+        conversationTurns: [{
+          id: uid(), role: '相手', text: tSentText.trim(),
+          timestamp: now, channel: tInboundChannel, sentStatus: 'sent',
+        } as ConversationTurn],
+        dmExchangeCount: tInboundChannel === 'DM' ? 1 : 0,
+        repExchangeCount: tInboundChannel === 'リプ' ? 1 : 0,
+      }
+      pipelineUpdates = { currentStep: 'S2' as Step, state: 'active' as const }
+    } else if (tTouchMode === 'dm') {
       touch = {
         id: uid(), date: now,
         targetPostText: '（DM）', targetPostType: 'その他', targetValidity: '未評価',
@@ -2403,7 +2431,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       }
     }
 
-    const shouldStock = tTouchMode !== 'dm' && (tPostRawText.trim() || tPostText.trim())
+    const shouldStock = tTouchMode !== 'dm' && tTouchMode !== 'inbound' && (tPostRawText.trim() || tPostText.trim())
     const newResearch: OtherPostResearch | null = shouldStock ? {
       id: uid(), createdAt: now, updatedAt: now,
       sourceType: 'os2_touch',
@@ -2437,7 +2465,9 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }))
     resetForm()
     setAddingTouch(false)
-    const msg = tTouchMode === 'dm'
+    const msg = tTouchMode === 'inbound'
+      ? 'インバウンドを記録しました（S2で続き対応できます）'
+      : tTouchMode === 'dm'
       ? 'DM送信を記録しました（S3へ移動）'
       : tTouchMode === 'story'
         ? 'ストーリー返信を記録しました（S3へ移動）'
@@ -2991,7 +3021,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               {/* タイトル + 3択トグル */}
               <div className="flex items-center gap-3">
                 <p className="font-bold text-sm text-slate-800 flex-1">タッチを追加</p>
-                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1">
+                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl p-1 flex-wrap">
                   <button
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'rep' ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
                     onClick={() => { resetForm(); setTTouchMode('rep') }}
@@ -3004,10 +3034,15 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                     className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'dm' ? 'bg-violet-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
                     onClick={() => { resetForm(); setTTouchMode('dm') }}
                   >通常DM</button>
+                  <button
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition ${tTouchMode === 'inbound' ? 'bg-teal-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}
+                    onClick={() => { resetForm(); setTTouchMode('inbound') }}
+                  >インバウンド</button>
                 </div>
               </div>
 
               {/* ① AI generation section */}
+              {tTouchMode !== 'inbound' ? (
               <div className={`bg-white border rounded-xl p-3 flex flex-col gap-2 ${tTouchMode === 'dm' ? 'border-violet-200' : tTouchMode === 'story' ? 'border-pink-100' : 'border-indigo-100'}`}>
                 <p className="text-xs font-bold text-indigo-700">① AIで生成</p>
                 <button
@@ -3052,6 +3087,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">{autoFillWarning}</p>
                 )}
               </div>
+              ) : (
+              <div className="bg-white border border-teal-100 rounded-xl p-3 flex flex-col gap-2">
+                <p className="text-xs font-bold text-teal-700">相手から来た反応を手動で記録</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  OS⓪に戻さず、この場で相手の返信内容を会話の1ターン目として登録します。登録後はS2の行動判定導線で続き対応できます。
+                </p>
+              </div>
+              )}
 
               {/* suggestion A/B with 仮判定 badges */}
               {(suggestionA || suggestionB) && (
@@ -3097,7 +3140,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               {/* form fields */}
               <div className="flex flex-col gap-3">
                 {/* 投稿関連フィールド（公開リプ・ストーリー返信モードのみ） */}
-                {tTouchMode !== 'dm' && (
+                {tTouchMode !== 'dm' && tTouchMode !== 'inbound' && (
                   <>
                     {tTouchMode === 'rep' && (
                       <>
@@ -3203,12 +3246,22 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
 
                 <div className="flex flex-col gap-1">
                   <label className="text-xs text-slate-500">AIの提案文（任意）</label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? 'AIが提案したDM文' : 'AIが提案した文章'} value={tAiText} onChange={e => setTAiText(e.target.value)} />
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? 'AIが提案したDM文' : tTouchMode === 'inbound' ? '補足メモがあれば入力' : 'AIが提案した文章'} value={tAiText} onChange={e => setTAiText(e.target.value)} />
                 </div>
 
+                {tTouchMode === 'inbound' && (
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-slate-500">受信チャネル</label>
+                    <div className="flex gap-1.5">
+                      <Chip label="DM" selected={tInboundChannel === 'DM'} onClick={() => setTInboundChannel('DM')} />
+                      <Chip label="リプ" selected={tInboundChannel === 'リプ'} onClick={() => setTInboundChannel('リプ')} />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs font-semibold text-slate-700">{tTouchMode === 'dm' ? '実際に送ったDM文' : tTouchMode === 'story' ? '実際に送ったストーリー返信文' : '実際に送った文章'} <span className="text-rose-500">*</span></label>
-                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? '実際に送ったDMの文章' : tTouchMode === 'story' ? '相手のストーリーへの返信として送った文章' : '実際に送ったコメント・DM文'} value={tSentText} onChange={e => setTSentText(e.target.value)} />
+                  <label className="text-xs font-semibold text-slate-700">{tTouchMode === 'dm' ? '実際に送ったDM文' : tTouchMode === 'story' ? '実際に送ったストーリー返信文' : tTouchMode === 'inbound' ? '相手から来た内容' : '実際に送った文章'} <span className="text-rose-500">*</span></label>
+                  <textarea rows={3} className="input-base cs text-xs resize-y" placeholder={tTouchMode === 'dm' ? '実際に送ったDMの文章' : tTouchMode === 'story' ? '相手のストーリーへの返信として送った文章' : tTouchMode === 'inbound' ? '相手から届いた返信・DMの内容をそのまま入力' : '実際に送ったコメント・DM文'} value={tSentText} onChange={e => setTSentText(e.target.value)} />
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -3221,7 +3274,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
               <div className="flex gap-2 mt-1">
                 <button className="btn-sec text-xs py-2.5 px-4 flex-1" onClick={() => { resetForm(); setAddingTouch(false) }}>キャンセル</button>
                 <button className="btn-primary text-xs py-2.5 px-4 flex-1 justify-center" style={{ background: '#4f46e5' }} onClick={handleAddTouch}>
-                  <i className="fa-solid fa-paper-plane" />送信完了として記録
+                  <i className={`fa-solid ${tTouchMode === 'inbound' ? 'fa-download' : 'fa-paper-plane'}`} />{tTouchMode === 'inbound' ? 'インバウンドとして記録' : '送信完了として記録'}
                 </button>
               </div>
             </div>
