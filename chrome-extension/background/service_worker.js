@@ -1,8 +1,10 @@
 'use strict'
 
 const QUEUE_KEY = 'os_ext_queue'
+const S1_TOUCH_KEY = 's1_touch_context'
 const VERSION = '1.0.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
+const GEMINI_URL = 'https://gemini.google.com/app'
 
 function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
@@ -12,6 +14,8 @@ async function getWebappUrl() {
   const result = await chrome.storage.local.get(['webappUrl'])
   return (result.webappUrl || DEFAULT_WEBAPP_URL).replace(/\/$/, '')
 }
+
+// ── ウェブアプリタブを開く or フォーカス ──────────────────────
 
 async function openOrFocusWebapp() {
   const webappUrl = await getWebappUrl()
@@ -27,7 +31,102 @@ async function openOrFocusWebapp() {
   await chrome.tabs.create({ url: webappUrl })
 }
 
-// ── webapp タブへ Extension ID を注入（CSP回避のため scripting API を使用）──
+// タブが完全ロードされるまで待つ
+function waitForTabComplete(tabId, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener)
+      reject(new Error('Tab load timeout'))
+    }, timeoutMs || 30000)
+
+    const listener = (id, info) => {
+      if (id !== tabId || info.status !== 'complete') return
+      clearTimeout(timer)
+      chrome.tabs.onUpdated.removeListener(listener)
+      setTimeout(() => resolve(tabId), 600) // content scripts need a moment
+    }
+    chrome.tabs.onUpdated.addListener(listener)
+  })
+}
+
+// ウェブアプリのタブ ID を取得（ない場合は開いて待つ）
+async function findOrOpenWebappTabId() {
+  const webappUrl = await getWebappUrl()
+  const allTabs = await chrome.tabs.query({})
+  const existing = allTabs.find(tab => tab.url && tab.url.startsWith(webappUrl))
+
+  if (existing && existing.id != null) {
+    if (existing.status === 'complete') return existing.id
+    return await waitForTabComplete(existing.id)
+  }
+
+  const newTab = await chrome.tabs.create({ url: webappUrl })
+  return await waitForTabComplete(newTab.id)
+}
+
+// ── webapp_bridge.js 経由でウェブアプリの extensionBridge を呼ぶ ──
+
+function callWebAppBridge(tabId, bridgeType, payload) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(
+      tabId,
+      { type: 'webapp_bridge', bridgeType, payload: payload || {} },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message))
+        } else {
+          resolve(response)
+        }
+      },
+    )
+  })
+}
+
+// ── Gemini タブを開く or フォーカス ──────────────────────────
+
+async function openOrFocusGemini() {
+  const allTabs = await chrome.tabs.query({})
+  const existing = allTabs.find(tab => tab.url && tab.url.startsWith('https://gemini.google.com'))
+  if (existing && existing.id != null) {
+    await chrome.tabs.update(existing.id, { active: true })
+    if (existing.windowId != null) await chrome.windows.update(existing.windowId, { focused: true })
+    return existing.id
+  }
+  const tab = await chrome.tabs.create({ url: GEMINI_URL })
+  return tab.id
+}
+
+// ── タッチ出力の A/B パース（JavaScript 版）──────────────────
+
+function parseTouchOutputBasic(raw) {
+  const block = raw.match(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/)?.[1]
+  if (!block) return null
+
+  const pick = (label) => {
+    const m = block.match(new RegExp(label + '\\s*[:：]\\s*(.+)'))
+    return m ? m[1].trim() : ''
+  }
+
+  const pickUntil = (label, stopLabel) => {
+    const m = block.match(new RegExp(label + '\\s*[:：]\\s*([\\s\\S]+?)(?=\\n' + stopLabel + '|$)'))
+    return m ? m[1].trim() : ''
+  }
+
+  const textA = pickUntil('提案文A', '仮判定A')
+  const textB = pickUntil('提案文B', '仮判定B')
+  const judgeA = pick('仮判定A')
+  const judgeB = pick('仮判定B')
+
+  if (!textA && !textB) return null
+
+  return {
+    optionA: { text: textA || '（案Aが取得できませんでした）', judge: judgeA },
+    optionB: { text: textB || '（案Bが取得できませんでした）', judge: judgeB },
+    raw,
+  }
+}
+
+// ── webapp タブへ Extension ID を注入 ─────────────────────────
 
 const WEBAPP_ORIGINS = ['https://divizero.vercel.app', 'http://localhost:5173']
 
@@ -52,44 +151,198 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       },
       args: [chrome.runtime.id],
     })
-  } catch (_) {
-    // タブが閉じられた / 権限外 URL の場合は無視
-  }
+  } catch (_) {}
 })
 
-// ── コンテンツスクリプトからの受信（enqueue）──────────────────
+// ── コンテンツスクリプトからの受信 ───────────────────────────
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message.type !== 'enqueue') return false
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // ── OS② enqueue（既存） ──────────────────────────────────────
+  if (message.type === 'enqueue') {
+    console.log('[OS Ext BG] enqueue received, itemType:', message.itemType)
 
-  console.log('[OS Ext BG] enqueue received, itemType:', message.itemType,
-    'accounts:', message.payload?.accounts?.length ?? '?')
+    const item = {
+      id: genId(),
+      type: message.itemType,
+      status: 'pending',
+      payload: message.payload,
+      enqueuedAt: new Date().toISOString(),
+    }
 
-  const item = {
-    id: genId(),
-    type: message.itemType,
-    status: 'pending',
-    payload: message.payload,
-    enqueuedAt: new Date().toISOString(),
-  }
-
-  chrome.storage.local.get([QUEUE_KEY], result => {
-    const queue = result[QUEUE_KEY] || []
-    queue.push(item)
-    chrome.storage.local.set({ [QUEUE_KEY]: queue }, () => {
-      console.log('[OS Ext BG] saved to storage, queue length:', queue.length, 'item id:', item.id)
-      openOrFocusWebapp()
-      sendResponse({ ok: true, id: item.id })
+    chrome.storage.local.get([QUEUE_KEY], result => {
+      const queue = result[QUEUE_KEY] || []
+      queue.push(item)
+      chrome.storage.local.set({ [QUEUE_KEY]: queue }, () => {
+        openOrFocusWebapp()
+        sendResponse({ ok: true, id: item.id })
+      })
     })
-  })
 
-  return true // async response
+    return true
+  }
+
+  // ── S1接触 開始 ───────────────────────────────────────────────
+  if (message.type === 's1_touch_start') {
+    const xTabId = sender.tab?.id
+    const { handle, tweetUrl, tweetText } = message
+    handleS1TouchStart({ handle, tweetUrl, tweetText, xTabId }, sendResponse)
+    return true
+  }
+
+  // ── Gemini 出力取込 ───────────────────────────────────────────
+  if (message.type === 's1_gemini_captured') {
+    handleS1GeminiCaptured(message.clipboardText, sender.tab?.id)
+    return false
+  }
+
+  // ── 送信完了・記録 ────────────────────────────────────────────
+  if (message.type === 's1_touch_sent') {
+    handleS1TouchSent(message)
+    return false
+  }
+
+  // ── キャンセル ────────────────────────────────────────────────
+  if (message.type === 's1_touch_cancelled') {
+    chrome.storage.local.remove(S1_TOUCH_KEY)
+    return false
+  }
+
+  return false
 })
+
+// ── S1接触 フロー ─────────────────────────────────────────────
+
+async function handleS1TouchStart(params, sendResponse) {
+  const { handle, tweetUrl, tweetText, xTabId } = params
+
+  try {
+    // 1. ウェブアプリのタブを取得
+    const webappTabId = await findOrOpenWebappTabId()
+
+    // 2. タッチプロンプトを取得
+    let bridgeResp
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        bridgeResp = await callWebAppBridge(webappTabId, 'GET_TOUCH_PROMPT', { handle })
+        break
+      } catch (err) {
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1200))
+        else throw err
+      }
+    }
+
+    if (!bridgeResp?.ok || !bridgeResp.payload?.found) {
+      // パイプラインにない
+      const msg = bridgeResp?.payload?.found === false
+        ? `@${handle} はパイプライン未登録です。OS①でスクリーニング後に追加してください。`
+        : 'プロンプト取得に失敗しました。ウェブアプリが開いているか確認してください。'
+
+      // X タブに通知
+      if (xTabId) {
+        chrome.tabs.sendMessage(xTabId, { type: 's1_error', message: msg }).catch(() => {})
+      }
+      sendResponse({ ok: false, message: msg })
+      return
+    }
+
+    const { promptText, pipelineItemId, accountName } = bridgeResp.payload
+
+    // 3. ストレージに保存
+    const ctx = {
+      handle,
+      tweetUrl,
+      tweetText,
+      pipelineItemId,
+      accountName,
+      promptText,
+      xTabId,
+      webappTabId,
+      setAt: Date.now(),
+    }
+    await chrome.storage.local.set({ [S1_TOUCH_KEY]: ctx })
+
+    // 4. Gemini を開く
+    await openOrFocusGemini()
+
+    sendResponse({ ok: true, accountName })
+  } catch (err) {
+    console.error('[S1 Touch] handleS1TouchStart error:', err)
+    sendResponse({ ok: false, message: err.message || 'エラーが発生しました' })
+  }
+}
+
+async function handleS1GeminiCaptured(clipboardText, geminiTabId) {
+  const stored = await chrome.storage.local.get([S1_TOUCH_KEY])
+  const ctx = stored[S1_TOUCH_KEY]
+  if (!ctx) {
+    console.warn('[S1 Touch] gemini_captured but no context')
+    return
+  }
+
+  const parsed = parseTouchOutputBasic(clipboardText)
+  if (!parsed) {
+    // パースできなかった場合、X タブにエラー通知
+    if (ctx.xTabId) {
+      chrome.tabs.sendMessage(ctx.xTabId, {
+        type: 's1_error',
+        message: 'AIの出力形式を認識できませんでした。===TOUCH_START=== / ===TOUCH_END=== が含まれているか確認してください。',
+      }).catch(() => {})
+    }
+    return
+  }
+
+  // コンテキストに解析済み案を保存
+  const updatedCtx = { ...ctx, capturedRaw: clipboardText, optionA: parsed.optionA, optionB: parsed.optionB }
+  await chrome.storage.local.set({ [S1_TOUCH_KEY]: updatedCtx })
+
+  // X タブを開いて A/B パネルを表示
+  if (ctx.xTabId) {
+    try {
+      await chrome.tabs.update(ctx.xTabId, { active: true })
+      const tab = await chrome.tabs.get(ctx.xTabId)
+      if (tab.windowId) await chrome.windows.update(tab.windowId, { focused: true })
+
+      // 少し待ってからメッセージ
+      setTimeout(() => {
+        chrome.tabs.sendMessage(ctx.xTabId, {
+          type: 's1_ab_ready',
+          tweetUrl: ctx.tweetUrl,
+          optionA: parsed.optionA,
+          optionB: parsed.optionB,
+          accountName: ctx.accountName,
+        }).catch(err => console.warn('[S1 Touch] sendMessage to X tab failed:', err))
+      }, 500)
+    } catch (err) {
+      console.error('[S1 Touch] Failed to focus X tab:', err)
+    }
+  }
+}
+
+async function handleS1TouchSent(message) {
+  const stored = await chrome.storage.local.get([S1_TOUCH_KEY])
+  const ctx = stored[S1_TOUCH_KEY]
+  if (!ctx) return
+
+  try {
+    const webappTabId = ctx.webappTabId || (await findOrOpenWebappTabId())
+    await callWebAppBridge(webappTabId, 'RECORD_TOUCH', {
+      pipelineItemId: ctx.pipelineItemId,
+      postUrl: ctx.tweetUrl,
+      postText: ctx.tweetText,
+      sentText: message.sentText,
+      aiSuggestedText: message.aiSuggestedText || '',
+    })
+    console.log('[S1 Touch] Touch recorded successfully')
+  } catch (err) {
+    console.error('[S1 Touch] handleS1TouchSent error:', err)
+  } finally {
+    chrome.storage.local.remove(S1_TOUCH_KEY)
+  }
+}
 
 // ── webappからの外部メッセージ（externally_connectable）────────
 
 chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
-
   if (message.type === 'ping') {
     sendResponse({ version: VERSION })
     return
@@ -98,7 +351,6 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
   if (message.type === 'get_queue') {
     chrome.storage.local.get([QUEUE_KEY], result => {
       const items = result[QUEUE_KEY] || []
-      console.log('[OS Ext BG] get_queue responded, items:', items.length)
       sendResponse({ items })
     })
     return true

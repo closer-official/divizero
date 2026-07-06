@@ -7,9 +7,11 @@ import type {
   Screening,
   ScreeningSourceContext,
   Target,
+  Touch,
 } from '../types'
 import { addToExcluded, normalizeHandle, todayStr, uid } from '../utils/helpers'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../utils/parser'
+import { buildTouchPromptFromTemplate } from '../utils/touchPrompt'
 
 interface BridgeEnvelope<T = unknown> {
   source: 'salesos-ext' | 'salesos-app'
@@ -381,6 +383,85 @@ export function registerExtensionBridge({
           }
         })
         respond(message.requestId, 'OS1_IMPORT_RESULT', result)
+        return
+      }
+
+      case 'GET_TOUCH_PROMPT': {
+        const handle = typeof payload.handle === 'string' ? payload.handle : ''
+        if (!handle) {
+          respond(message.requestId, 'ERROR', { code: 'INVALID_PAYLOAD' })
+          return
+        }
+        const data = readData()
+        const item = data.pipeline.find(
+          p => p.isOpen !== false && normalizeHandle(p.url) === normalizeHandle(handle),
+        )
+        if (!item) {
+          respond(message.requestId, 'TOUCH_PROMPT', { found: false })
+          return
+        }
+        try {
+          const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
+          const promptText = buildTouchPromptFromTemplate(item, item.touches || [], template)
+          respond(message.requestId, 'TOUCH_PROMPT', {
+            found: true,
+            promptText,
+            pipelineItemId: item.id,
+            accountName: item.accountName,
+          })
+        } catch (_) {
+          respond(message.requestId, 'ERROR', { code: 'PROMPT_BUILD_FAILED' })
+        }
+        return
+      }
+
+      case 'RECORD_TOUCH': {
+        if (role !== 'admin') {
+          respond(message.requestId, 'RECORD_TOUCH_RESULT', { ok: false, code: 'READONLY' })
+          return
+        }
+        const pipelineItemId = typeof payload.pipelineItemId === 'string' ? payload.pipelineItemId : ''
+        const postUrl = typeof payload.postUrl === 'string' ? payload.postUrl : ''
+        const postText = typeof payload.postText === 'string' ? payload.postText : ''
+        const sentText = typeof payload.sentText === 'string' ? payload.sentText : ''
+        const aiSuggestedText = typeof payload.aiSuggestedText === 'string' ? payload.aiSuggestedText : ''
+        if (!pipelineItemId || !sentText) {
+          respond(message.requestId, 'RECORD_TOUCH_RESULT', { ok: false, code: 'INVALID_PAYLOAD' })
+          return
+        }
+        const today = todayStr()
+        const newTouch = {
+          id: uid(),
+          date: today,
+          postUrl,
+          targetPostText: postText.slice(0, 100),
+          targetPostType: '通常投稿',
+          targetValidity: '未評価',
+          aiSuggestedText,
+          actualSentText: sentText,
+          editReason: '（拡張機能から送信）',
+          messageValidity: '未評価',
+          status: 'awaiting_reaction',
+          reactionType: '未記録',
+          reactionNote: '',
+        } as Touch
+        const result = await commit(prev => {
+          if (!prev.pipeline.some(p => p.id === pipelineItemId)) {
+            return { next: prev, result: { ok: false, code: 'NOT_FOUND', touchId: '' } }
+          }
+          const pipeline = prev.pipeline.map(p =>
+            p.id === pipelineItemId
+              ? {
+                  ...p,
+                  touches: [...(p.touches || []), newTouch],
+                  lastContactDate: today,
+                  repCount: (p.repCount || 0) + 1,
+                }
+              : p,
+          )
+          return { next: { ...prev, pipeline }, result: { ok: true, code: '', touchId: newTouch.id } }
+        })
+        respond(message.requestId, 'RECORD_TOUCH_RESULT', result)
         return
       }
 

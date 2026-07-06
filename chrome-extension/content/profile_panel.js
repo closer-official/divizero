@@ -9,6 +9,7 @@ let panelEl = null
 let profileHandle = null
 let scanDebounce = null
 let lastUrl = location.href
+let abPanelEl = null // S1 A/B 選択パネル
 
 // ── ページ判定 ─────────────────────────────────────────────────
 function detectProfileHandle() {
@@ -50,7 +51,46 @@ function getPostedAt(article) {
   return timeEl ? (timeEl.getAttribute('datetime') || '') : ''
 }
 
-// ── ツイート選択 ───────────────────────────────────────────────
+// ── DOM ユーティリティ ─────────────────────────────────────────
+function waitForElement(selector, timeoutMs) {
+  return new Promise(resolve => {
+    const found = document.querySelector(selector)
+    if (found) { resolve(found); return }
+    const obs = new MutationObserver(() => {
+      const el = document.querySelector(selector)
+      if (el) { obs.disconnect(); resolve(el) }
+    })
+    obs.observe(document.body, { childList: true, subtree: true })
+    setTimeout(() => { obs.disconnect(); resolve(null) }, timeoutMs || 5000)
+  })
+}
+
+function injectText(el, text) {
+  try { el.focus() } catch (_) {}
+  if (document.execCommand) {
+    try { if (document.execCommand('insertText', false, text)) return true } catch (_) {}
+  }
+  try {
+    const dt = new DataTransfer()
+    dt.setData('text/plain', text)
+    el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+    return true
+  } catch (_) {}
+  try {
+    if (el.contentEditable === 'true') {
+      el.textContent = text
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: text }))
+    } else {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      if (setter) setter.call(el, text)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    return true
+  } catch (_) {}
+  return false
+}
+
+// ── OS② ツイート選択（既存フロー） ────────────────────────────
 async function handleTweetSelect(article, handle, tweetUrl, btn) {
   const postText = getTweetText(article)
   const postedAt = getPostedAt(article)
@@ -105,6 +145,149 @@ async function handleTweetSelect(article, handle, tweetUrl, btn) {
   })
 }
 
+// ── S1接触 ────────────────────────────────────────────────────
+async function handleS1TouchClick(article, handle, tweetUrl, btn) {
+  const tweetText = getTweetText(article)
+
+  btn.textContent = '⏳ 取得中...'
+  btn.disabled = true
+
+  chrome.runtime.sendMessage(
+    { type: 's1_touch_start', handle: '@' + handle, tweetUrl, tweetText },
+    (resp) => {
+      if (chrome.runtime.lastError || !resp?.ok) {
+        const msg = resp?.message || 'エラーが発生しました'
+        showS1Toast(msg, true)
+        btn.textContent = '💬 S1接触'
+        btn.disabled = false
+        return
+      }
+      btn.textContent = '✓ Gemini起動中'
+      btn.style.background = '#d1fae5'
+      btn.style.color = '#065f46'
+      btn.style.borderColor = '#6ee7b7'
+      // アカウント名を表示
+      if (resp.accountName) {
+        showS1Toast(`「${resp.accountName}」のプロンプトをGeminiに送りました。スクショを追加して送信後、【取込】を押してください。`, false)
+      }
+    },
+  )
+}
+
+// ── S1 トースト ────────────────────────────────────────────────
+function showS1Toast(msg, isError) {
+  const existing = document.getElementById('s1-toast')
+  if (existing) existing.remove()
+
+  const div = document.createElement('div')
+  div.id = 's1-toast'
+  div.textContent = msg
+  Object.assign(div.style, {
+    position: 'fixed', top: '20px', left: '50%', transform: 'translateX(-50%)',
+    zIndex: '999999', background: isError ? '#dc2626' : '#065f46', color: '#fff',
+    padding: '10px 18px', borderRadius: '10px', fontSize: '12px',
+    fontWeight: '600', maxWidth: '420px', textAlign: 'center',
+    boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    lineHeight: '1.5',
+  })
+  document.body.appendChild(div)
+  setTimeout(() => { if (div.parentNode) div.remove() }, 6000)
+}
+
+// ── S1 A/B 選択パネル ─────────────────────────────────────────
+function hideAbPanel() {
+  if (abPanelEl) { abPanelEl.remove(); abPanelEl = null }
+}
+
+async function sendSelectedReply(article, tweetUrl, sentText, aiSuggestedText) {
+  // X の返信ボタンをクリックして返信欄を開く
+  const replyBtn = article.querySelector('[data-testid="reply"]')
+  if (replyBtn) {
+    replyBtn.click()
+    const replyBox = await waitForElement(
+      '[data-testid="tweetTextarea_0"], [data-testid="tweetTextarea_0_label"]',
+      5000,
+    )
+    const target = replyBox?.querySelector('[contenteditable="true"]') || replyBox
+    if (target) {
+      injectText(target, sentText)
+      showS1Toast('返信欄にテキストを入力しました。確認して送信ボタンを押してください。', false)
+    } else {
+      await navigator.clipboard.writeText(sentText).catch(() => {})
+      showS1Toast('返信欄が見つかりませんでした。クリップボードにコピーしました。Ctrl+V で貼り付けてください。', false)
+    }
+  } else {
+    await navigator.clipboard.writeText(sentText).catch(() => {})
+    showS1Toast('返信ボタンが見つかりませんでした。クリップボードにコピーしました。', false)
+  }
+
+  // タッチを記録
+  chrome.runtime.sendMessage({ type: 's1_touch_sent', sentText, aiSuggestedText })
+  hideAbPanel()
+}
+
+function showAbPanel(tweetUrl, optionA, optionB, accountName) {
+  hideAbPanel()
+
+  // 対象ツイートの article を探す
+  let targetArticle = null
+  const articles = document.querySelectorAll('article[data-testid="tweet"]')
+  for (const art of articles) {
+    const url = getTweetUrl(art)
+    if (url === tweetUrl) { targetArticle = art; break }
+  }
+
+  abPanelEl = document.createElement('div')
+  abPanelEl.id = 's1-ab-panel'
+  abPanelEl.innerHTML = `
+    <div class="s1-ab-header">
+      💬 S1接触 A/B選択 <span class="s1-ab-account">@${accountName || ''}</span>
+      <button class="s1-ab-close">✕</button>
+    </div>
+    <div class="s1-ab-option">
+      <div class="s1-ab-label">案A <span class="s1-ab-judge">${optionA.judge || ''}</span></div>
+      <textarea class="s1-ab-text" id="s1-text-a" rows="3">${optionA.text}</textarea>
+      <button class="s1-ab-send-btn" data-option="a">A で返信</button>
+    </div>
+    <div class="s1-ab-option">
+      <div class="s1-ab-label">案B <span class="s1-ab-judge">${optionB.judge || ''}</span></div>
+      <textarea class="s1-ab-text" id="s1-text-b" rows="3">${optionB.text}</textarea>
+      <button class="s1-ab-send-btn" data-option="b">B で返信</button>
+    </div>
+    <div class="s1-ab-hint">テキストは編集可能です。送信後、Xの送信ボタンを押してください。</div>
+  `
+
+  abPanelEl.querySelector('.s1-ab-close').addEventListener('click', hideAbPanel)
+
+  abPanelEl.querySelector('[data-option="a"]').addEventListener('click', async () => {
+    const text = abPanelEl.querySelector('#s1-text-a').value.trim()
+    const aiText = `案A: ${optionA.text}\n\n案B: ${optionB.text}`
+    await sendSelectedReply(targetArticle || document.body, tweetUrl, text, aiText)
+  })
+
+  abPanelEl.querySelector('[data-option="b"]').addEventListener('click', async () => {
+    const text = abPanelEl.querySelector('#s1-text-b').value.trim()
+    const aiText = `案A: ${optionA.text}\n\n案B: ${optionB.text}`
+    await sendSelectedReply(targetArticle || document.body, tweetUrl, text, aiText)
+  })
+
+  document.body.appendChild(abPanelEl)
+}
+
+// background からのメッセージを受信
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 's1_ab_ready') {
+    showAbPanel(message.tweetUrl, message.optionA, message.optionB, message.accountName)
+    return false
+  }
+  if (message.type === 's1_error') {
+    showS1Toast(message.message, true)
+    return false
+  }
+  return false
+})
+
 // ── ボタン注入 ─────────────────────────────────────────────────
 function injectButtons(handle) {
   const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
@@ -115,7 +298,6 @@ function injectButtons(handle) {
 
     const tweetUrl = getTweetUrl(article)
     if (!tweetUrl) continue
-    // ツイートURLにプロフィールのハンドルが含まれているものだけを対象とする
     if (!tweetUrl.toLowerCase().includes('/' + handle + '/status/')) continue
 
     article.dataset.os2Injected = '1'
@@ -123,19 +305,29 @@ function injectButtons(handle) {
     const wrapper = document.createElement('div')
     wrapper.className = 'os2-btn-wrapper'
 
-    const btn = document.createElement('button')
-    btn.className = 'os2-select-btn'
-    btn.textContent = 'OS② 選択'
-    btn.setAttribute('type', 'button')
-    btn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-      handleTweetSelect(article, handle, tweetUrl, btn)
+    // OS② ボタン
+    const os2Btn = document.createElement('button')
+    os2Btn.className = 'os2-select-btn'
+    os2Btn.textContent = 'OS② 選択'
+    os2Btn.setAttribute('type', 'button')
+    os2Btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation()
+      handleTweetSelect(article, handle, tweetUrl, os2Btn)
     })
 
-    wrapper.appendChild(btn)
+    // S1接触 ボタン
+    const s1Btn = document.createElement('button')
+    s1Btn.className = 's1-touch-btn'
+    s1Btn.textContent = '💬 S1接触'
+    s1Btn.setAttribute('type', 'button')
+    s1Btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation()
+      handleS1TouchClick(article, handle, tweetUrl, s1Btn)
+    })
 
-    // アクションバー（いいね・RT行）の直前に挿入
+    wrapper.appendChild(os2Btn)
+    wrapper.appendChild(s1Btn)
+
     const actionBar = article.querySelector('[role="group"]')
     if (actionBar) {
       actionBar.insertAdjacentElement('beforebegin', wrapper)
@@ -164,9 +356,9 @@ function showPanel(handle) {
   panelEl.innerHTML = `
     <div class="os2-panel-inner">
       <span class="os2-panel-icon">📋</span>
-      <span class="os2-panel-label">OS② モード：<strong>@${handle}</strong></span>
+      <span class="os2-panel-label">OS② / S1接触 モード：<strong>@${handle}</strong></span>
       <span class="os2-pipeline-badge" style="display:none">パイプライン案件</span>
-      <span class="os2-panel-hint">RTを除外済み。反応しやすい投稿の「OS② 選択」を押す →</span>
+      <span class="os2-panel-hint">「OS② 選択」→ 行動判定キュー / 「💬 S1接触」→ タッチプロンプト生成</span>
     </div>
   `
   document.body.appendChild(panelEl)
@@ -214,6 +406,7 @@ function handleUrlChange() {
   const url = location.href
   if (url === lastUrl) return
   lastUrl = url
+  hideAbPanel()
   scheduleScan()
 }
 
