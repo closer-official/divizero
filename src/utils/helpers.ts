@@ -241,6 +241,15 @@ export function buildInitialInboundTouch(
   const memoNote = item.signal_memo?.trim()
     ? `\n\n【受信内容・メモ】\n${item.signal_memo.trim()}`
     : ''
+  const primaryReaction: TouchReaction =
+    /DM|突然DM|返信/.test(ibActionsStr) ? 'テキスト返信'
+    : /フォロー/.test(ibActionsStr) ? 'フォロー返し'
+    : /いいね/.test(ibActionsStr) ? 'いいね返り'
+    : /スタンプ|絵文字/.test(ibActionsStr) ? 'スタンプ・絵文字'
+    : '未記録'
+  const inboundText = item.signal_memo?.trim()
+    || (ibActionsStr ? `相手からの${ibActionsStr}` : '相手からのインバウンド')
+  const isDm = /DM|突然DM/.test(ibActionsStr)
   return {
     id: uid(),
     date: item.signal_date ?? fallbackDate,
@@ -252,9 +261,20 @@ export function buildInitialInboundTouch(
     editReason: '',
     messageValidity: '未評価',
     status: 'reacted',
-    reactionType: '未記録',
+    reactionType: primaryReaction,
     reactionNote: `相手から先に接触あり：${ibActionsStr}${memoNote}`,
-    touchMode: ibActionsStr.includes('DM') ? 'conversation' : 'post',
+    reactionReplyMode: primaryReaction === 'テキスト返信' ? 'text' : 'none',
+    touchMode: 'conversation',
+    threadEntry: 'inbound',
+    threadStatus: 'active',
+    conversationTurns: [{
+      id: uid(),
+      role: '相手',
+      text: inboundText,
+      timestamp: item.signal_date ?? fallbackDate,
+      channel: isDm ? 'DM' : 'リプ',
+      sentStatus: 'sent',
+    }],
   }
 }
 

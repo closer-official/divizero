@@ -1098,7 +1098,7 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
         if (
           !isAwaitingReactionTouch(t) &&
           t.reactionReplyMode !== 'like_only' &&
-          (!t.threadEntry || t.threadEntry === 's1_story_reply') &&
+          (!t.threadEntry || t.threadEntry === 's1_story_reply' || t.threadEntry === 'inbound') &&
           !t.reactionJudgment
         ) {
           items.push({ index: idx++, pipelineId: p.id, touchId: t.id, pipelineItem: p, touch: t })
@@ -4154,7 +4154,7 @@ function TouchItem({ touch, pipelineItem, myXHandle, prompts, role, confirm, toa
         )}
 
         {/* S1行動判定セクション */}
-        {!isAwaiting && (!touch.threadEntry || touch.threadEntry === 's1_story_reply') && (() => {
+        {!isAwaiting && (!touch.threadEntry || touch.threadEntry === 's1_story_reply' || touch.threadEntry === 'inbound') && (() => {
           const saved = touch.reactionJudgment
           const result = s1ActionParsed || (saved ? {
             judgment: saved,

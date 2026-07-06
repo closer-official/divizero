@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, onSnapshot, setDoc, type Firestore } from 'firebase/firestore';
 import { initFirebase } from '../firebase';
 import type { AppData, PipelineItem, Touch } from '../types';
+import { uid } from '../utils/helpers';
 
 const EMPTY_DATA = (): AppData => ({
   screenings: [],
@@ -38,10 +39,69 @@ function normalizeTouch(touch: Touch): Touch {
   }
 }
 
+function inferInboundActions(item: PipelineItem, touch: Touch): string[] {
+  if (item.inboundActions?.length) return item.inboundActions
+  if (item.inbound_signal?.type) return [item.inbound_signal.type]
+  const note = touch.reactionNote || ''
+  const m = note.match(/^相手から先に接触あり：([^\n]+)/)
+  if (!m) return []
+  return m[1].split('、').map(part => part.trim()).filter(Boolean)
+}
+
+function inferInboundMemo(item: PipelineItem, touch: Touch): string {
+  if (item.inbound_signal?.memo?.trim()) return item.inbound_signal.memo.trim()
+  const note = touch.reactionNote || ''
+  const m = note.match(/【受信内容・メモ】\n([\s\S]*)$/)
+  return m?.[1]?.trim() || ''
+}
+
+function normalizeInboundTouch(item: PipelineItem, touch: Touch): Touch {
+  const looksInbound = !!item.isInbound
+    || !!item.inbound_signal
+    || (item.inboundActions?.length ?? 0) > 0
+    || /相手から先に接触あり/.test(touch.reactionNote || '')
+  if (!looksInbound) return touch
+
+  const actions = inferInboundActions(item, touch)
+  const actionsStr = actions.join('、')
+  const memo = inferInboundMemo(item, touch)
+  const primaryReaction =
+    /DM|突然DM|返信/.test(actionsStr) ? 'テキスト返信'
+    : /フォロー/.test(actionsStr) ? 'フォロー返し'
+    : /いいね/.test(actionsStr) ? 'いいね返り'
+    : /スタンプ|絵文字/.test(actionsStr) ? 'スタンプ・絵文字'
+    : '未記録'
+  const turnText = memo || (actionsStr ? `相手からの${actionsStr}` : '相手からのインバウンド')
+  const turnChannel: 'DM' | 'リプ' = /DM|突然DM/.test(actionsStr) ? 'DM' : 'リプ'
+  const conversationTurns = (touch.conversationTurns?.length ?? 0) > 0
+    ? touch.conversationTurns
+    : [{
+        id: uid(),
+        role: '相手' as const,
+        text: turnText,
+        timestamp: item.inbound_signal?.date || touch.date,
+        channel: turnChannel,
+        sentStatus: 'sent' as const,
+      }]
+
+  const normalized: Touch = {
+    ...touch,
+    status: touch.status || 'reacted',
+    reactionType: touch.reactionType === '未記録' ? primaryReaction : touch.reactionType,
+    reactionReplyMode: touch.reactionReplyMode ?? (primaryReaction === 'テキスト返信' ? 'text' : 'none'),
+    touchMode: 'conversation',
+    threadEntry: 'inbound',
+    threadStatus: touch.threadStatus || 'active',
+    conversationTurns,
+  }
+
+  return normalized
+}
+
 function normalizePipelineItem(item: PipelineItem): PipelineItem {
   const touches = item.touches
   if (!touches || touches.length === 0) return item
-  const normalizedTouches = touches.map(normalizeTouch)
+  const normalizedTouches = touches.map(touch => normalizeTouch(normalizeInboundTouch(item, touch)))
   const changed = normalizedTouches.length !== touches.length
     || normalizedTouches.some((touch, idx) => touch !== touches[idx])
   if (!changed) return item

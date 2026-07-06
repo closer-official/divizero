@@ -78,7 +78,7 @@ export interface Touch {
   improvementSuggestion?: string;
   improvedText?: string;
   touchMode?: 'post' | 'conversation';
-  threadEntry?: 's1l_promotion' | 's3_direct' | 'log_restore' | 's1_story_reply';
+  threadEntry?: 's1l_promotion' | 's3_direct' | 'log_restore' | 's1_story_reply' | 'inbound';
   judgedAt?: string;
   threadStatus?: 'inactive' | 'active' | 'closed';
   conversationTurns?: ConversationTurn[];
