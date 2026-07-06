@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/06 インバウンド引き継ぎ修正: Target型にinboundフィールド追加、全パイプライン移行ルートで情報を転送";
+export const BUILD_LABEL = "07/06 Tab1 handleDelete修正: OS①削除時にOS②PipelineItemも削除+undo復元";

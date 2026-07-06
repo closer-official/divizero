@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import type { AppData, Prompts, Target, Screening } from '../../types'
+import type { AppData, Prompts, Target, Screening, PipelineItem } from '../../types'
 import type { Role } from '../../hooks/useAuth'
 import type { ToastAPI, ConfirmAPI } from '../../App'
 import { parseOS1, parseOS1Instagram, parseOS1Threads } from '../../utils/parser'
@@ -743,14 +743,22 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
   function handleDelete(id: string) {
     const tgt = data.targets.find(x => x.id === id)
     if (!tgt) return
+    const pipelineItem = tgt.pipelineId ? data.pipeline.find(p => p.id === tgt.pipelineId) : undefined
     saveData(prev => {
-      const d = { ...prev, targets: prev.targets.filter(x => x.id !== id), excluded: [...(prev.excluded || [])], trash: [...(prev.trash || [])] }
+      const d = {
+        ...prev,
+        targets: prev.targets.filter(x => x.id !== id),
+        pipeline: tgt.pipelineId ? prev.pipeline.filter(p => p.id !== tgt.pipelineId) : prev.pipeline,
+        excluded: [...(prev.excluded || [])],
+        trash: [...(prev.trash || [])],
+      }
       addToExcluded(d, tgt.url || tgt.accountName, tgt.accountName, tgt.channel, tgt.track === 'SKIP' ? 'SKIP' : '手動削除')
       const tid = moveToTrash(d, tgt as unknown as Record<string, unknown>, 'OS①')
+      const ptid = pipelineItem ? moveToTrash(d, pipelineItem as unknown as Record<string, unknown>, 'OS②') : null
       setTimeout(() => {
         toast.showUndo(`「${tgt.accountName}」を削除`, () => {
           saveData(prev2 => {
-            const d2 = { ...prev2, trash: [...(prev2.trash || [])], targets: [...prev2.targets], excluded: [...(prev2.excluded || [])] }
+            const d2 = { ...prev2, trash: [...(prev2.trash || [])], targets: [...prev2.targets], excluded: [...(prev2.excluded || [])], pipeline: [...(prev2.pipeline || [])] }
             const tidx = d2.trash.findIndex(x => x._trashId === tid)
             if (tidx === -1) return d2
             const restored = { ...d2.trash[tidx] } as Record<string, unknown>
@@ -758,6 +766,15 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             delete restored._trashSource; delete restored._trashedAt; delete restored._trashId
             d2.excluded = d2.excluded.filter(e => normalizeHandle(e.handle) !== normalizeHandle(tgt.url || tgt.accountName))
             d2.targets = [...d2.targets, restored as unknown as Target]
+            if (ptid) {
+              const pidx = d2.trash.findIndex(x => x._trashId === ptid)
+              if (pidx !== -1) {
+                const restoredPipeline = { ...d2.trash[pidx] } as Record<string, unknown>
+                d2.trash.splice(pidx, 1)
+                delete restoredPipeline._trashSource; delete restoredPipeline._trashedAt; delete restoredPipeline._trashId
+                d2.pipeline = [...d2.pipeline, restoredPipeline as unknown as PipelineItem]
+              }
+            }
             return d2
           })
         })
