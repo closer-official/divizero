@@ -509,32 +509,55 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
       return
     }
 
-    let addedCount = 0
-    let pipelineCount = 0
     const errors: string[] = []
-    const processedIds = new Set<string>()
+    const processed: Array<{
+      screening: Screening
+      parsed: ReturnType<typeof parseOS1> | ReturnType<typeof parseOS1Instagram> | ReturnType<typeof parseOS1Threads>
+      seg: string
+      targetId: string
+      pid: string | null
+    }> = []
+
+    segments.forEach((seg, i) => {
+      const screening = queued[i]
+      if (!screening) {
+        errors.push(`ITEM ${i + 1}：対象案件が見つかりません`)
+        return
+      }
+      const ch = screening.channel as Mode
+      const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
+      const parseErrors = getOS1ParseErrors(parsed as Omit<Target, 'id' | 'createdAt'>, ch)
+      if (parseErrors.length > 0 && !parsed.accountName && !parsed.url) {
+        errors.push(`ITEM ${i + 1}（${screening.displayName || screening.handle || '不明'}）：${parseErrors.join(' / ')}`)
+        return
+      }
+      processed.push({
+        screening,
+        parsed,
+        seg,
+        targetId: uid(),
+        pid: parsed.track !== 'SKIP' ? uid() : null,
+      })
+    })
+
+    if (queued.length > segments.length) {
+      for (let i = segments.length; i < queued.length; i++) {
+        const screening = queued[i]
+        errors.push(`ITEM ${i + 1}（${screening?.displayName || screening?.handle || '不明'}）：AI出力が不足しています`)
+      }
+    }
+
+    const movedCount = processed.filter(item => item.pid).length
+    const addedCount = processed.length
+    const processedIds = new Set(processed.map(item => item.screening.id))
 
     saveData(prev => {
       const d = { ...prev, targets: [...prev.targets], pipeline: [...prev.pipeline], screenings: [...prev.screenings] }
-      segments.forEach((seg, i) => {
-        const screening = queued[i]
-        if (!screening) {
-          errors.push(`ITEM ${i + 1}：対象案件が見つかりません`)
-          return
-        }
+      processed.forEach(({ screening, parsed, seg, targetId, pid }) => {
         const ch = screening.channel as Mode
-        const parsed = ch === 'instagram' ? parseOS1Instagram(seg) : ch === 'threads' ? parseOS1Threads(seg) : parseOS1(seg)
-        const parseErrors = getOS1ParseErrors(parsed as Omit<Target, 'id' | 'createdAt'>, ch)
-        if (parseErrors.length > 0 && !parsed.accountName && !parsed.url) {
-          errors.push(`ITEM ${i + 1}（${screening.displayName || screening.handle || '不明'}）：${parseErrors.join(' / ')}`)
-          return
-        }
-
-        const targetId = uid()
-        const pid = parsed.track !== 'SKIP' ? uid() : null
         const urlFallback = parsed.url || screening.handle || ''
         const newTarget: Target = {
-          ...parsed,
+          ...(parsed as Omit<Target, 'id' | 'createdAt'>),
           id: targetId,
           createdAt: new Date().toISOString(),
           aiOutput: seg,
@@ -591,17 +614,9 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
             } : undefined,
             touches: screening.is_inbound ? [buildInitialInboundTouch(screening, todayStr())] : [],
           })
-          pipelineCount++
         }
         processedIds.add(screening.id)
-        addedCount++
       })
-      if (queued.length > segments.length) {
-        for (let i = segments.length; i < queued.length; i++) {
-          const screening = queued[i]
-          errors.push(`ITEM ${i + 1}（${screening?.displayName || screening?.handle || '不明'}）：AI出力が不足しています`)
-        }
-      }
       d.screenings = d.screenings.filter(s => !processedIds.has(s.id))
       return d
     })
@@ -610,8 +625,8 @@ export default function Tab1({ data, saveData, prompts, role, toast, confirm, on
     setBatchParseSummary(buildParseSummary(queued.length, addedCount, errors))
     setTimeout(() => {
       const summaryMsg = `一括処理完了：${queued.length}件中${addedCount}件成功 / ${queued.length - addedCount}件失敗`
-      toast.show(pipelineCount > 0 ? `${summaryMsg}（OS②に${pipelineCount}件追加）` : summaryMsg, 3000)
-      if (pipelineCount > 0) setTimeout(() => onGoToTab2(), 1200)
+      toast.show(movedCount > 0 ? `${summaryMsg}（OS②に${movedCount}件追加）` : summaryMsg, 3000)
+      if (movedCount > 0) setTimeout(() => onGoToTab2(), 1200)
     }, 0)
   }
 
