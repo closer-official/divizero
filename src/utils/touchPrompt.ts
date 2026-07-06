@@ -1,6 +1,14 @@
 import type { PipelineItem, Touch } from '../types'
 import { hasReaction, reactionDisplay } from './helpers'
 
+export interface InboundTouchPromptContext {
+  ownPostText: string
+  ownPostRawText: string
+  inboundMemo: string
+  inboundReactions: string[]
+  inboundChannel: 'リプ' | 'DM'
+}
+
 export interface ParsedTouch {
   targetPostText: string
   targetPostRawText: string
@@ -67,6 +75,41 @@ export function buildTouchPromptFromTemplate(item: PipelineItem, touches: Touch[
 export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Promise<string> {
   const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
   return buildTouchPromptFromTemplate(item, touches, template)
+}
+
+export async function buildInboundTouchPrompt(
+  item: PipelineItem,
+  touches: Touch[],
+  context: InboundTouchPromptContext,
+): Promise<string> {
+  const base = await buildTouchPrompt(item, touches)
+  const reactions = context.inboundReactions.length > 0 ? context.inboundReactions.join('・') : '未選択'
+  const ownPostText = context.ownPostText.trim() || '（自分の投稿要約なし）'
+  const ownPostRawText = context.ownPostRawText.trim() || ownPostText
+  const memo = context.inboundMemo.trim() || '（補足メモなし）'
+
+  return [
+    '【今回のケースは通常の新規投稿タッチではなく、相手からのインバウンド反応への返信作成です】',
+    `- チャネル: ${context.inboundChannel}`,
+    `- 相手からの反応: ${reactions}`,
+    `- こちらが先に出していた投稿の要約: ${ownPostText}`,
+    '━━━━━━━━━━━━━━━━━━',
+    '【このケースでの処理ルール】',
+    '1. 添付スクショは不要。以下の「自分の投稿情報」と「相手からの反応・メモ」だけで判断する。',
+    '2. 出力フォーマットは通常どおり ===TOUCH_START=== / ===TOUCH_END=== を厳守する。',
+    '3. 「接触した投稿」「投稿原文」には、相手投稿ではなく以下の自分の投稿情報を入れる。',
+    '4. 提案文A/Bには、相手から来た反応への返答文を出す。公開リプなら短く自然に、DMなら会話継続しやすく。',
+    '5. 投稿種別・対象妥当性・ゲート判定も、この自分の投稿に来た反応への返答として自然な値を補完する。',
+    '━━━━━━━━━━━━━━━━━━',
+    '【自分の投稿情報】',
+    `接触した投稿: ${ownPostText}`,
+    `投稿原文: ${ownPostRawText}`,
+    '━━━━━━━━━━━━━━━━━━',
+    '【相手からの反応・メモ】',
+    memo,
+    '━━━━━━━━━━━━━━━━━━',
+    base,
+  ].join('\n')
 }
 
 export function parseTouchOutput(raw: string): ParsedTouch | null {
