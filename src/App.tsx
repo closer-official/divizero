@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef, Suspense, lazy } from 'react'
 import { useAuth } from './hooks/useAuth'
 import { useData } from './hooks/useData'
 import { usePrompts } from './hooks/usePrompts'
-import { buildTouchConvLog, uid } from './utils/helpers'
+import { buildTouchConvLog, normalizeHandle, uid } from './utils/helpers'
 import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
 import { registerExtensionBridge } from './services/extensionBridge'
+import { ReceiveService } from './services/receive/ReceiveService'
 const Tab0 = lazy(() => import('./components/tabs/Tab0'))
 const Tab1 = lazy(() => import('./components/tabs/Tab1'))
 const Tab2 = lazy(() => import('./components/tabs/Tab2'))
@@ -77,6 +78,25 @@ export default function App() {
       buildLabel: BUILD_LABEL,
     })
   }, [loading, checking, saveData, prompts, role])
+
+  useEffect(() => {
+    if (loading || checking) return
+    const service = new ReceiveService()
+    if (!service.isAvailable()) return
+
+    const handles = [...new Set(
+      (data.pipeline || [])
+        .filter(p => p.isOpen !== false)
+        .map(p => normalizeHandle(p.url))
+        .filter(Boolean),
+    )]
+
+    const timer = setTimeout(() => {
+      service.setPipelineHandles(handles).catch(() => {})
+    }, 1500)
+
+    return () => clearTimeout(timer)
+  }, [loading, checking, data.pipeline])
 
   useEffect(() => {
     const header = headerRef.current

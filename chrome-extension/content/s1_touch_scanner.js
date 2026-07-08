@@ -4,10 +4,12 @@
 // profile_panel.js（プロフィール専用）とは別に動作
 
 const S1_SCAN_DEBOUNCE = 500
+const S1_PIPELINE_CACHE_KEY = 'os2_pipeline_handles'
 
 let s1ScanTimer = null
 let s1LastUrl = location.href
 let s1FloatingPanel = null
+let s1PipelineHandles = null
 
 // ── ツイート情報抽出 ──────────────────────────────────────────
 
@@ -52,6 +54,19 @@ function s1InjectText(el, text) {
     return true
   } catch (_) {}
   return false
+}
+
+function s1LoadPipelineHandles() {
+  try {
+    chrome.storage.local.get([S1_PIPELINE_CACHE_KEY], (r) => {
+      const entry = r?.[S1_PIPELINE_CACHE_KEY]
+      s1PipelineHandles = Array.isArray(entry?.handles) ? entry.handles : null
+      document.querySelectorAll('article[data-s1-injected]').forEach(el => {
+        delete el.dataset.s1Injected
+      })
+      s1ScheduleScan()
+    })
+  } catch (_) {}
 }
 
 // ── トースト ──────────────────────────────────────────────────
@@ -178,6 +193,7 @@ function s1InjectButtons() {
 
     const authorHandle = s1GetTweetAuthor(article)
     if (!authorHandle) continue
+    if (Array.isArray(s1PipelineHandles) && !s1PipelineHandles.includes(authorHandle)) continue
 
     article.dataset.s1Injected = '1'
 
@@ -275,5 +291,12 @@ window.addEventListener('popstate', () => setTimeout(s1HandleUrlChange, 150))
 
 const s1Observer = new MutationObserver(s1ScheduleScan)
 s1Observer.observe(document.body, { childList: true, subtree: true })
+
+s1LoadPipelineHandles()
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes[S1_PIPELINE_CACHE_KEY]) return
+  s1LoadPipelineHandles()
+})
 
 s1ScheduleScan()
