@@ -41,5 +41,9 @@
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "営業OS Bridge"
+  },
+
+  "background": {
+    "service_worker": "background/service_worker.js"
   }
 }
