@@ -82,6 +82,26 @@ function callWebAppBridge(tabId, bridgeType, payload) {
   })
 }
 
+// webapp_bridge.js が orphaned になっていたら再注入して修復する
+function repairWebappBridgeIfNeeded(tabId) {
+  return new Promise(resolve => {
+    // type が 'webapp_bridge' でないメッセージを送ると false が返る（bridge 生存確認）
+    // 返答がなく "Receiving end does not exist" なら orphaned → 再注入
+    chrome.tabs.sendMessage(tabId, { type: '__bridge_probe__' }, () => {
+      const errMsg = (chrome.runtime.lastError || {}).message || ''
+      if (!errMsg.includes('Receiving end does not exist')) {
+        resolve() // bridge は生きている（または別のエラー）
+        return
+      }
+      // orphaned → webapp_bridge.js を再注入
+      chrome.scripting.executeScript(
+        { target: { tabId }, files: ['content/webapp_bridge.js'] },
+        () => setTimeout(resolve, 700),
+      )
+    })
+  })
+}
+
 // ── Gemini タブを開く or フォーカス ──────────────────────────
 
 async function openOrFocusGemini() {
@@ -219,6 +239,9 @@ async function handleS1TouchStart(params, sendResponse) {
     // 1. ウェブアプリのタブを取得
     const webappTabId = await findOrOpenWebappTabId()
 
+    // 1b. webapp_bridge.js が orphaned なら自動修復
+    await repairWebappBridgeIfNeeded(webappTabId)
+
     // 2. タッチプロンプトを取得
     let bridgeResp
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -325,6 +348,7 @@ async function handleS1TouchSent(message) {
 
   try {
     const webappTabId = ctx.webappTabId || (await findOrOpenWebappTabId())
+    await repairWebappBridgeIfNeeded(webappTabId)
     await callWebAppBridge(webappTabId, 'RECORD_TOUCH', {
       pipelineItemId: ctx.pipelineItemId,
       postUrl: ctx.tweetUrl,

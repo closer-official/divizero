@@ -59,6 +59,16 @@ function normalizeAtHandle(handle: string): string {
   return normalized ? `@${normalized}` : ''
 }
 
+// URL（https://x.com/xxx）またはハンドル（@xxx / xxx）からハンドル部分だけ抽出
+function extractHandleOnly(urlOrHandle: string): string {
+  return urlOrHandle
+    .replace(/^https?:\/\/(www\.)?(x\.com|twitter\.com)\//, '')
+    .replace(/^@/, '')
+    .split('/')[0]
+    .toLowerCase()
+    .trim()
+}
+
 function isSourceContext(value: unknown): value is ScreeningSourceContext {
   if (!isRecord(value)) return false
   return (
@@ -393,8 +403,9 @@ export function registerExtensionBridge({
           return
         }
         const data = readData()
+        const normalizedHandle = extractHandleOnly(handle)
         const item = data.pipeline.find(
-          p => p.isOpen !== false && normalizeHandle(p.url) === normalizeHandle(handle),
+          p => p.isOpen !== false && extractHandleOnly(p.url) === normalizedHandle,
         )
         if (!item) {
           respond(message.requestId, 'TOUCH_PROMPT', { found: false })
