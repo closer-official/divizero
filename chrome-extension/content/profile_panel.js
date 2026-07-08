@@ -1,16 +1,15 @@
 'use strict'
 
-// ── 設定 ───────────────────────────────────────────────────────
+// NOTE: twitter_scraper.js と同一スコープで動くため変数名・関数名を os2_ プレフィックスで衝突回避
+
 const WEBAPP_BASE_DEFAULT = 'https://divizero.vercel.app'
 const PIPELINE_CACHE_KEY = 'os2_pipeline_handles'
 
-// ── 状態 ───────────────────────────────────────────────────────
-let panelEl = null
-let profileHandle = null
-let scanDebounce = null
-let lastUrl = location.href
+let os2PanelEl = null
+let os2ProfileHandle = null
+let os2ScanDebounce = null   // ← scanDebounce から改名
+let os2LastUrl = location.href  // ← lastUrl から改名
 
-// ── ページ判定 ─────────────────────────────────────────────────
 function detectProfileHandle() {
   const path = location.pathname
   const m = path.match(/^\/([a-zA-Z0-9_]{1,15})(\/|$)/)
@@ -24,13 +23,12 @@ function detectProfileHandle() {
   return candidate
 }
 
-// ── ツイート解析 ───────────────────────────────────────────────
-function isRetweet(article) {
+function os2IsRetweet(article) {
   const ctx = article.querySelector('[data-testid="socialContext"]')
   return !!ctx && /retweet/i.test(ctx.textContent)
 }
 
-function getTweetUrl(article) {
+function os2GetTweetUrl(article) {
   const timeEl = article.querySelector('time')
   if (!timeEl) return null
   const a = timeEl.closest('a')
@@ -40,20 +38,19 @@ function getTweetUrl(article) {
   return 'https://x.com' + href
 }
 
-function getTweetText(article) {
+function os2GetTweetText(article) {
   const el = article.querySelector('[data-testid="tweetText"]')
   return el ? el.innerText.trim().slice(0, 300) : ''
 }
 
-function getPostedAt(article) {
+function os2GetPostedAt(article) {
   const timeEl = article.querySelector('time')
   return timeEl ? (timeEl.getAttribute('datetime') || '') : ''
 }
 
-// ── OS② ツイート選択 ──────────────────────────────────────────
-async function handleTweetSelect(article, handle, tweetUrl, btn) {
-  const postText = getTweetText(article)
-  const postedAt = getPostedAt(article)
+async function os2HandleTweetSelect(article, handle, tweetUrl, btn) {
+  const postText = os2GetTweetText(article)
+  const postedAt = os2GetPostedAt(article)
 
   let displayName = handle
   try {
@@ -105,15 +102,14 @@ async function handleTweetSelect(article, handle, tweetUrl, btn) {
   })
 }
 
-// ── ボタン注入 ─────────────────────────────────────────────────
-function injectButtons(handle) {
+function os2InjectButtons(handle) {
   const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
 
   for (const article of articles) {
     if (article.dataset.os2Injected) continue
-    if (isRetweet(article)) continue
+    if (os2IsRetweet(article)) continue
 
-    const tweetUrl = getTweetUrl(article)
+    const tweetUrl = os2GetTweetUrl(article)
     if (!tweetUrl) continue
     if (!tweetUrl.toLowerCase().includes('/' + handle + '/status/')) continue
 
@@ -129,7 +125,7 @@ function injectButtons(handle) {
     btn.addEventListener('click', (e) => {
       e.preventDefault()
       e.stopPropagation()
-      handleTweetSelect(article, handle, tweetUrl, btn)
+      os2HandleTweetSelect(article, handle, tweetUrl, btn)
     })
 
     wrapper.appendChild(btn)
@@ -143,23 +139,21 @@ function injectButtons(handle) {
   }
 }
 
-// ── パイプライン確認 ───────────────────────────────────────────
-async function updatePipelineBadge(handle) {
-  if (!panelEl) return
+async function os2UpdatePipelineBadge(handle) {
+  if (!os2PanelEl) return
   const stored = await chrome.storage.local.get([PIPELINE_CACHE_KEY])
   const handles = stored[PIPELINE_CACHE_KEY]?.handles || []
   const inPipeline = handles.includes(handle.toLowerCase())
-  const badge = panelEl.querySelector('.os2-pipeline-badge')
+  const badge = os2PanelEl.querySelector('.os2-pipeline-badge')
   if (badge) badge.style.display = inPipeline ? 'inline-flex' : 'none'
 }
 
-// ── パネル UI ──────────────────────────────────────────────────
-function showPanel(handle) {
-  hidePanel()
+function os2ShowPanel(handle) {
+  os2HidePanel()
 
-  panelEl = document.createElement('div')
-  panelEl.id = 'os2-panel'
-  panelEl.innerHTML = `
+  os2PanelEl = document.createElement('div')
+  os2PanelEl.id = 'os2-panel'
+  os2PanelEl.innerHTML = `
     <div class="os2-panel-inner">
       <span class="os2-panel-icon">📋</span>
       <span class="os2-panel-label">OS② モード：<strong>@${handle}</strong></span>
@@ -167,63 +161,61 @@ function showPanel(handle) {
       <span class="os2-panel-hint">RTを除外済み。反応しやすい投稿の「OS② 選択」を押す →</span>
     </div>
   `
-  document.body.appendChild(panelEl)
-  updatePipelineBadge(handle)
+  document.body.appendChild(os2PanelEl)
+  os2UpdatePipelineBadge(handle)
 }
 
-function hidePanel() {
-  if (panelEl) { panelEl.remove(); panelEl = null }
+function os2HidePanel() {
+  if (os2PanelEl) { os2PanelEl.remove(); os2PanelEl = null }
 }
 
-// ── スキャン ───────────────────────────────────────────────────
-function resetInjectedTags() {
+function os2ResetInjectedTags() {
   document.querySelectorAll('article[data-os2-injected]').forEach(el => {
     delete el.dataset.os2Injected
   })
 }
 
-function scan() {
+function os2Scan() {
   const handle = detectProfileHandle()
 
   if (!handle) {
-    if (profileHandle) {
-      profileHandle = null
-      hidePanel()
-      resetInjectedTags()
+    if (os2ProfileHandle) {
+      os2ProfileHandle = null
+      os2HidePanel()
+      os2ResetInjectedTags()
     }
     return
   }
 
-  if (handle !== profileHandle) {
-    profileHandle = handle
-    resetInjectedTags()
-    showPanel(handle)
+  if (handle !== os2ProfileHandle) {
+    os2ProfileHandle = handle
+    os2ResetInjectedTags()
+    os2ShowPanel(handle)
   }
 
-  injectButtons(handle)
+  os2InjectButtons(handle)
 }
 
-function scheduleScan() {
-  clearTimeout(scanDebounce)
-  scanDebounce = setTimeout(scan, 400)
+function os2ScheduleScan() {
+  clearTimeout(os2ScanDebounce)
+  os2ScanDebounce = setTimeout(os2Scan, 400)
 }
 
-function handleUrlChange() {
+function os2HandleUrlChange() {
   const url = location.href
-  if (url === lastUrl) return
-  lastUrl = url
-  scheduleScan()
+  if (url === os2LastUrl) return
+  os2LastUrl = url
+  os2ScheduleScan()
 }
 
-// ── SPA ナビゲーション対応 ─────────────────────────────────────
-const _origPushState = history.pushState
+const _os2PushState = history.pushState   // ← _origPushState から改名
 history.pushState = function (...args) {
-  _origPushState.apply(this, args)
-  setTimeout(handleUrlChange, 150)
+  _os2PushState.apply(this, args)
+  setTimeout(os2HandleUrlChange, 150)
 }
-window.addEventListener('popstate', () => setTimeout(handleUrlChange, 150))
+window.addEventListener('popstate', () => setTimeout(os2HandleUrlChange, 150))
 
-const domObserver = new MutationObserver(scheduleScan)
-domObserver.observe(document.body, { childList: true, subtree: true })
+const os2DomObserver = new MutationObserver(os2ScheduleScan)  // ← domObserver から改名
+os2DomObserver.observe(document.body, { childList: true, subtree: true })
 
-scheduleScan()
+os2ScheduleScan()

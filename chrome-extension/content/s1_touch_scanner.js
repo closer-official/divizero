@@ -158,10 +158,7 @@ function s1ShowAbPanel(tweetUrl, optionA, optionB, accountName) {
 
 // ── ボタン注入 ─────────────────────────────────────────────────
 
-async function s1InjectButtons() {
-  const stored = await chrome.storage.local.get(['os2_pipeline_handles'])
-  const pipelineHandles = stored.os2_pipeline_handles?.handles || []
-
+function s1InjectButtons() {
   const articles = document.querySelectorAll('article[data-testid="tweet"]')
   for (const article of articles) {
     if (article.dataset.s1Injected) continue
@@ -172,9 +169,6 @@ async function s1InjectButtons() {
 
     const authorHandle = s1GetTweetAuthor(article)
     if (!authorHandle) continue
-
-    // パイプラインキャッシュがあれば絞り込み（なければ全ツイートに表示）
-    if (pipelineHandles.length > 0 && !pipelineHandles.includes(authorHandle)) continue
 
     article.dataset.s1Injected = '1'
 
