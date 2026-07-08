@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/08 S1接触ボタンをタイムライン・検索・プロフィール全ページに対応";
+export const BUILD_LABEL = "07/08 S1接触Chrome拡張の構築中。ホームタイムラインでもボタンが表示されるよう修正をデプロイ済み";
