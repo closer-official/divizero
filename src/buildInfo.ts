@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/08 Chrome拡張: service_workerをmanifestに登録（backgroundセクション欠落修正）";
+export const BUILD_LABEL = "07/09 Chrome拡張: extension context無効時のクラッシュ防止・ボタン永久ローディング修正";

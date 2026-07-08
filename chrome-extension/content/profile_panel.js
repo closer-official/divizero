@@ -48,7 +48,7 @@ function os2GetPostedAt(article) {
   return timeEl ? (timeEl.getAttribute('datetime') || '') : ''
 }
 
-async function os2HandleTweetSelect(article, handle, tweetUrl, btn) {
+function os2HandleTweetSelect(article, handle, tweetUrl, btn) {
   const postText = os2GetTweetText(article)
   const postedAt = os2GetPostedAt(article)
 
@@ -80,26 +80,37 @@ async function os2HandleTweetSelect(article, handle, tweetUrl, btn) {
     postedAt: postedAt || undefined,
   }
 
-  const settings = await chrome.storage.local.get(['webappUrl'])
-  const webappBase = (settings.webappUrl || WEBAPP_BASE_DEFAULT).replace(/\/$/, '')
+  const resetBtn = () => {
+    btn.textContent = 'OS② 選択'
+    btn.style.background = ''
+    btn.disabled = false
+  }
 
-  chrome.runtime.sendMessage({ type: 'enqueue', itemType: 'os2_touch', payload }, (resp) => {
-    if (chrome.runtime.lastError || !resp?.ok) {
-      btn.textContent = '⚠ エラー'
-      btn.style.background = '#ef4444'
-      setTimeout(() => {
-        btn.textContent = 'OS② 選択'
-        btn.style.background = ''
-        btn.disabled = false
-      }, 2000)
-      return
-    }
-    btn.textContent = '✓ 選択済み'
-    btn.classList.add('os2-btn-selected')
-    btn.disabled = true
-    article.classList.add('os2-tweet-selected')
-    window.open(webappBase + '/', '_blank')
-  })
+  try {
+    chrome.runtime.sendMessage({ type: 'enqueue', itemType: 'os2_touch', payload }, (resp) => {
+      if (chrome.runtime.lastError || !resp?.ok) {
+        btn.textContent = '⚠ エラー'
+        btn.style.background = '#ef4444'
+        setTimeout(resetBtn, 2000)
+        return
+      }
+      btn.textContent = '✓ 選択済み'
+      btn.classList.add('os2-btn-selected')
+      btn.disabled = true
+      article.classList.add('os2-tweet-selected')
+      // webappUrl を取得してから開く（chrome.storage が使えない場合はデフォルトで開く）
+      const openWebapp = (url) => window.open((url || WEBAPP_BASE_DEFAULT).replace(/\/$/, '') + '/', '_blank')
+      try {
+        chrome.storage.local.get(['webappUrl'], (r) => openWebapp(r?.webappUrl))
+      } catch (_) {
+        openWebapp()
+      }
+    })
+  } catch (_) {
+    btn.textContent = '⚠ ページを再読込してください'
+    btn.style.background = '#ef4444'
+    setTimeout(resetBtn, 3000)
+  }
 }
 
 function os2InjectButtons(handle) {
@@ -141,11 +152,13 @@ function os2InjectButtons(handle) {
 
 async function os2UpdatePipelineBadge(handle) {
   if (!os2PanelEl) return
-  const stored = await chrome.storage.local.get([PIPELINE_CACHE_KEY])
-  const handles = stored[PIPELINE_CACHE_KEY]?.handles || []
-  const inPipeline = handles.includes(handle.toLowerCase())
-  const badge = os2PanelEl.querySelector('.os2-pipeline-badge')
-  if (badge) badge.style.display = inPipeline ? 'inline-flex' : 'none'
+  try {
+    const stored = await chrome.storage.local.get([PIPELINE_CACHE_KEY])
+    const handles = stored[PIPELINE_CACHE_KEY]?.handles || []
+    const inPipeline = handles.includes(handle.toLowerCase())
+    const badge = os2PanelEl.querySelector('.os2-pipeline-badge')
+    if (badge) badge.style.display = inPipeline ? 'inline-flex' : 'none'
+  } catch (_) {}
 }
 
 function os2ShowPanel(handle) {
