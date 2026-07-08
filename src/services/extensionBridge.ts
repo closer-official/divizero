@@ -11,7 +11,7 @@ import type {
 } from '../types'
 import { addToExcluded, normalizeHandle, todayStr, uid } from '../utils/helpers'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../utils/parser'
-import { buildTouchPromptFromTemplate } from '../utils/touchPrompt'
+import { buildTouchPromptFromTemplate, parseTouchOutput } from '../utils/touchPrompt'
 
 interface BridgeEnvelope<T = unknown> {
   source: 'salesos-ext' | 'salesos-app'
@@ -423,6 +423,25 @@ export function registerExtensionBridge({
         } catch (_) {
           respond(message.requestId, 'ERROR', { code: 'PROMPT_BUILD_FAILED' })
         }
+        return
+      }
+
+      case 'PARSE_TOUCH_OUTPUT': {
+        const raw = typeof payload.raw === 'string' ? payload.raw : ''
+        if (!raw) {
+          respond(message.requestId, 'ERROR', { code: 'INVALID_PAYLOAD' })
+          return
+        }
+        const parsed = parseTouchOutput(raw)
+        if (!parsed) {
+          respond(message.requestId, 'TOUCH_OUTPUT_PARSED', { ok: false })
+          return
+        }
+        respond(message.requestId, 'TOUCH_OUTPUT_PARSED', {
+          ok: true,
+          optionA: { text: parsed.suggestedTextA ?? '', judge: parsed.provisionalJudgmentA ?? '' },
+          optionB: { text: parsed.suggestedTextB ?? '', judge: parsed.provisionalJudgmentB ?? '' },
+        })
         return
       }
 

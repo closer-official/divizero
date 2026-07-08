@@ -2,8 +2,24 @@
 
 const STORAGE_KEY = 'os2_gemini_prompt'
 const S1_TOUCH_KEY = 's1_touch_context'
+const S1_AUTO_CAPTURE_KEY = 's1_auto_capture_enabled'
 const MAX_AGE_MS = 5 * 60 * 1000
+const GEMINI_RESPONSE_SELECTORS = [
+  'model-response',
+  '[data-test-id="model-response"]',
+  '.model-response-text',
+  'message-content',
+]
 let lastHandledS1SetAt = 0
+let s1AutoCaptureEnabled = true
+let s1GeminiPanelEl = null
+let s1AutoCaptureObserver = null
+let s1AutoCaptureTimer = null
+let s1AutoCaptureSession = 0
+let s1AutoCaptureBaseline = null
+let s1AutoCaptureCandidate = null
+let s1AutoCaptureStableCount = 0
+let s1AutoCaptureInFlight = false
 
 // ── Gemini の入力エリアを待つ ──────────────────────────────────
 function waitForInput(maxWait) {
@@ -62,6 +78,219 @@ function injectText(el, text) {
   return false
 }
 
+function loadAutoCaptureSetting() {
+  try {
+    chrome.storage.local.get([S1_AUTO_CAPTURE_KEY], (r) => {
+      s1AutoCaptureEnabled = r?.[S1_AUTO_CAPTURE_KEY] !== false
+      if (s1GeminiPanelEl) {
+        const toggle = s1GeminiPanelEl.querySelector('#s1-auto-capture')
+        if (toggle) toggle.checked = s1AutoCaptureEnabled
+      }
+      if (s1AutoCaptureEnabled && s1GeminiPanelEl) {
+        startS1AutoCaptureWatch()
+      } else if (!s1AutoCaptureEnabled) {
+        stopS1AutoCaptureWatch()
+      }
+    })
+  } catch (_) {}
+}
+
+function setAutoCaptureEnabled(enabled) {
+  s1AutoCaptureEnabled = !!enabled
+  chrome.storage.local.set({ [S1_AUTO_CAPTURE_KEY]: s1AutoCaptureEnabled })
+  if (s1GeminiPanelEl) {
+    const toggle = s1GeminiPanelEl.querySelector('#s1-auto-capture')
+    if (toggle) toggle.checked = s1AutoCaptureEnabled
+  }
+  if (s1AutoCaptureEnabled) {
+    startS1AutoCaptureWatch()
+  } else {
+    stopS1AutoCaptureWatch()
+  }
+}
+
+function extractLastModelResponse(marker) {
+  for (const sel of GEMINI_RESPONSE_SELECTORS) {
+    const nodes = Array.from(document.querySelectorAll(sel))
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const text = (nodes[i].innerText || '').trim()
+      if (text && (!marker || text.includes(marker))) {
+        return text
+      }
+    }
+  }
+
+  if (marker) {
+    const body = document.body?.innerText || ''
+    const lastIdx = body.lastIndexOf(marker)
+    if (lastIdx !== -1) {
+      return body.slice(Math.max(0, lastIdx - 200), Math.min(body.length, lastIdx + 20000)).trim()
+    }
+  }
+
+  return null
+}
+
+function stopS1AutoCaptureWatch() {
+  s1AutoCaptureSession++
+  if (s1AutoCaptureObserver) {
+    s1AutoCaptureObserver.disconnect()
+    s1AutoCaptureObserver = null
+  }
+  if (s1AutoCaptureTimer) {
+    clearInterval(s1AutoCaptureTimer)
+    s1AutoCaptureTimer = null
+  }
+  s1AutoCaptureBaseline = null
+  s1AutoCaptureCandidate = null
+  s1AutoCaptureStableCount = 0
+  s1AutoCaptureInFlight = false
+}
+
+function closeS1CapturePanel() {
+  stopS1AutoCaptureWatch()
+  if (s1GeminiPanelEl) {
+    s1GeminiPanelEl.remove()
+    s1GeminiPanelEl = null
+  }
+}
+
+function startS1AutoCaptureWatch() {
+  stopS1AutoCaptureWatch()
+  if (!s1AutoCaptureEnabled || !s1GeminiPanelEl) return
+
+  const session = ++s1AutoCaptureSession
+  s1AutoCaptureBaseline = extractLastModelResponse('TOUCH_END')
+
+  const tick = () => {
+    if (session !== s1AutoCaptureSession || !s1GeminiPanelEl || !s1AutoCaptureEnabled || s1AutoCaptureInFlight) return
+
+    const current = extractLastModelResponse('TOUCH_END')
+    if (!current) {
+      s1AutoCaptureCandidate = null
+      s1AutoCaptureStableCount = 0
+      return
+    }
+
+    if (s1AutoCaptureBaseline !== null && current === s1AutoCaptureBaseline) {
+      s1AutoCaptureCandidate = current
+      s1AutoCaptureStableCount = 0
+      return
+    }
+
+    if (current === s1AutoCaptureCandidate) {
+      s1AutoCaptureStableCount += 1
+    } else {
+      s1AutoCaptureCandidate = current
+      s1AutoCaptureStableCount = 1
+    }
+
+    if (s1AutoCaptureStableCount < 2) return
+    void captureS1Output(current, true)
+  }
+
+  s1AutoCaptureObserver = new MutationObserver(() => { void tick() })
+  s1AutoCaptureObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+  s1AutoCaptureTimer = setInterval(() => { void tick() }, 1000)
+  void tick()
+}
+
+function sendCapturedOutput(text) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage({ type: 's1_gemini_captured', clipboardText: text }, (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message))
+          return
+        }
+        resolve(resp)
+      })
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
+
+async function captureS1Output(text, isAuto = false, sourceLabel = 'クリップボードから読み取りました。') {
+  if (s1AutoCaptureInFlight) return
+  s1AutoCaptureInFlight = true
+  stopS1AutoCaptureWatch()
+
+  const panel = s1GeminiPanelEl
+  if (!panel) {
+    s1AutoCaptureInFlight = false
+    return
+  }
+
+  const status = panel.querySelector('#s1-status')
+  const btn = panel.querySelector('#s1-capture-btn')
+  if (btn) btn.disabled = true
+
+  try {
+    if (status) {
+      status.textContent = isAuto
+        ? '✓ 自動取込しました。Xに戻ります…'
+        : sourceLabel
+    }
+    await sendCapturedOutput(text)
+    setTimeout(() => {
+      closeS1CapturePanel()
+    }, isAuto ? 350 : 0)
+  } catch (_) {
+    if (status) {
+      status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
+    }
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
+    s1AutoCaptureInFlight = false
+    if (s1GeminiPanelEl && isAuto) {
+      startS1AutoCaptureWatch()
+    }
+  } finally {
+    if (!isAuto) s1AutoCaptureInFlight = false
+  }
+}
+
+async function handleManualCapture(panel) {
+  const btn = panel.querySelector('#s1-capture-btn')
+  const status = panel.querySelector('#s1-status')
+  if (btn) {
+    btn.textContent = '読み取り中...'
+    btn.disabled = true
+  }
+
+  const domText = extractLastModelResponse('TOUCH_START')
+  if (domText && domText.trim().length >= 10) {
+    await captureS1Output(domText.trim(), false, 'DOMから読み取りました。')
+    return
+  }
+
+  try {
+    const text = await navigator.clipboard.readText()
+    if (!text || text.trim().length < 10) {
+      if (status) {
+        status.textContent = 'クリップボードが空です。AIの応答を待ってから押してください。'
+      }
+      if (btn) {
+        btn.textContent = '📋 取込'
+        btn.disabled = false
+      }
+      return
+    }
+    await captureS1Output(text.trim(), false, 'クリップボードから読み取りました。')
+  } catch (_) {
+    if (status) {
+      status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
+    }
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
+  }
+}
+
 // ── バナー系 ───────────────────────────────────────────────────
 function showBanner(msg, color) {
   const div = document.createElement('div')
@@ -118,10 +347,10 @@ async function tryFill() {
 
 // ── S1 タッチ — 取込パネル ─────────────────────────────────────
 function showS1CapturePanel(ctx) {
-  const existing = document.getElementById('s1-gemini-panel')
-  if (existing) existing.remove()
+  closeS1CapturePanel()
 
   const panel = document.createElement('div')
+  s1GeminiPanelEl = panel
   panel.id = 's1-gemini-panel'
   Object.assign(panel.style, {
     position: 'fixed', bottom: '20px', right: '20px', zIndex: '999999',
@@ -137,9 +366,13 @@ function showS1CapturePanel(ctx) {
     <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
       ① プロンプト挿入済み<br>
       ② スクショを追加して送信<br>
-      ③ AIの出力を<strong>全選択→コピー</strong>（Ctrl+A → Ctrl+C）<br>
-      ④ 下の【取込】を押す
+      ③ 応答が完了したら下の【取込】を押す（コピー不要）<br>
+      ④ 必要なら自動取込をONにする
     </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#374151;margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="s1-auto-capture" />
+      応答完了で自動取込
+    </label>
     <div style="display:flex;gap:8px">
       <button id="s1-capture-btn" style="flex:1;background:#059669;color:#fff;border:none;border-radius:8px;padding:8px 0;font-size:13px;font-weight:700;cursor:pointer">
         📋 取込
@@ -157,35 +390,25 @@ function showS1CapturePanel(ctx) {
     const handle = ctx.handle || ''
     handleEl.textContent = handle.startsWith('@') ? handle : '@' + handle
   }
+  const autoCaptureToggle = panel.querySelector('#s1-auto-capture')
+  if (autoCaptureToggle) {
+    autoCaptureToggle.checked = s1AutoCaptureEnabled
+    autoCaptureToggle.addEventListener('change', (e) => {
+      setAutoCaptureEnabled(!!e.target.checked)
+    })
+  }
 
   panel.querySelector('#s1-capture-btn').addEventListener('click', async () => {
-    const btn = panel.querySelector('#s1-capture-btn')
-    const status = panel.querySelector('#s1-status')
-    btn.textContent = '読み取り中...'
-    btn.disabled = true
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text || text.trim().length < 10) {
-        status.textContent = 'クリップボードが空です。AIの出力をコピーしてから押してください。'
-        btn.textContent = '📋 取込'
-        btn.disabled = false
-        return
-      }
-      status.textContent = '送信中...'
-      chrome.runtime.sendMessage({ type: 's1_gemini_captured', clipboardText: text })
-      panel.remove()
-    } catch (_) {
-      status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
-      btn.textContent = '📋 取込'
-      btn.disabled = false
-    }
+    await handleManualCapture(panel)
   })
 
   panel.querySelector('#s1-cancel-btn').addEventListener('click', () => {
     chrome.storage.local.remove(S1_TOUCH_KEY)
     chrome.runtime.sendMessage({ type: 's1_touch_cancelled' }).catch(() => {})
-    panel.remove()
+    closeS1CapturePanel()
   })
+
+  startS1AutoCaptureWatch()
 }
 
 // ── S1 タッチフロー ────────────────────────────────────────────
@@ -237,7 +460,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes[STORAGE_KEY]?.newValue && changes[STORAGE_KEY].newValue.text) {
     tryFill()
   }
+  if (changes[S1_AUTO_CAPTURE_KEY]) {
+    s1AutoCaptureEnabled = changes[S1_AUTO_CAPTURE_KEY].newValue !== false
+    if (!s1AutoCaptureEnabled) {
+      stopS1AutoCaptureWatch()
+    } else if (s1GeminiPanelEl) {
+      startS1AutoCaptureWatch()
+    }
+    const toggle = s1GeminiPanelEl?.querySelector('#s1-auto-capture')
+    if (toggle) toggle.checked = s1AutoCaptureEnabled
+  }
 })
+
+loadAutoCaptureSetting()
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setTimeout(main, 1200))

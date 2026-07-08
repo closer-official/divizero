@@ -2,7 +2,7 @@
 
 const QUEUE_KEY = 'os_ext_queue'
 const S1_TOUCH_KEY = 's1_touch_context'
-const VERSION = '1.8.0'
+const VERSION = '1.9.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 
@@ -116,7 +116,7 @@ async function openOrFocusGemini() {
   return tab.id
 }
 
-// ── タッチ出力の A/B パース（JavaScript 版）──────────────────
+// ── タッチ出力の A/B パース（フォールバック専用。正規実装は src/utils/touchPrompt.ts）─────────
 
 function parseTouchOutputBasic(raw) {
   const block = raw.match(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/)?.[1]
@@ -144,6 +144,37 @@ function parseTouchOutputBasic(raw) {
     optionB: { text: textB || '（案Bが取得できませんでした）', judge: judgeB },
     raw,
   }
+}
+
+async function parseTouchOutputViaBridge(clipboardText, ctx) {
+  const webappTabId = ctx.webappTabId || (await findOrOpenWebappTabId())
+  await repairWebappBridgeIfNeeded(webappTabId)
+
+  let bridgeResp
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      bridgeResp = await callWebAppBridge(webappTabId, 'PARSE_TOUCH_OUTPUT', { raw: clipboardText })
+      break
+    } catch (err) {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 1200))
+      else throw err
+    }
+  }
+
+  if (!bridgeResp?.ok) return null
+
+  const payload = bridgeResp.payload || {}
+  if (payload.ok === false) {
+    return { ok: false }
+  }
+  if (payload.ok && payload.optionA && payload.optionB) {
+    return {
+      ok: true,
+      optionA: payload.optionA,
+      optionB: payload.optionB,
+    }
+  }
+  return null
 }
 
 // ── webapp タブへ Extension ID を注入 ─────────────────────────
@@ -302,9 +333,29 @@ async function handleS1GeminiCaptured(clipboardText, geminiTabId) {
     return
   }
 
-  const parsed = parseTouchOutputBasic(clipboardText)
+  let parsed = null
+  try {
+    const bridgeParsed = await parseTouchOutputViaBridge(clipboardText, ctx)
+    if (bridgeParsed && bridgeParsed.ok === false) {
+      if (ctx.xTabId) {
+        chrome.tabs.sendMessage(ctx.xTabId, {
+          type: 's1_error',
+          message: 'AIの出力形式を認識できませんでした。===TOUCH_START=== / ===TOUCH_END=== が含まれているか確認してください。',
+        }).catch(() => {})
+      }
+      return
+    }
+    if (bridgeParsed && bridgeParsed.ok === true) {
+      parsed = bridgeParsed
+    }
+  } catch (_) {
+    parsed = parseTouchOutputBasic(clipboardText)
+  }
+
   if (!parsed) {
-    // パースできなかった場合、X タブにエラー通知
+    parsed = parseTouchOutputBasic(clipboardText)
+  }
+  if (!parsed) {
     if (ctx.xTabId) {
       chrome.tabs.sendMessage(ctx.xTabId, {
         type: 's1_error',
