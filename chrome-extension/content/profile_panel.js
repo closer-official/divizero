@@ -98,13 +98,6 @@ function os2HandleTweetSelect(article, handle, tweetUrl, btn) {
       btn.classList.add('os2-btn-selected')
       btn.disabled = true
       article.classList.add('os2-tweet-selected')
-      // webappUrl を取得してから開く（chrome.storage が使えない場合はデフォルトで開く）
-      const openWebapp = (url) => window.open((url || WEBAPP_BASE_DEFAULT).replace(/\/$/, '') + '/', '_blank')
-      try {
-        chrome.storage.local.get(['webappUrl'], (r) => openWebapp(r?.webappUrl))
-      } catch (_) {
-        openWebapp()
-      }
     })
   } catch (_) {
     btn.textContent = '⚠ ページを再読込してください'

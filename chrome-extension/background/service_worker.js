@@ -2,7 +2,7 @@
 
 const QUEUE_KEY = 'os_ext_queue'
 const S1_TOUCH_KEY = 's1_touch_context'
-const VERSION = '1.0.0'
+const VERSION = '1.7.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 

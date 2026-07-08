@@ -123,21 +123,30 @@ function s1ShowAbPanel(tweetUrl, optionA, optionB, accountName) {
   s1FloatingPanel.id = 's1-ab-panel'
   s1FloatingPanel.innerHTML = `
     <div class="s1-ab-header">
-      💬 S1接触 A/B選択 <span class="s1-ab-account">@${accountName || ''}</span>
+      💬 S1接触 A/B選択 <span class="s1-ab-account" id="s1-ab-account"></span>
       <button class="s1-ab-close">✕</button>
     </div>
     <div class="s1-ab-option">
-      <div class="s1-ab-label">案A <span class="s1-ab-judge">${optionA.judge || ''}</span></div>
-      <textarea class="s1-ab-text" id="s1-text-a" rows="3">${optionA.text}</textarea>
+      <div class="s1-ab-label">案A <span class="s1-ab-judge" id="s1-judge-a"></span></div>
+      <textarea class="s1-ab-text" id="s1-text-a" rows="3"></textarea>
       <button class="s1-ab-send-btn" data-option="a">A で返信</button>
     </div>
     <div class="s1-ab-option">
-      <div class="s1-ab-label">案B <span class="s1-ab-judge">${optionB.judge || ''}</span></div>
-      <textarea class="s1-ab-text" id="s1-text-b" rows="3">${optionB.text}</textarea>
+      <div class="s1-ab-label">案B <span class="s1-ab-judge" id="s1-judge-b"></span></div>
+      <textarea class="s1-ab-text" id="s1-text-b" rows="3"></textarea>
       <button class="s1-ab-send-btn" data-option="b">B で返信</button>
     </div>
     <div class="s1-ab-hint">テキストは編集可能です。「返信」後、Xの送信ボタンを押してください。</div>
   `
+
+  const accountEl = s1FloatingPanel.querySelector('#s1-ab-account')
+  if (accountEl) accountEl.textContent = '@' + (accountName || '')
+  const judgeAEl = s1FloatingPanel.querySelector('#s1-judge-a')
+  const judgeBEl = s1FloatingPanel.querySelector('#s1-judge-b')
+  if (judgeAEl) judgeAEl.textContent = optionA.judge || ''
+  if (judgeBEl) judgeBEl.textContent = optionB.judge || ''
+  s1FloatingPanel.querySelector('#s1-text-a').value = optionA.text || ''
+  s1FloatingPanel.querySelector('#s1-text-b').value = optionB.text || ''
 
   s1FloatingPanel.querySelector('.s1-ab-close').addEventListener('click', s1HidePanel)
 

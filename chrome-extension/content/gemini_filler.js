@@ -3,6 +3,7 @@
 const STORAGE_KEY = 'os2_gemini_prompt'
 const S1_TOUCH_KEY = 's1_touch_context'
 const MAX_AGE_MS = 5 * 60 * 1000
+let lastHandledS1SetAt = 0
 
 // ── Gemini の入力エリアを待つ ──────────────────────────────────
 function waitForInput(maxWait) {
@@ -131,7 +132,7 @@ function showS1CapturePanel(ctx) {
 
   panel.innerHTML = `
     <div style="font-size:13px;font-weight:700;color:#065f46;margin-bottom:6px">
-      💬 S1接触 — @${ctx.handle || ''}
+      💬 S1接触 — <span id="s1-panel-handle"></span>
     </div>
     <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
       ① プロンプト挿入済み<br>
@@ -151,6 +152,11 @@ function showS1CapturePanel(ctx) {
   `
 
   document.body.appendChild(panel)
+  const handleEl = panel.querySelector('#s1-panel-handle')
+  if (handleEl) {
+    const handle = ctx.handle || ''
+    handleEl.textContent = handle.startsWith('@') ? handle : '@' + handle
+  }
 
   panel.querySelector('#s1-capture-btn').addEventListener('click', async () => {
     const btn = panel.querySelector('#s1-capture-btn')
@@ -193,10 +199,13 @@ async function tryFillS1() {
 
   const ctx = stored[S1_TOUCH_KEY]
   if (!ctx || !ctx.promptText) return
+  if (ctx.setAt && ctx.setAt === lastHandledS1SetAt) return
   if (Date.now() - ctx.setAt > 30 * 60 * 1000) {
     chrome.storage.local.remove(S1_TOUCH_KEY)
     return
   }
+
+  lastHandledS1SetAt = ctx.setAt
 
   const el = await waitForInput(12000)
   if (!el) {
@@ -208,6 +217,10 @@ async function tryFillS1() {
   showS1CapturePanel(ctx)
 }
 
+function handleS1ContextChange() {
+  tryFillS1()
+}
+
 // ── エントリーポイント ─────────────────────────────────────────
 async function main() {
   await tryFillS1()
@@ -215,6 +228,16 @@ async function main() {
     await tryFill()
   }
 }
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return
+  if (changes[S1_TOUCH_KEY]?.newValue && changes[S1_TOUCH_KEY].newValue.promptText && !changes[S1_TOUCH_KEY].newValue.capturedRaw) {
+    handleS1ContextChange(changes[S1_TOUCH_KEY].newValue)
+  }
+  if (changes[STORAGE_KEY]?.newValue && changes[STORAGE_KEY].newValue.text) {
+    tryFill()
+  }
+})
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => setTimeout(main, 1200))
