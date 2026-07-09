@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/09 ハンドル同期復活: パイプライン案件のみS1接触ボタン表示・プロフィールバッジ修復";
+export const BUILD_LABEL = "07/09 Gemini出力のDOM自動取込（コピー操作廃止）・タッチパースをWebアプリ側に一元化";
