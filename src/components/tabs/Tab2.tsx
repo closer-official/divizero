@@ -38,7 +38,8 @@ import {
 } from '../../utils/helpers'
 import { copyText } from '../../utils/clipboard'
 import { useReceive } from '../../services/receive/useReceive'
-import type { OS2TouchPayload } from '../../services/receive/types'
+import type { GeminiPromptMeta, GeminiTouchOutputQueueItem, OS2TouchPayload } from '../../services/receive/types'
+import type { OS2TouchQueueItem } from '../../services/receive/useReceive'
 
 // ── thread helpers ─────────────────────────────────────────────
 type LogTurn = { role: '自分' | '相手'; text: string; date: string; channel: 'リプ' | 'DM' }
@@ -383,6 +384,7 @@ interface Props {
 }
 
 export default function Tab2({ data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, openItemId, onOpenItemConsumed }: Props) {
+  const { os2Pending, touchOutputPending, markCompleted, setGeminiPrompt, connected: extConnected } = useReceive()
   const [filter, setFilter] = useState('all')
   const [stateFilter, setStateFilter] = useState('all')
   const [channelFilter, setChannelFilter] = useState('all')
@@ -391,6 +393,8 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
+  const handledQueueIdsRef = useRef<Set<string>>(new Set())
+  const autoStartTouchItemIdRef = useRef<string | null>(null)
   useEffect(() => {
     const resetMobileDrawerWidth = () => {
       if (window.innerWidth < 640) setDrawerWidth(null)
@@ -429,6 +433,21 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
       onOpenItemConsumed?.()
     }
   }, [openItemId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const pending = os2Pending.find(q => {
+      if (handledQueueIdsRef.current.has(q.id)) return false
+      const pendingHandle = normalizeHandle((q.payload as OS2TouchPayload).account.handle)
+      return data.pipeline.some(item => normalizeHandle(item.url) === pendingHandle)
+    })
+    if (!pending) return
+    const pendingHandle = normalizeHandle((pending.payload as OS2TouchPayload).account.handle)
+    const match = data.pipeline.find(item => normalizeHandle(item.url) === pendingHandle)
+    if (!match) return
+    handledQueueIdsRef.current.add(pending.id)
+    autoStartTouchItemIdRef.current = match.id
+    setDrawerItemId(match.id)
+  }, [os2Pending, data.pipeline])
 
   // ドロワー開閉時にbodyスクロールを制御
   useEffect(() => {
@@ -1658,6 +1677,13 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
                     onReturnToOS0(item)
                   }}
                   onExportMd={handleExportCaseMd}
+                  os2Pending={os2Pending}
+                  touchOutputPending={touchOutputPending}
+                  markCompleted={markCompleted}
+                  setGeminiPrompt={setGeminiPrompt}
+                  connected={extConnected}
+                  autoStartTouch={autoStartTouchItemIdRef.current === drawerItem.id}
+                  onAutoStartTouchConsumed={() => { autoStartTouchItemIdRef.current = null }}
                 />
               </div>
             </div>
@@ -2155,10 +2181,16 @@ interface CardProps {
   onExportMd: (item: PipelineItem) => void
   onOperationDone?: () => void
   myXHandle?: string
+  os2Pending: OS2TouchQueueItem[]
+  touchOutputPending: GeminiTouchOutputQueueItem[]
+  markCompleted: (id: string) => Promise<void>
+  setGeminiPrompt: (text: string, meta?: GeminiPromptMeta) => Promise<void>
+  connected: boolean
+  autoStartTouch?: boolean
+  onAutoStartTouchConsumed?: () => void
 }
 
-function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone, myXHandle }: CardProps) {
-  const { os2Pending, markCompleted, setGeminiPrompt, connected: extConnected } = useReceive()
+function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, role, toast, confirm, onGoToTab3, onCloseCase, onReturnToOS0, onExportMd, onOperationDone, myXHandle, os2Pending, touchOutputPending, markCompleted, setGeminiPrompt, connected: extConnected, autoStartTouch, onAutoStartTouchConsumed }: CardProps) {
   const [addingTouch, setAddingTouch] = useState(false)
   const [closeOpen, setCloseOpen] = useState(false)
   const [editingUrl, setEditingUrl] = useState(false)
@@ -2204,6 +2236,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tCommentUrl, setTCommentUrl] = useState('')
   const [geminiCopyState, setGeminiCopyState] = useState<'idle' | 'copied'>('idle')
   const [os2Applied, setOs2Applied] = useState(false)
+  const touchOutputAppliedRef = useRef<Set<string>>(new Set())
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
@@ -2246,6 +2279,22 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     toast.show('拡張機能からツイートURLを自動入力しました', 3000)
   }, [os2Pending, item.id, item.url, addingTouch, os2Applied, markCompleted, toast])
 
+  useEffect(() => {
+    if (!addingTouch || touchOutputPending.length === 0) return
+    const pending = touchOutputPending.find(q => q.payload.pipelineItemId === item.id)
+    if (!pending) return
+    if (touchOutputAppliedRef.current.has(pending.id)) return
+    setAiOutput(pending.payload.raw)
+    setTimeout(() => {
+      const ok = handleAutoFill(pending.payload.raw)
+      if (ok) {
+        touchOutputAppliedRef.current.add(pending.id)
+        markCompleted(pending.id).catch(() => {})
+        toast.show('Geminiの出力を自動取込しました', 3000)
+      }
+    }, 0)
+  }, [addingTouch, touchOutputPending, item.id, markCompleted, toast])
+
   function resetForm() {
     setAiOutput(''); setSuggestionA(''); setSuggestionB(''); setPJudgmentA(''); setPJudgmentB('')
     setTPostText(''); setTPostRawText(''); setTPostType('通常投稿'); setTValidity('未評価')
@@ -2276,6 +2325,13 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     setAddingTouch(true)
     setTimeout(() => addFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
   }
+
+  useEffect(() => {
+    if (!autoStartTouch || addingTouch) return
+    startAddTouch()
+    onAutoStartTouchConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartTouch, item.id])
 
   async function handleCopyPrompt() {
     setAutoFillError(null)
@@ -2324,7 +2380,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
           })
         : await buildTouchPrompt(item, touches)
       await copyText(prompt)
-      if (extConnected) await setGeminiPrompt(prompt).catch(() => {})
+      if (extConnected) await setGeminiPrompt(prompt, { pipelineItemId: item.id, kind: 'touch' }).catch(() => {})
       setGeminiCopyState('copied')
       setTimeout(() => setGeminiCopyState('idle'), 2500)
       window.open('https://gemini.google.com/', '_blank')
@@ -2333,24 +2389,25 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     }
   }
 
-  function handleAutoFill() {
+  function handleAutoFill(rawText?: string): boolean {
     setAutoFillError(null)
     setAutoFillWarning(null)
+    const sourceText = rawText ?? aiOutput
     if (tTouchMode === 'dm') {
-      const parsed = parsePhenomenonFutureOutput(aiOutput)
+      const parsed = parsePhenomenonFutureOutput(sourceText)
       if (!parsed) {
         setAutoFillError('AI出力の形式が認識できませんでした。===MSG_START=== から ===MSG_END=== までを含めて貼り付けてください。')
-        return
+        return false
       }
       setSuggestionA(parsed.suggestedA)
       setSuggestionB(parsed.suggestedB)
       setTAiText(`A: ${parsed.suggestedA}\nB: ${parsed.suggestedB}`)
-      return
+      return true
     }
-    const parsed = parseTouchOutput(aiOutput)
+    const parsed = parseTouchOutput(sourceText)
     if (!parsed) {
       setAutoFillError('AI出力の形式が認識できませんでした。===TOUCH_START=== から ===TOUCH_END=== までを含めて貼り付けてください。')
-      return
+      return false
     }
     if (tTouchMode !== 'inbound') {
       setTPostText(parsed.targetPostText)
@@ -2375,6 +2432,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     if (parsed.gateJudgment.includes('✕') || parsed.gateJudgment.includes('対象切替')) {
       setAutoFillWarning('⚠️ ゲート判定「対象外」。営業意図での接触は見送り、別投稿を待つことを推奨します。')
     }
+    return true
   }
 
   function handleAddTouch() {
@@ -3158,7 +3216,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   value={aiOutput}
                   onChange={e => { setAiOutput(e.target.value); setAutoFillError(null); setAutoFillWarning(null) }}
                 />
-                <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={handleAutoFill}>
+                <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#4f46e5' }} onClick={() => handleAutoFill()}>
                   <i className="fa-solid fa-bolt mr-1" />自動入力
                 </button>
                 {autoFillError && (
@@ -3196,7 +3254,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                   value={aiOutput}
                   onChange={e => { setAiOutput(e.target.value); setAutoFillError(null); setAutoFillWarning(null) }}
                 />
-                <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#0f766e' }} onClick={handleAutoFill}>
+                <button className="btn-primary text-xs py-2 justify-center" style={{ background: '#0f766e' }} onClick={() => handleAutoFill()}>
                   <i className="fa-solid fa-bolt mr-1" />自動入力
                 </button>
                 {autoFillError && (

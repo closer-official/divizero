@@ -1,4 +1,4 @@
-import type { ExtQueueItem, ExtQueueItemStatus } from './types'
+import type { ExtQueueItem, ExtQueueItemStatus, GeminiPromptMeta } from './types'
 
 declare global {
   interface Window {
@@ -19,18 +19,11 @@ export class ReceiveService {
   isAvailable(): boolean {
     const extId = this.getExtId()
     if (!extId) {
-      console.log('[OS Ext RS] isAvailable=false: extId not found (data-os-ext-id attr:', document.documentElement.getAttribute('data-os-ext-id'), ')')
       return false
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const _chrome = (window as any).chrome
     const hasSendMessage = typeof _chrome?.runtime?.sendMessage === 'function'
-    if (!hasSendMessage) {
-      console.log('[OS Ext RS] isAvailable=false: chrome.runtime.sendMessage unavailable',
-        'chrome:', typeof _chrome, 'runtime:', typeof _chrome?.runtime)
-    } else {
-      console.log('[OS Ext RS] isAvailable=true, extId:', extId)
-    }
     return hasSendMessage
   }
 
@@ -46,7 +39,6 @@ export class ReceiveService {
       _chrome.runtime.sendMessage(extId, message, (response: T) => {
         if (_chrome.runtime.lastError) {
           const err = _chrome.runtime.lastError.message || 'Unknown chrome error'
-          console.warn('[OS Ext RS] sendMessage error:', err, 'type:', (message as any).type)
           reject(new Error(err))
         } else {
           resolve(response)
@@ -56,9 +48,7 @@ export class ReceiveService {
   }
 
   async fetchQueue(): Promise<ExtQueueItem[]> {
-    console.log('[OS Ext RS] fetchQueue start')
     const res = await this.sendMessage<{ items: ExtQueueItem[] }>({ type: 'get_queue' })
-    console.log('[OS Ext RS] fetchQueue result, items:', res.items?.length ?? 0)
     return res.items ?? []
   }
 
@@ -71,10 +61,6 @@ export class ReceiveService {
     })
   }
 
-  async clearHistory(): Promise<void> {
-    await this.sendMessage({ type: 'clear_history' })
-  }
-
   async ping(): Promise<string | null> {
     try {
       const res = await this.sendMessage<{ version: string }>({ type: 'ping' })
@@ -84,8 +70,8 @@ export class ReceiveService {
     }
   }
 
-  async setGeminiPrompt(text: string): Promise<void> {
-    await this.sendMessage({ type: 'set_gemini_prompt', text })
+  async setGeminiPrompt(text: string, meta?: GeminiPromptMeta | null): Promise<void> {
+    await this.sendMessage({ type: 'set_gemini_prompt', text, meta })
   }
 
   async setPipelineHandles(handles: string[]): Promise<void> {

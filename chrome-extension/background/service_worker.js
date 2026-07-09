@@ -5,8 +5,8 @@ const S1_TOUCH_KEY = 's1_touch_context'
 const OS0_CONTEXT_KEY = 'os0_context'
 const OS0_PROMPT_CACHE_KEY = 'os0_prompt_cache'
 const OS0_PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
-const OS0_PROMPT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const VERSION = '2.1.0'
+const OS0_PROMPT_CACHE_TTL_MS = 60 * 60 * 1000
+const VERSION = '2.2.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 
@@ -31,6 +31,16 @@ async function fetchOS0Prompt(webappBase) {
   const text = await res.text()
   await chrome.storage.local.set({ [OS0_PROMPT_CACHE_KEY]: { text, cachedAt: Date.now() } })
   return text
+}
+
+async function pruneQueue(queue) {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000
+  return (queue || []).filter(item => {
+    if (item?.status === 'pending') return true
+    const t = new Date(item?.enqueuedAt || '').getTime()
+    if (Number.isNaN(t)) return true
+    return t >= cutoff
+  })
 }
 
 function buildOS0Prompt(promptText, accountsSection, excludedHandles) {
@@ -280,8 +290,6 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // ── OS② enqueue（既存） ──────────────────────────────────────
   if (message.type === 'enqueue') {
-    console.log('[OS Ext BG] enqueue received, itemType:', message.itemType)
-
     const item = {
       id: genId(),
       type: message.itemType,
@@ -291,11 +299,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     chrome.storage.local.get([QUEUE_KEY], result => {
-      const queue = result[QUEUE_KEY] || []
-      queue.push(item)
-      chrome.storage.local.set({ [QUEUE_KEY]: queue }, () => {
-        openOrFocusWebapp()
-        sendResponse({ ok: true, id: item.id })
+      const queue = Array.isArray(result[QUEUE_KEY]) ? result[QUEUE_KEY] : []
+      pruneQueue(queue).then(cleaned => {
+        cleaned.push(item)
+        chrome.storage.local.set({ [QUEUE_KEY]: cleaned }, () => {
+          openOrFocusWebapp()
+          sendResponse({ ok: true, id: item.id })
+        })
+      }).catch(() => {
+        queue.push(item)
+        chrome.storage.local.set({ [QUEUE_KEY]: queue }, () => {
+          openOrFocusWebapp()
+          sendResponse({ ok: true, id: item.id })
+        })
       })
     })
 
@@ -325,6 +341,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // ── Gemini 出力取込 ───────────────────────────────────────────
   if (message.type === 'os0_gemini_captured') {
     handleOS0Captured(message.rawText, sender.tab?.id)
+    return false
+  }
+  if (message.type === 'touch_output_captured') {
+    handleTouchOutputCaptured(message.raw, message.meta, sender.tab?.id)
     return false
   }
   if (message.type === 's1_gemini_captured') {
@@ -511,6 +531,32 @@ async function handleOS0Captured(rawText, geminiTabId) {
   }
 }
 
+async function handleTouchOutputCaptured(raw, meta, geminiTabId) {
+  const pipelineItemId = typeof meta?.pipelineItemId === 'string' ? meta.pipelineItemId : ''
+  if (!pipelineItemId || typeof raw !== 'string') return
+
+  const item = {
+    id: genId(),
+    type: 'gemini_touch_output',
+    status: 'pending',
+    payload: { pipelineItemId, raw },
+    enqueuedAt: new Date().toISOString(),
+  }
+
+  const result = await chrome.storage.local.get([QUEUE_KEY])
+  const queue = Array.isArray(result[QUEUE_KEY]) ? result[QUEUE_KEY] : []
+  const cleaned = await pruneQueue(queue)
+  cleaned.push(item)
+  await chrome.storage.local.set({ [QUEUE_KEY]: cleaned })
+  await openOrFocusWebapp()
+
+  if (geminiTabId) {
+    try {
+      chrome.tabs.sendMessage(geminiTabId, { type: 'touch_output_result', result: { ok: true } })
+    } catch (_) {}
+  }
+}
+
 async function handleS1GeminiCaptured(clipboardText, geminiTabId) {
   const stored = await chrome.storage.local.get([S1_TOUCH_KEY])
   const ctx = stored[S1_TOUCH_KEY]
@@ -593,7 +639,6 @@ async function handleS1TouchSent(message) {
       sentText: message.sentText,
       aiSuggestedText: message.aiSuggestedText || '',
     })
-    console.log('[S1 Touch] Touch recorded successfully')
   } catch (err) {
     console.error('[S1 Touch] handleS1TouchSent error:', err)
   } finally {
@@ -646,7 +691,7 @@ chrome.runtime.onMessageExternal.addListener((message, _sender, sendResponse) =>
 
   if (message.type === 'set_gemini_prompt') {
     chrome.storage.local.set({
-      os2_gemini_prompt: { text: message.text || '', setAt: Date.now() },
+      os2_gemini_prompt: { text: message.text || '', meta: message.meta || null, setAt: Date.now() },
     }, () => {
       sendResponse({ ok: true })
     })

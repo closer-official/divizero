@@ -20,6 +20,14 @@ async function init() {
   }
 }
 
+document.getElementById('clearCacheBtn').addEventListener('click', async () => {
+  await chrome.storage.local.remove(PROMPT_CACHE_KEY)
+  await init()
+  const msg = document.getElementById('msg')
+  msg.textContent = 'プロンプトキャッシュをクリアしました'
+  setTimeout(() => { msg.textContent = '' }, 2000)
+})
+
 document.getElementById('saveBtn').addEventListener('click', async () => {
   const webappUrl = document.getElementById('webappUrl').value.trim()
   const maxAccounts = parseInt(document.getElementById('maxAccounts').value, 10)

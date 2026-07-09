@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ReceiveService } from './ReceiveService'
-import type { ExtQueueItem, ExtQueueItemStatus, OS0QueueItem, OS2TouchPayload } from './types'
+import type { ExtQueueItem, GeminiPromptMeta, GeminiTouchOutputQueueItem, OS2TouchPayload } from './types'
 
 export type OS2TouchQueueItem = ExtQueueItem & {
   type: 'os2_touch'
@@ -16,7 +16,6 @@ export function useReceive() {
 
   const refresh = useCallback(async () => {
     const available = service.isAvailable()
-    console.log('[OS Ext Hook] refresh called, isAvailable:', available)
     if (!available) {
       setConnected(false)
       return
@@ -40,7 +39,6 @@ export function useReceive() {
     // タブが表示状態になった時（別タブ→このタブへ切り替えた時）
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        console.log('[OS Ext Hook] visibilitychange → visible, refreshing')
         refresh()
       }
     }
@@ -48,7 +46,6 @@ export function useReceive() {
 
     // id_shim.js が注入完了した時（拡張機能インストール後の初回ロードで遅れる場合の対策）
     const onExtReady = () => {
-      console.log('[OS Ext Hook] os_ext_ready event received, refreshing')
       refresh()
     }
     window.addEventListener('os_ext_ready', onExtReady)
@@ -64,51 +61,25 @@ export function useReceive() {
     }
   }, [refresh])
 
-  const applyStatusLocally = (id: string, status: ExtQueueItemStatus) => {
-    setQueue(prev =>
-      prev.map(item =>
-        item.id === id
-          ? { ...item, status, processedAt: new Date().toISOString() }
-          : item
-      )
-    )
-  }
-
   const markCompleted = useCallback(async (id: string) => {
     await service.updateStatus(id, 'completed')
-    applyStatusLocally(id, 'completed')
-  }, [service])
-
-  const markDismissed = useCallback(async (id: string) => {
-    await service.updateStatus(id, 'dismissed')
-    applyStatusLocally(id, 'dismissed')
-  }, [service])
-
-  const restore = useCallback(async (id: string) => {
-    await service.updateStatus(id, 'pending')
     setQueue(prev =>
       prev.map(item =>
         item.id === id
-          ? { ...item, status: 'pending' as const, processedAt: undefined }
+          ? { ...item, status: 'completed' as const, processedAt: new Date().toISOString() }
           : item
       )
     )
-  }, [service])
-
-  const clearHistory = useCallback(async () => {
-    await service.clearHistory()
-    setQueue(prev => prev.filter(item => item.status === 'pending'))
   }, [service])
 
   const pending    = queue.filter(i => i.status === 'pending')
   const history    = queue.filter(i => i.status !== 'pending')
-  const os0Pending = pending.filter(i => i.type === 'os0_candidates') as OS0QueueItem[]
-  const os0History = history.filter(i => i.type === 'os0_candidates') as OS0QueueItem[]
   const os2Pending = pending.filter(i => i.type === 'os2_touch') as OS2TouchQueueItem[]
+  const touchOutputPending = pending.filter(i => i.type === 'gemini_touch_output') as GeminiTouchOutputQueueItem[]
   const os2History = history.filter(i => i.type === 'os2_touch') as OS2TouchQueueItem[]
 
-  const setGeminiPrompt = useCallback(async (text: string) => {
-    await service.setGeminiPrompt(text)
+  const setGeminiPrompt = useCallback(async (text: string, meta?: GeminiPromptMeta) => {
+    await service.setGeminiPrompt(text, meta ?? null)
   }, [service])
 
   const setPipelineHandles = useCallback(async (handles: string[]) => {
@@ -119,16 +90,12 @@ export function useReceive() {
     queue,
     pending,
     history,
-    os0Pending,
-    os0History,
     os2Pending,
+    touchOutputPending,
     os2History,
     connected,
     refresh,
     markCompleted,
-    markDismissed,
-    restore,
-    clearHistory,
     setGeminiPrompt,
     setPipelineHandles,
   }

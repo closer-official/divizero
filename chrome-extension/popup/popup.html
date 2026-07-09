@@ -38,6 +38,12 @@
       background: #7c3aed; color: #fff; transition: background 0.15s;
     }
     .btn:hover { background: #6d28d9; }
+    .btn-secondary {
+      width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px;
+      font-size: 12px; font-weight: 600; cursor: pointer; margin-top: 8px;
+      background: #fff; color: #475569;
+    }
+    .btn-secondary:hover { background: #f8fafc; }
     .msg { margin-top: 8px; font-size: 11px; color: #22c55e; text-align: center; min-height: 16px; }
     .cache-note { font-size: 10px; color: #94a3b8; margin-top: 4px; }
   </style>
@@ -81,6 +87,7 @@
   </div>
 
   <button class="btn" id="saveBtn">保存</button>
+  <button class="btn-secondary" id="clearCacheBtn" type="button">プロンプトキャッシュをクリア</button>
   <div class="msg" id="msg"></div>
 
   <script src="popup.js"></script>

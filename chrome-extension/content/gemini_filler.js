@@ -5,6 +5,8 @@ const S1_TOUCH_KEY = 's1_touch_context'
 const OS0_CONTEXT_KEY = 'os0_context'
 const S1_AUTO_CAPTURE_KEY = 's1_auto_capture_enabled'
 const OS0_OUTPUT_MARKER = '▼判定一覧'
+const TOUCH_START_MARKER = 'TOUCH_START'
+const TOUCH_END_MARKER = 'TOUCH_END'
 const MAX_AGE_MS = 5 * 60 * 1000
 const GEMINI_RESPONSE_SELECTORS = [
   'model-response',
@@ -17,6 +19,7 @@ let lastHandledOS0SetAt = 0
 let s1AutoCaptureEnabled = true
 let s1GeminiPanelEl = null
 let os0GeminiPanelEl = null
+let touchGeminiPanelEl = null
 let s1AutoCaptureObserver = null
 let s1AutoCaptureTimer = null
 let s1AutoCaptureSession = 0
@@ -166,22 +169,35 @@ function closeOS0CapturePanel() {
   }
 }
 
+function closeTouchCapturePanel() {
+  if (touchGeminiPanelEl) {
+    touchGeminiPanelEl.remove()
+    touchGeminiPanelEl = null
+  }
+  stopS1AutoCaptureWatch()
+}
+
 function closeAllCapturePanels() {
   closeS1CapturePanel()
   closeOS0CapturePanel()
+  closeTouchCapturePanel()
 }
 
 function startS1AutoCaptureWatch() {
   stopS1AutoCaptureWatch()
-  if (!s1AutoCaptureEnabled || !s1GeminiPanelEl) return
+  const panel = s1GeminiPanelEl || touchGeminiPanelEl
+  if (!s1AutoCaptureEnabled || !panel) return
 
   const session = ++s1AutoCaptureSession
-  s1AutoCaptureBaseline = extractLastModelResponse('TOUCH_END')
+  const isTouchMode = !!touchGeminiPanelEl && !s1GeminiPanelEl
+  const marker = isTouchMode ? TOUCH_END_MARKER : 'TOUCH_END'
+  s1AutoCaptureBaseline = extractLastModelResponse(marker)
 
   const tick = () => {
-    if (session !== s1AutoCaptureSession || !s1GeminiPanelEl || !s1AutoCaptureEnabled || s1AutoCaptureInFlight) return
+    const activePanel = s1GeminiPanelEl || touchGeminiPanelEl
+    if (session !== s1AutoCaptureSession || !activePanel || !s1AutoCaptureEnabled || s1AutoCaptureInFlight) return
 
-    const current = extractLastModelResponse('TOUCH_END')
+    const current = extractLastModelResponse(marker)
     if (!current) {
       s1AutoCaptureCandidate = null
       s1AutoCaptureStableCount = 0
@@ -202,7 +218,11 @@ function startS1AutoCaptureWatch() {
     }
 
     if (s1AutoCaptureStableCount < 2) return
-    void captureS1Output(current, true)
+    if (isTouchMode) {
+      void captureTouchOutput(current, true)
+    } else {
+      void captureS1Output(current, true)
+    }
   }
 
   s1AutoCaptureObserver = new MutationObserver(() => { void tick() })
@@ -373,8 +393,162 @@ async function tryFill() {
   const ok = injectText(el, text)
   if (ok) {
     showBanner('✓ OS②プロンプトを自動入力しました。投稿スクショを追加して送信してください。')
+    if (entry.meta?.pipelineItemId) {
+      showTouchCapturePanel(entry.meta, text)
+    }
   } else {
     showError('テキスト挿入に失敗しました。手動で貼り付けてください。')
+  }
+}
+
+function showTouchCapturePanel(meta, promptText) {
+  closeAllCapturePanels()
+
+  const panel = document.createElement('div')
+  touchGeminiPanelEl = panel
+  panel.id = 'touch-gemini-panel'
+  Object.assign(panel.style, {
+    position: 'fixed', bottom: '20px', right: '20px', zIndex: '999999',
+    background: '#fff', border: '2px solid #7c3aed', borderRadius: '14px',
+    boxShadow: '0 6px 24px rgba(124,58,237,0.22)', padding: '14px 16px',
+    maxWidth: '340px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  })
+
+  panel.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:#6d28d9;margin-bottom:6px">
+      💬 OS②タッチ — <span id="touch-panel-name"></span>
+    </div>
+    <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
+      ① プロンプト挿入済み<br>
+      ② スクショを追加して送信<br>
+      ③ 応答が完了したら下の【取込】を押す（コピー不要）<br>
+      ④ 必要なら自動取込をONにする
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#374151;margin-bottom:10px;cursor:pointer">
+      <input type="checkbox" id="touch-auto-capture" />
+      応答完了で自動取込
+    </label>
+    <div style="display:flex;gap:8px">
+      <button id="touch-capture-btn" style="flex:1;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:8px 0;font-size:13px;font-weight:700;cursor:pointer">
+        📋 取込
+      </button>
+      <button id="touch-cancel-btn" style="background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer">
+        中止
+      </button>
+    </div>
+    <div id="touch-status" style="font-size:11px;color:#6b7280;margin-top:6px"></div>
+  `
+
+  document.body.appendChild(panel)
+  const nameEl = panel.querySelector('#touch-panel-name')
+  if (nameEl) nameEl.textContent = meta?.pipelineItemId ? `案件 ${meta.pipelineItemId.slice(-6)}` : ''
+  const autoCaptureToggle = panel.querySelector('#touch-auto-capture')
+  if (autoCaptureToggle) {
+    autoCaptureToggle.checked = s1AutoCaptureEnabled
+    autoCaptureToggle.addEventListener('change', (e) => {
+      setAutoCaptureEnabled(!!e.target.checked)
+    })
+  }
+
+  panel.querySelector('#touch-capture-btn').addEventListener('click', async () => {
+    await handleManualTouchCapture(panel, meta)
+  })
+
+  panel.querySelector('#touch-cancel-btn').addEventListener('click', () => {
+    chrome.storage.local.remove(STORAGE_KEY)
+    closeTouchCapturePanel()
+    scheduleResumePendingCaptureFlow()
+  })
+
+  if (s1AutoCaptureEnabled) {
+    startS1AutoCaptureWatch()
+  }
+}
+
+async function captureTouchOutput(text, isAuto = false, sourceLabel = 'クリップボードから読み取りました。', meta = null) {
+  if (s1AutoCaptureInFlight) return
+  s1AutoCaptureInFlight = true
+  stopS1AutoCaptureWatch()
+
+  const panel = touchGeminiPanelEl
+  if (!panel) {
+    s1AutoCaptureInFlight = false
+    return
+  }
+
+  const status = panel.querySelector('#touch-status')
+  const btn = panel.querySelector('#touch-capture-btn')
+  if (btn) btn.disabled = true
+
+  try {
+    if (status) status.textContent = isAuto ? '✓ 自動取込しました。Webアプリへ戻ります…' : sourceLabel
+    await new Promise((resolve, reject) => {
+      try {
+        chrome.runtime.sendMessage({ type: 'touch_output_captured', raw: text, meta }, (resp) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message))
+            return
+          }
+          resolve(resp)
+        })
+      } catch (err) {
+        reject(err)
+      }
+    })
+    setTimeout(() => {
+      closeTouchCapturePanel()
+      scheduleResumePendingCaptureFlow()
+    }, isAuto ? 350 : 0)
+  } catch (_) {
+    if (status) status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
+    s1AutoCaptureInFlight = false
+    if (touchGeminiPanelEl && isAuto) {
+      startS1AutoCaptureWatch()
+    }
+  } finally {
+    if (!isAuto) s1AutoCaptureInFlight = false
+  }
+}
+
+async function handleManualTouchCapture(panel, meta) {
+  const btn = panel.querySelector('#touch-capture-btn')
+  const status = panel.querySelector('#touch-status')
+  if (btn) {
+    btn.textContent = '読み取り中...'
+    btn.disabled = true
+  }
+
+  const domText = extractLastModelResponse(TOUCH_START_MARKER)
+  if (domText && domText.trim().length >= 10) {
+    if (status) status.textContent = 'DOMから読み取りました。'
+    try {
+      await captureTouchOutput(domText.trim(), false, 'DOMから読み取りました。', meta)
+    } catch (_) {}
+    return
+  }
+
+  try {
+    const text = await navigator.clipboard.readText()
+    if (!text || text.trim().length < 10) {
+      if (status) status.textContent = 'クリップボードが空です。AIの応答を待ってから押してください。'
+      if (btn) {
+        btn.textContent = '📋 取込'
+        btn.disabled = false
+      }
+      return
+    }
+    if (status) status.textContent = 'クリップボードから読み取りました。'
+    await captureTouchOutput(text.trim(), false, 'クリップボードから読み取りました。', meta)
+  } catch (_) {
+    if (status) status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
   }
 }
 

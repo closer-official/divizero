@@ -1,9 +1,0 @@
-{
-  "name": "salesos-extension",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "node esbuild.config.mjs",
-    "test": "node test/run-tests.mjs"
-  }
-}

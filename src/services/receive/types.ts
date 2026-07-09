@@ -39,11 +39,14 @@ export interface ExtAccountCard {
   channel: ExtPlatform
 }
 
-// ── ペイロード ────────────────────────────────────────────────
+export interface GeminiTouchOutputPayload {
+  pipelineItemId: string
+  raw: string
+}
 
-export interface OS0CandidatesPayload {
-  sourceContext: ExtSourceContext
-  accounts: ExtAccountCard[]
+export interface GeminiPromptMeta {
+  pipelineItemId: string
+  kind: 'touch'
 }
 
 // 将来用（型のみ・MVP未実装）
@@ -96,16 +99,15 @@ export interface OwnPostPDCAPayload {
 // ── メッセージタイプ ──────────────────────────────────────────
 
 export type ExtMessageType =
-  | 'os0_candidates'
   | 'os1_profile'
   | 'os2_touch'
+  | 'gemini_touch_output'
   | 'quote_rt'
   | 'dm_material'
   | 'post_idea'
   | 'own_post_pdca'
 
 export type ExtPayload =
-  | OS0CandidatesPayload
   | OS1ProfilePayload
   | OS2TouchPayload
   | QuoteRTPayload
@@ -128,7 +130,7 @@ export interface ExtQueueItem {
 
 // ── 型付きビュー ──────────────────────────────────────────────
 
-export type OS0QueueItem = ExtQueueItem & {
-  type: 'os0_candidates'
-  payload: OS0CandidatesPayload
+export type GeminiTouchOutputQueueItem = ExtQueueItem & {
+  type: 'gemini_touch_output'
+  payload: GeminiTouchOutputPayload
 }

@@ -81,6 +81,28 @@ public/
     OS0_一次選別_v2.md        など（下記一覧参照）
 ```
 
+## Chrome extension
+
+- 正規の拡張は `chrome-extension/` のみです。旧 `salesos-extension/` は削除済みで、必要なら git 履歴から参照してください。
+- 拡張は `chrome://extensions` から「パッケージ化されていない拡張機能を読み込む」で `chrome-extension/` を指定して更新します。
+- `chrome-extension/` の主な役割:
+  - `background/service_worker.js` でメッセージ中継とキュー管理
+  - `content/twitter_scraper.js` で X のカード抽出とプロンプト生成
+  - `content/gemini_filler.js` で Gemini への自動注入と AI 出力取込
+  - `content/s1_touch_scanner.js` で S1 接触ボタン注入と送信検知
+  - `popup/` で拡張設定
+- 主要メッセージ経路:
+  - X → background: `os0_prepare_prompt`, `os0_start`, `s1_touch_start`, `s1_touch_sent`, `s1_touch_cancelled`
+  - Gemini → background: `s1_gemini_captured`, `os0_gemini_captured`, `touch_output_captured`
+  - background → webapp: `GET_EXCLUDED`, `GET_TOUCH_PROMPT`, `OS0_IMPORT`, `OS1_IMPORT`, `RECORD_TOUCH`, `PARSE_TOUCH_OUTPUT`
+- 主要ストレージキー:
+  - `os0_context`, `os2_gemini_prompt`, `os0_prompt_cache`
+  - `s1_touch_context`, `s1_auto_capture_enabled`
+  - `os2_pipeline_handles`, `os_ext_queue`
+- `extensionBridge.ts` の bridge type 一覧:
+  - `APP_PING`, `GET_PROMPT`, `GET_EXCLUDED`, `GET_OS0_QUEUE`
+  - `OS0_IMPORT`, `OS1_IMPORT`, `GET_TOUCH_PROMPT`, `RECORD_TOUCH`, `PARSE_TOUCH_OUTPUT`
+
 ## The six tabs
 
 ### Tab0 — OS⓪ 一次選別 (`src/components/tabs/Tab0.tsx`)

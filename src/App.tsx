@@ -66,6 +66,7 @@ export default function App() {
   const headerRef = useRef<HTMLElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(57)
   const dataRef = useRef(data)
+  const notifiedRecontactIdsRef = useRef<Set<string>>(new Set())
   dataRef.current = data
 
   useEffect(() => {
@@ -166,11 +167,8 @@ export default function App() {
     }
   }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // waiting → active 自動遷移 & 48h未反応 → last_reaction:none & 再接触日通知（起動時チェック）
-  const recontactCheckDone = useRef(false)
-  useEffect(() => {
-    if (loading || recontactCheckDone.current) return
-    recontactCheckDone.current = true
+  function runPipelineChecks() {
+    if (loading) return
     const now = new Date()
     const h48ago = new Date(now.getTime() - 48 * 60 * 60 * 1000)
     const recontactDue = (data.pipeline || []).filter(
@@ -208,10 +206,22 @@ export default function App() {
       const msg = recontactDue.length === 1
         ? `${recontactDue[0].accountName} の再接触日です — タップして開く`
         : `${recontactDue[0].accountName} ほか${recontactDue.length - 1}件の再接触日です`
-      setFocusPipelineItemId(firstId)
-      setTimeout(() => showToast(msg, 6000), 800)
+      if (!notifiedRecontactIdsRef.current.has(firstId)) {
+        notifiedRecontactIdsRef.current.add(firstId)
+        setFocusPipelineItemId(firstId)
+        setTimeout(() => showToast(msg, 6000), 800)
+      }
     }
-  }, [loading]) // eslint-disable-line react-hooks/exhaustive-deps
+  }
+
+  // waiting → active 自動遷移 & 48h未反応 → last_reaction:none & 再接触日通知
+  useEffect(() => {
+    if (loading) return
+    runPipelineChecks()
+    const timer = setInterval(runPipelineChecks, 60 * 60 * 1000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, data.pipeline])
 
 
   // インバウンド起点 → Tab2直行
