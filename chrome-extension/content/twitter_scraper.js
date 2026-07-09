@@ -2,9 +2,6 @@
 
 // ── 設定 ───────────────────────────────────────────────────────
 const DEFAULT_WEBAPP_BASE = 'https://divizero.vercel.app'
-const PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
-const PROMPT_CACHE_KEY = 'os0_prompt_cache'
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000  // 24h
 const DEFAULT_MAX_ACCOUNTS = 20
 
 const AI_URLS = {
@@ -30,20 +27,20 @@ async function getSettings() {
   }
 }
 
-// ── プロンプト取得（24hキャッシュ）────────────────────────────
-
-async function fetchOS0Prompt(webappBase) {
-  const cached = await chrome.storage.local.get([PROMPT_CACHE_KEY])
-  const cache = cached[PROMPT_CACHE_KEY]
-  if (cache && cache.text && (Date.now() - cache.cachedAt) < CACHE_TTL_MS) {
-    return cache.text
-  }
-  const url = webappBase + PROMPT_FILE
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`プロンプト取得失敗 (${res.status})`)
-  const text = await res.text()
-  await chrome.storage.local.set({ [PROMPT_CACHE_KEY]: { text, cachedAt: Date.now() } })
-  return text
+function sendRuntimeMessage(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      chrome.runtime.sendMessage(message, (resp) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message))
+          return
+        }
+        resolve(resp)
+      })
+    } catch (err) {
+      reject(err)
+    }
+  })
 }
 
 // ── ページ種別検出 ─────────────────────────────────────────────
@@ -200,8 +197,6 @@ function collectCards() {
   return cards
 }
 
-// ── プロンプト組み立て ─────────────────────────────────────────
-
 function formatAccountsSection(cards, pageType, url) {
   const lines = [
     `【取得元】${pageTypeLabel(pageType)}（${url}）`,
@@ -216,20 +211,6 @@ function formatAccountsSection(cards, pageType, url) {
     lines.push('---')
   }
   return lines.join('\n')
-}
-
-function buildFullPrompt(promptText, accountsSection) {
-  // 除外済みアカウントセクションの前に候補を挿入、なければ末尾に追加
-  const splitMarker = '\n\n【除外済みアカウント'
-  const splitPoint = promptText.indexOf(splitMarker)
-  if (splitPoint !== -1) {
-    return (
-      promptText.slice(0, splitPoint) +
-      '\n\n' + accountsSection +
-      promptText.slice(splitPoint)
-    )
-  }
-  return promptText + '\n\n' + accountsSection
 }
 
 // ── メインアクション ───────────────────────────────────────────
@@ -248,23 +229,50 @@ async function buildAndSendToAI() {
     const settings = await getSettings()
     const cards = collectedCards.slice(0, settings.maxAccounts)
     const pageType = detectPageType()
-
-    // プロンプト取得（キャッシュ優先）
-    const promptText = await fetchOS0Prompt(settings.webappBase)
-
-    // 候補テキスト組み立て
     const accountsSection = formatAccountsSection(cards, pageType, location.href)
-    const fullPrompt = buildFullPrompt(promptText, accountsSection)
+    const sourceContext = {
+      platform: 'twitter',
+      pageType,
+      url: location.href,
+      collectedBy: 'chrome-extension',
+      collectedAt: new Date().toISOString(),
+    }
 
-    // クリップボードにコピー
-    await navigator.clipboard.writeText(fullPrompt)
+    if (settings.aiTarget !== 'gemini') {
+      const promptResp = await sendRuntimeMessage({
+        type: 'os0_prepare_prompt',
+        accountsSection,
+        accountCount: cards.length,
+        sourceContext,
+      })
+      if (!promptResp?.ok || !promptResp.promptText) {
+        throw new Error(promptResp?.message || 'プロンプト生成に失敗しました')
+      }
 
-    // AIタブを開く
-    const aiUrl = AI_URLS[settings.aiTarget] || AI_URLS.gemini
-    window.open(aiUrl, '_blank')
+      await navigator.clipboard.writeText(promptResp.promptText)
 
-    // 成功表示
-    btn.textContent = `✓ ${cards.length}件 → Geminiに貼り付けてください！`
+      const aiUrl = AI_URLS[settings.aiTarget] || AI_URLS.gemini
+      window.open(aiUrl, '_blank')
+
+      btn.textContent = `✓ ${cards.length}件 → ${settings.aiTarget === 'claude' ? 'Claude' : 'ChatGPT'}に貼り付けてください！`
+      btn.style.background = '#22c55e'
+      setTimeout(() => resetBtn(btn, originalText), 5000)
+      return
+    }
+
+    const startResp = await sendRuntimeMessage({
+      type: 'os0_start',
+      accountsSection,
+      accountCount: cards.length,
+      sourceContext,
+    })
+    if (!startResp?.ok) {
+      throw new Error(startResp?.message || 'Gemini起動に失敗しました')
+    }
+
+    btn.textContent = startResp.excludedApplied
+      ? `✓ ${cards.length}件 → Gemini処理中`
+      : `✓ ${cards.length}件 → Gemini処理中（除外なし）`
     btn.style.background = '#22c55e'
     setTimeout(() => resetBtn(btn, originalText), 5000)
 

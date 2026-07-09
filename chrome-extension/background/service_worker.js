@@ -2,7 +2,11 @@
 
 const QUEUE_KEY = 'os_ext_queue'
 const S1_TOUCH_KEY = 's1_touch_context'
-const VERSION = '1.9.0'
+const OS0_CONTEXT_KEY = 'os0_context'
+const OS0_PROMPT_CACHE_KEY = 'os0_prompt_cache'
+const OS0_PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
+const OS0_PROMPT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const VERSION = '2.0.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 
@@ -13,6 +17,65 @@ function genId() {
 async function getWebappUrl() {
   const result = await chrome.storage.local.get(['webappUrl'])
   return (result.webappUrl || DEFAULT_WEBAPP_URL).replace(/\/$/, '')
+}
+
+async function fetchOS0Prompt(webappBase) {
+  const cached = await chrome.storage.local.get([OS0_PROMPT_CACHE_KEY])
+  const cache = cached[OS0_PROMPT_CACHE_KEY]
+  if (cache && cache.text && (Date.now() - cache.cachedAt) < OS0_PROMPT_CACHE_TTL_MS) {
+    return cache.text
+  }
+  const url = webappBase + OS0_PROMPT_FILE
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`OS0プロンプト取得失敗 (${res.status})`)
+  const text = await res.text()
+  await chrome.storage.local.set({ [OS0_PROMPT_CACHE_KEY]: { text, cachedAt: Date.now() } })
+  return text
+}
+
+function buildOS0Prompt(promptText, accountsSection, excludedHandles) {
+  const excludedList = (excludedHandles || []).filter(Boolean)
+  const splitMarker = '\n\n【除外済みアカウント'
+  const splitPoint = promptText.indexOf(splitMarker)
+  if (splitPoint !== -1) {
+    const beforeExcluded = promptText.slice(0, splitPoint)
+    const excludedPart = promptText.slice(splitPoint)
+    return beforeExcluded + '\n\n' + accountsSection + excludedPart + (excludedList.length > 0 ? '\n' + excludedList.join('\n') : '')
+  }
+  const excludedSection = `\n\n【除外済みアカウント（再判定不要）】\n以下のアカウントは過去に接触済み・SKIP・除外済みです。▼判定一覧に含まれていた場合は無条件で✕（除外済み）としてください：${excludedList.length > 0 ? '\n' + excludedList.join('\n') : ''}`
+  return promptText + excludedSection + '\n\n' + accountsSection
+}
+
+async function prepareOS0PromptPayload({ accountsSection, sourceContext }) {
+  const webappBase = await getWebappUrl()
+  const promptText = await fetchOS0Prompt(webappBase)
+
+  let excludedHandles = []
+  let excludedApplied = false
+  let excludedCount = 0
+
+  try {
+    const webappTabId = await findExistingWebappTabId()
+    if (webappTabId != null) {
+      await repairWebappBridgeIfNeeded(webappTabId)
+      const bridgeResp = await callWebAppBridge(webappTabId, 'GET_EXCLUDED', { channel: 'twitter' })
+      if (bridgeResp?.ok && Array.isArray(bridgeResp.payload?.handles)) {
+        excludedHandles = bridgeResp.payload.handles.filter(h => typeof h === 'string')
+        excludedApplied = true
+        excludedCount = excludedHandles.length
+      }
+    }
+  } catch (err) {
+    console.warn('[OS0] excluded list unavailable, continuing without it:', err?.message || err)
+  }
+
+  const fullPrompt = buildOS0Prompt(promptText, accountsSection, excludedHandles)
+  return {
+    promptText: fullPrompt,
+    excludedApplied,
+    excludedCount,
+    sourceContext,
+  }
 }
 
 // ── ウェブアプリタブを開く or フォーカス ──────────────────────
@@ -62,6 +125,13 @@ async function findOrOpenWebappTabId() {
 
   const newTab = await chrome.tabs.create({ url: webappUrl })
   return await waitForTabComplete(newTab.id)
+}
+
+async function findExistingWebappTabId() {
+  const webappUrl = await getWebappUrl()
+  const allTabs = await chrome.tabs.query({})
+  const existing = allTabs.find(tab => tab.url && tab.url.startsWith(webappUrl))
+  return existing && existing.id != null ? existing.id : null
 }
 
 // ── webapp_bridge.js 経由でウェブアプリの extensionBridge を呼ぶ ──
@@ -232,6 +302,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
+  // ── OS⓪ prompt build only ─────────────────────────────────────
+  if (message.type === 'os0_prepare_prompt') {
+    handleOS0PreparePrompt(message, sender.tab?.id, sendResponse)
+    return true
+  }
+
+  // ── OS⓪ start ────────────────────────────────────────────────
+  if (message.type === 'os0_start') {
+    handleOS0Start(message, sender.tab?.id, sendResponse)
+    return true
+  }
+
   // ── S1接触 開始 ───────────────────────────────────────────────
   if (message.type === 's1_touch_start') {
     const xTabId = sender.tab?.id
@@ -241,6 +323,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   // ── Gemini 出力取込 ───────────────────────────────────────────
+  if (message.type === 'os0_gemini_captured') {
+    handleOS0Captured(message.rawText, sender.tab?.id)
+    return false
+  }
   if (message.type === 's1_gemini_captured') {
     handleS1GeminiCaptured(message.clipboardText, sender.tab?.id)
     return false
@@ -293,7 +379,7 @@ async function handleS1TouchStart(params, sendResponse) {
 
       // X タブに通知
       if (xTabId) {
-        chrome.tabs.sendMessage(xTabId, { type: 's1_error', message: msg }).catch(() => {})
+        try { chrome.tabs.sendMessage(xTabId, { type: 's1_error', message: msg }) } catch (_) {}
       }
       sendResponse({ ok: false, message: msg })
       return
@@ -322,6 +408,97 @@ async function handleS1TouchStart(params, sendResponse) {
   } catch (err) {
     console.error('[S1 Touch] handleS1TouchStart error:', err)
     sendResponse({ ok: false, message: err.message || 'エラーが発生しました' })
+  }
+}
+
+async function handleOS0PreparePrompt(message, _senderTabId, sendResponse) {
+  try {
+    const accountsSection = typeof message.accountsSection === 'string' ? message.accountsSection : ''
+    const sourceContext = message.sourceContext || {}
+    if (!accountsSection || !sourceContext) {
+      sendResponse({ ok: false, message: 'invalid_payload' })
+      return
+    }
+    const payload = await prepareOS0PromptPayload({ accountsSection, sourceContext })
+    sendResponse({
+      ok: true,
+      promptText: payload.promptText,
+      excludedApplied: payload.excludedApplied,
+      excludedCount: payload.excludedCount,
+    })
+  } catch (err) {
+    console.error('[OS0] prepare prompt failed:', err)
+    sendResponse({ ok: false, message: err?.message || 'prompt_build_failed' })
+  }
+}
+
+async function handleOS0Start(message, senderTabId, sendResponse) {
+  try {
+    const accountsSection = typeof message.accountsSection === 'string' ? message.accountsSection : ''
+    const accountCount = Number(message.accountCount) || 0
+    const sourceContext = message.sourceContext || {}
+    if (!accountsSection || !sourceContext) {
+      sendResponse({ ok: false, message: 'invalid_payload' })
+      return
+    }
+
+    const payload = await prepareOS0PromptPayload({ accountsSection, sourceContext })
+    const ctx = {
+      promptText: payload.promptText,
+      channel: 'twitter',
+      accountCount,
+      sourceContext,
+      xTabId: senderTabId,
+      setAt: Date.now(),
+      excludedApplied: payload.excludedApplied,
+      excludedCount: payload.excludedCount,
+    }
+    await chrome.storage.local.set({ [OS0_CONTEXT_KEY]: ctx })
+    await openOrFocusGemini()
+
+    sendResponse({
+      ok: true,
+      accountCount,
+      excludedApplied: payload.excludedApplied,
+      excludedCount: payload.excludedCount,
+    })
+  } catch (err) {
+    console.error('[OS0] start failed:', err)
+    sendResponse({ ok: false, message: err?.message || 'prompt_build_failed' })
+  }
+}
+
+async function handleOS0Captured(rawText, geminiTabId) {
+  const stored = await chrome.storage.local.get([OS0_CONTEXT_KEY])
+  const ctx = stored[OS0_CONTEXT_KEY]
+  if (!ctx) {
+    console.warn('[OS0] gemini_captured but no context')
+    return
+  }
+
+  let result = null
+  try {
+    const webappTabId = await findOrOpenWebappTabId()
+    await repairWebappBridgeIfNeeded(webappTabId)
+    const bridgeResp = await callWebAppBridge(webappTabId, 'OS0_IMPORT', {
+      aiOutput: rawText,
+      channel: ctx.channel || 'twitter',
+      sourceContext: ctx.sourceContext,
+    })
+    result = bridgeResp?.payload || null
+  } catch (err) {
+    console.error('[OS0] import failed:', err)
+    result = { ok: false, missing: ['webapp_bridge_failed'] }
+  }
+
+  if (geminiTabId) {
+    try {
+      chrome.tabs.sendMessage(geminiTabId, { type: 'os0_import_result', result })
+    } catch (_) {}
+  }
+
+  if (result?.ok) {
+    await chrome.storage.local.remove(OS0_CONTEXT_KEY)
   }
 }
 

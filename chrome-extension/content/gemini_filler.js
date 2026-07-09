@@ -2,7 +2,9 @@
 
 const STORAGE_KEY = 'os2_gemini_prompt'
 const S1_TOUCH_KEY = 's1_touch_context'
+const OS0_CONTEXT_KEY = 'os0_context'
 const S1_AUTO_CAPTURE_KEY = 's1_auto_capture_enabled'
+const OS0_OUTPUT_MARKER = '▼判定一覧'
 const MAX_AGE_MS = 5 * 60 * 1000
 const GEMINI_RESPONSE_SELECTORS = [
   'model-response',
@@ -11,8 +13,10 @@ const GEMINI_RESPONSE_SELECTORS = [
   'message-content',
 ]
 let lastHandledS1SetAt = 0
+let lastHandledOS0SetAt = 0
 let s1AutoCaptureEnabled = true
 let s1GeminiPanelEl = null
+let os0GeminiPanelEl = null
 let s1AutoCaptureObserver = null
 let s1AutoCaptureTimer = null
 let s1AutoCaptureSession = 0
@@ -155,6 +159,18 @@ function closeS1CapturePanel() {
   }
 }
 
+function closeOS0CapturePanel() {
+  if (os0GeminiPanelEl) {
+    os0GeminiPanelEl.remove()
+    os0GeminiPanelEl = null
+  }
+}
+
+function closeAllCapturePanels() {
+  closeS1CapturePanel()
+  closeOS0CapturePanel()
+}
+
 function startS1AutoCaptureWatch() {
   stopS1AutoCaptureWatch()
   if (!s1AutoCaptureEnabled || !s1GeminiPanelEl) return
@@ -195,10 +211,10 @@ function startS1AutoCaptureWatch() {
   void tick()
 }
 
-function sendCapturedOutput(text) {
+function sendCapturedMessage(type, key, text) {
   return new Promise((resolve, reject) => {
     try {
-      chrome.runtime.sendMessage({ type: 's1_gemini_captured', clipboardText: text }, (resp) => {
+      chrome.runtime.sendMessage({ type, [key]: text }, (resp) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message))
           return
@@ -209,6 +225,22 @@ function sendCapturedOutput(text) {
       reject(err)
     }
   })
+}
+
+function hasAnyCapturePanel() {
+  return !!s1GeminiPanelEl || !!os0GeminiPanelEl
+}
+
+function scheduleResumePendingCaptureFlow() {
+  setTimeout(() => { void resumePendingCaptureFlow() }, 120)
+}
+
+async function resumePendingCaptureFlow() {
+  await tryFillS1()
+  if (hasAnyCapturePanel()) return
+  await tryFillOS0()
+  if (hasAnyCapturePanel()) return
+  await tryFill()
 }
 
 async function captureS1Output(text, isAuto = false, sourceLabel = 'クリップボードから読み取りました。') {
@@ -232,9 +264,10 @@ async function captureS1Output(text, isAuto = false, sourceLabel = 'クリップ
         ? '✓ 自動取込しました。Xに戻ります…'
         : sourceLabel
     }
-    await sendCapturedOutput(text)
+    await sendCapturedMessage('s1_gemini_captured', 'clipboardText', text)
     setTimeout(() => {
       closeS1CapturePanel()
+      scheduleResumePendingCaptureFlow()
     }, isAuto ? 350 : 0)
   } catch (_) {
     if (status) {
@@ -347,7 +380,7 @@ async function tryFill() {
 
 // ── S1 タッチ — 取込パネル ─────────────────────────────────────
 function showS1CapturePanel(ctx) {
-  closeS1CapturePanel()
+  closeAllCapturePanels()
 
   const panel = document.createElement('div')
   s1GeminiPanelEl = panel
@@ -404,11 +437,142 @@ function showS1CapturePanel(ctx) {
 
   panel.querySelector('#s1-cancel-btn').addEventListener('click', () => {
     chrome.storage.local.remove(S1_TOUCH_KEY)
-    chrome.runtime.sendMessage({ type: 's1_touch_cancelled' }).catch(() => {})
+    try { chrome.runtime.sendMessage({ type: 's1_touch_cancelled' }) } catch (_) {}
     closeS1CapturePanel()
   })
 
   startS1AutoCaptureWatch()
+}
+
+function showOS0CapturePanel(ctx) {
+  closeAllCapturePanels()
+
+  const panel = document.createElement('div')
+  os0GeminiPanelEl = panel
+  panel.id = 'os0-gemini-panel'
+  Object.assign(panel.style, {
+    position: 'fixed', bottom: '20px', right: '20px', zIndex: '999999',
+    background: '#fff', border: ctx.excludedApplied === false ? '2px solid #f59e0b' : '2px solid #2563eb',
+    borderRadius: '14px',
+    boxShadow: ctx.excludedApplied === false ? '0 6px 24px rgba(245,158,11,0.22)' : '0 6px 24px rgba(37,99,235,0.22)',
+    padding: '14px 16px',
+    maxWidth: '340px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  })
+
+  panel.innerHTML = `
+    <div style="font-size:13px;font-weight:700;color:#1d4ed8;margin-bottom:6px">
+      📥 OS⓪一次選別 — <span id="os0-panel-count"></span>件
+    </div>
+    <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
+      ① プロンプト挿入済み<br>
+      ② 応答が完了したら下の【取込】を押す（コピー不要）
+    </div>
+    <div id="os0-warning" style="font-size:11px;color:#b45309;margin-bottom:8px;display:none">⚠ 除外リストなしで実行中（Webアプリ未接続）</div>
+    <div style="display:flex;gap:8px">
+      <button id="os0-capture-btn" style="flex:1;background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 0;font-size:13px;font-weight:700;cursor:pointer">
+        📋 取込
+      </button>
+      <button id="os0-cancel-btn" style="background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:8px 12px;font-size:12px;cursor:pointer">
+        中止
+      </button>
+    </div>
+    <div id="os0-status" style="font-size:11px;color:#6b7280;margin-top:6px"></div>
+  `
+
+  document.body.appendChild(panel)
+  const countEl = panel.querySelector('#os0-panel-count')
+  if (countEl) countEl.textContent = String(ctx.accountCount || 0)
+  const warning = panel.querySelector('#os0-warning')
+  if (warning) warning.style.display = ctx.excludedApplied === false ? 'block' : 'none'
+
+  panel.querySelector('#os0-capture-btn').addEventListener('click', async () => {
+    await handleManualOS0Capture(panel)
+  })
+
+  panel.querySelector('#os0-cancel-btn').addEventListener('click', () => {
+    chrome.storage.local.remove(OS0_CONTEXT_KEY)
+    try { chrome.runtime.sendMessage({ type: 'os0_cancelled' }) } catch (_) {}
+    closeOS0CapturePanel()
+    scheduleResumePendingCaptureFlow()
+  })
+}
+
+async function handleManualOS0Capture(panel) {
+  const btn = panel.querySelector('#os0-capture-btn')
+  const status = panel.querySelector('#os0-status')
+  if (btn) {
+    btn.textContent = '読み取り中...'
+    btn.disabled = true
+  }
+
+  const domText = extractLastModelResponse(OS0_OUTPUT_MARKER)
+  if (domText && domText.trim().length >= 10) {
+    if (status) status.textContent = 'DOMから読み取りました。'
+    try {
+      await sendCapturedMessage('os0_gemini_captured', 'rawText', domText.trim())
+      if (status) status.textContent = '送信中...'
+    } catch (_) {
+      if (status) status.textContent = '送信に失敗しました。'
+      if (btn) {
+        btn.textContent = '📋 取込'
+        btn.disabled = false
+      }
+    }
+    return
+  }
+
+  try {
+    const text = await navigator.clipboard.readText()
+    if (!text || text.trim().length < 10) {
+      if (status) {
+        status.textContent = 'クリップボードが空です。AIの応答を待ってから押してください。'
+      }
+      if (btn) {
+        btn.textContent = '📋 取込'
+        btn.disabled = false
+      }
+      return
+    }
+    if (status) status.textContent = 'クリップボードから読み取りました。'
+    await sendCapturedMessage('os0_gemini_captured', 'rawText', text.trim())
+    if (status) status.textContent = '送信中...'
+  } catch (_) {
+    if (status) {
+      status.textContent = 'クリップボード読み取りに失敗しました。ページをリロードして再試行してください。'
+    }
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
+  }
+}
+
+async function tryFillOS0() {
+  let stored
+  try {
+    stored = await chrome.storage.local.get([OS0_CONTEXT_KEY])
+  } catch (_) {
+    return
+  }
+
+  const ctx = stored[OS0_CONTEXT_KEY]
+  if (!ctx || !ctx.promptText) return
+  if (ctx.setAt && ctx.setAt === lastHandledOS0SetAt) return
+  if (Date.now() - ctx.setAt > 30 * 60 * 1000) {
+    chrome.storage.local.remove(OS0_CONTEXT_KEY)
+    return
+  }
+
+  lastHandledOS0SetAt = ctx.setAt
+
+  const el = await waitForInput(12000)
+  if (!el) {
+    showError('入力エリアが見つかりませんでした。手動で貼り付けてください。')
+  } else {
+    injectText(el, ctx.promptText)
+  }
+
+  showOS0CapturePanel(ctx)
 }
 
 // ── S1 タッチフロー ────────────────────────────────────────────
@@ -444,18 +608,85 @@ function handleS1ContextChange() {
   tryFillS1()
 }
 
+function handleOS0ContextChange() {
+  tryFillOS0()
+}
+
+function applyOS0ImportResult(result) {
+  const panel = os0GeminiPanelEl
+  const status = panel?.querySelector('#os0-status')
+  const btn = panel?.querySelector('#os0-capture-btn')
+
+  if (result?.ok) {
+    const passedCount = Array.isArray(result.passed) ? result.passed.length : (Number(result.passedCount) || 0)
+    const ngCount = Array.isArray(result.ng) ? result.ng.length : (Number(result.ngCount) || 0)
+    const duplicateCount = Number(result.duplicateSkippedCount ?? result.skippedDuplicates ?? 0) || 0
+    if (status) {
+      status.textContent = `✓ OS⓪取込完了: 通過${passedCount}件 / NG${ngCount}件 / 重複スキップ${duplicateCount}件`
+    } else {
+      showBanner(`✓ OS⓪取込完了: 通過${passedCount}件 / NG${ngCount}件 / 重複スキップ${duplicateCount}件`)
+    }
+    if (btn) btn.disabled = true
+    setTimeout(() => {
+      closeOS0CapturePanel()
+      scheduleResumePendingCaptureFlow()
+    }, 450)
+    return
+  }
+
+  if (result?.code === 'READONLY') {
+    if (status) {
+      status.textContent = '⚠ 閲覧モードのため取込できません'
+    } else {
+      showBanner('⚠ 閲覧モードのため取込できません', '#b45309')
+    }
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
+    return
+  }
+
+  const missing = Array.isArray(result?.missing) ? result.missing.filter(Boolean) : []
+  const message = missing.length > 0
+    ? `⚠ 取込失敗: ${missing.join(' / ')}。出力形式を確認して再度【取込】を押してください`
+    : '⚠ 取込失敗: 出力形式を確認して再度【取込】を押してください'
+  if (status) {
+    status.textContent = message
+  } else {
+    showBanner(message, '#b45309')
+  }
+  if (btn) {
+    btn.textContent = '📋 取込'
+    btn.disabled = false
+  }
+}
+
 // ── エントリーポイント ─────────────────────────────────────────
 async function main() {
   await tryFillS1()
-  if (!document.getElementById('s1-gemini-panel')) {
+  if (!hasAnyCapturePanel()) {
+    await tryFillOS0()
+  }
+  if (!hasAnyCapturePanel()) {
     await tryFill()
   }
 }
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'os0_import_result') {
+    applyOS0ImportResult(message.result)
+    return
+  }
+})
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return
   if (changes[S1_TOUCH_KEY]?.newValue && changes[S1_TOUCH_KEY].newValue.promptText && !changes[S1_TOUCH_KEY].newValue.capturedRaw) {
     handleS1ContextChange(changes[S1_TOUCH_KEY].newValue)
+  }
+  if (changes[OS0_CONTEXT_KEY]?.newValue && changes[OS0_CONTEXT_KEY].newValue.promptText) {
+    handleOS0ContextChange(changes[OS0_CONTEXT_KEY].newValue)
   }
   if (changes[STORAGE_KEY]?.newValue && changes[STORAGE_KEY].newValue.text) {
     tryFill()
