@@ -169,16 +169,24 @@ export default function App() {
 
   function runPipelineChecks() {
     if (loading) return
+    const currentData = dataRef.current
     const now = new Date()
     const h48ago = new Date(now.getTime() - 48 * 60 * 60 * 1000)
-    const recontactDue = (data.pipeline || []).filter(
+    const recontactDue = (currentData.pipeline || []).filter(
       p =>
         ((p.state === 'waiting' || p.state === 'sleeping' || p.state === 'archived') && p.recontact_date && new Date(p.recontact_date) <= now) ||
         (p.state === 'meeting_scheduled' && p.meetingDate && new Date(p.meetingDate) <= now)
     )
-    const needsUpdate = recontactDue.length > 0 || (data.pipeline || []).some(p => {
+    const shouldMarkNoReaction = (p: PipelineItem, latestTouch: Touch | undefined) => {
+      if (!latestTouch) return false
+      if (!isAwaitingReactionTouch(latestTouch)) return false
+      if (new Date(latestTouch.date) > h48ago) return false
+      const alreadyMarked = p.last_reaction === 'none' && !!p.last_reaction_at && p.last_reaction_at >= latestTouch.date
+      return !alreadyMarked
+    }
+    const needsUpdate = recontactDue.length > 0 || (currentData.pipeline || []).some(p => {
       const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-      return latestTouch && isAwaitingReactionTouch(latestTouch) && new Date(latestTouch.date) <= h48ago
+      return shouldMarkNoReaction(p, latestTouch)
     })
     if (needsUpdate) {
       saveData(prev => ({
@@ -192,10 +200,8 @@ export default function App() {
             updated = { ...updated, state: 'active' as const }
           }
           const latestTouch = (p.touches ?? []).slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-          if (latestTouch && isAwaitingReactionTouch(latestTouch) && new Date(latestTouch.date) <= h48ago) {
-            if (!p.last_reaction || p.last_reaction_at !== latestTouch.date) {
-              updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
-            }
+          if (shouldMarkNoReaction(p, latestTouch)) {
+            updated = { ...updated, last_reaction: 'none' as const, last_reaction_at: now.toISOString() }
           }
           return updated
         }),
@@ -220,8 +226,7 @@ export default function App() {
     runPipelineChecks()
     const timer = setInterval(runPipelineChecks, 60 * 60 * 1000)
     return () => clearInterval(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, data.pipeline])
+  }, [loading])
 
 
   // インバウンド起点 → Tab2直行

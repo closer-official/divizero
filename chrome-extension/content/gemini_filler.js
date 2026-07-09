@@ -20,6 +20,7 @@ let s1AutoCaptureEnabled = true
 let s1GeminiPanelEl = null
 let os0GeminiPanelEl = null
 let touchGeminiPanelEl = null
+let touchGeminiPanelMeta = null
 let s1AutoCaptureObserver = null
 let s1AutoCaptureTimer = null
 let s1AutoCaptureSession = 0
@@ -174,6 +175,7 @@ function closeTouchCapturePanel() {
     touchGeminiPanelEl.remove()
     touchGeminiPanelEl = null
   }
+  touchGeminiPanelMeta = null
   stopS1AutoCaptureWatch()
 }
 
@@ -219,7 +221,7 @@ function startS1AutoCaptureWatch() {
 
     if (s1AutoCaptureStableCount < 2) return
     if (isTouchMode) {
-      void captureTouchOutput(current, true)
+      void captureTouchOutput(current, true, '自動取込しました。', touchGeminiPanelMeta)
     } else {
       void captureS1Output(current, true)
     }
@@ -403,6 +405,7 @@ async function tryFill() {
 
 function showTouchCapturePanel(meta, promptText) {
   closeAllCapturePanels()
+  touchGeminiPanelMeta = meta || null
 
   const panel = document.createElement('div')
   touchGeminiPanelEl = panel
@@ -482,9 +485,10 @@ async function captureTouchOutput(text, isAuto = false, sourceLabel = 'クリッ
 
   try {
     if (status) status.textContent = isAuto ? '✓ 自動取込しました。Webアプリへ戻ります…' : sourceLabel
+    const captureMeta = meta ?? touchGeminiPanelMeta
     await new Promise((resolve, reject) => {
       try {
-        chrome.runtime.sendMessage({ type: 'touch_output_captured', raw: text, meta }, (resp) => {
+        chrome.runtime.sendMessage({ type: 'touch_output_captured', raw: text, meta: captureMeta }, (resp) => {
           if (chrome.runtime.lastError) {
             reject(new Error(chrome.runtime.lastError.message))
             return
@@ -850,6 +854,21 @@ async function main() {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'os0_import_result') {
     applyOS0ImportResult(message.result)
+    return
+  }
+  if (message.type === 'touch_output_result' && message.result?.ok === false) {
+    const messageText = message.result.code === 'NO_META'
+      ? '取込コンテキストが失われました。Webアプリの「コピーしてGeminiを開く」からやり直してください。'
+      : '取込に失敗しました。Webアプリからもう一度やり直してください。'
+    showError(messageText)
+    const panel = touchGeminiPanelEl
+    const status = panel?.querySelector('#touch-status')
+    const btn = panel?.querySelector('#touch-capture-btn')
+    if (status) status.textContent = messageText
+    if (btn) {
+      btn.textContent = '📋 取込'
+      btn.disabled = false
+    }
     return
   }
 })

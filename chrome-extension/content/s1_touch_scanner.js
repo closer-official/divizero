@@ -14,6 +14,7 @@ let s1PendingBar = null
 let s1PendingExpireTimer = null
 let s1PendingSendListener = null
 let s1PendingRecorded = false
+let s1PendingActive = false
 
 // ── ツイート情報抽出 ──────────────────────────────────────────
 
@@ -117,6 +118,7 @@ function s1RemovePendingBar() {
 function s1ShowPendingBar(onRecord, onSkip) {
   s1RemovePendingBar()
   s1PendingRecorded = false
+  s1PendingActive = true
 
   const bar = document.createElement('div')
   s1PendingBar = bar
@@ -185,7 +187,8 @@ function s1ShowPendingBar(onRecord, onSkip) {
   })
 
   const finish = async (recorded) => {
-    if (!s1PendingBar) return
+    if (!s1PendingActive) return
+    s1PendingActive = false
     s1RemovePendingBar()
     if (recorded && typeof onRecord === 'function') {
       s1PendingRecorded = true
@@ -207,9 +210,9 @@ function s1ShowPendingBar(onRecord, onSkip) {
 
   s1PendingSendListener = (e) => {
     const btn = e.target?.closest?.('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]')
-    if (!btn || !s1PendingBar) return
+    if (!btn || !s1PendingActive) return
     setTimeout(() => {
-      if (s1PendingBar && !s1PendingRecorded) {
+      if (s1PendingActive && !s1PendingRecorded) {
         void finish(true)
       }
     }, 800)
@@ -217,7 +220,8 @@ function s1ShowPendingBar(onRecord, onSkip) {
   document.addEventListener('click', s1PendingSendListener, true)
 
   s1PendingExpireTimer = setTimeout(() => {
-    if (!s1PendingBar) return
+    if (!s1PendingActive) return
+    s1PendingActive = false
     s1RemovePendingBar()
     try { chrome.runtime.sendMessage({ type: 's1_touch_cancelled' }) } catch (_) {}
     s1Toast('送信が確認できなかったため記録をスキップしました。', true)
@@ -428,7 +432,6 @@ function s1HandleUrlChange() {
   if (url === s1LastUrl) return
   s1LastUrl = url
   s1HidePanel()
-  s1RemovePendingBar()
   document.querySelectorAll('article[data-s1-injected]').forEach(el => {
     delete el.dataset.s1Injected
   })

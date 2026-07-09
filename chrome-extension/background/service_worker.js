@@ -6,7 +6,7 @@ const OS0_CONTEXT_KEY = 'os0_context'
 const OS0_PROMPT_CACHE_KEY = 'os0_prompt_cache'
 const OS0_PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
 const OS0_PROMPT_CACHE_TTL_MS = 60 * 60 * 1000
-const VERSION = '2.2.0'
+const VERSION = '2.3.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 
@@ -333,8 +333,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // ── S1接触 開始 ───────────────────────────────────────────────
   if (message.type === 's1_touch_start') {
     const xTabId = sender.tab?.id
-    const { handle, tweetUrl, tweetText } = message
-    handleS1TouchStart({ handle, tweetUrl, tweetText, xTabId }, sendResponse)
+    const { handle, tweetUrl, tweetText, force } = message
+    handleS1TouchStart({ handle, tweetUrl, tweetText, force, xTabId }, sendResponse)
     return true
   }
 
@@ -533,7 +533,18 @@ async function handleOS0Captured(rawText, geminiTabId) {
 
 async function handleTouchOutputCaptured(raw, meta, geminiTabId) {
   const pipelineItemId = typeof meta?.pipelineItemId === 'string' ? meta.pipelineItemId : ''
-  if (!pipelineItemId || typeof raw !== 'string') return
+  if (!pipelineItemId || typeof raw !== 'string') {
+    console.warn('[Touch Output] captured without pipelineItemId, dropping')
+    if (geminiTabId) {
+      try {
+        chrome.tabs.sendMessage(geminiTabId, {
+          type: 'touch_output_result',
+          result: { ok: false, code: 'NO_META' },
+        })
+      } catch (_) {}
+    }
+    return
+  }
 
   const item = {
     id: genId(),
