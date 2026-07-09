@@ -6,7 +6,7 @@ const OS0_CONTEXT_KEY = 'os0_context'
 const OS0_PROMPT_CACHE_KEY = 'os0_prompt_cache'
 const OS0_PROMPT_FILE = '/prompts/OS0_X_一次選別_v2.md'
 const OS0_PROMPT_CACHE_TTL_MS = 24 * 60 * 60 * 1000
-const VERSION = '2.0.0'
+const VERSION = '2.1.0'
 const DEFAULT_WEBAPP_URL = 'https://divizero.vercel.app'
 const GEMINI_URL = 'https://gemini.google.com/app'
 
@@ -350,9 +350,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── S1接触 フロー ─────────────────────────────────────────────
 
 async function handleS1TouchStart(params, sendResponse) {
-  const { handle, tweetUrl, tweetText, xTabId } = params
+  const { handle, tweetUrl, tweetText, xTabId, force } = params
 
   try {
+    if (!force) {
+      const stored = await chrome.storage.local.get([S1_TOUCH_KEY])
+      const prev = stored[S1_TOUCH_KEY]
+      if (prev && prev.setAt && Date.now() - prev.setAt < 30 * 60 * 1000) {
+        sendResponse({ ok: false, code: 'CONTEXT_EXISTS', prevHandle: prev.handle || prev.accountName || '@unknown' })
+        return
+      }
+    }
+
     // 1. ウェブアプリのタブを取得
     const webappTabId = await findOrOpenWebappTabId()
 

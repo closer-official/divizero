@@ -10,6 +10,10 @@ let s1ScanTimer = null
 let s1LastUrl = location.href
 let s1FloatingPanel = null
 let s1PipelineHandles = null
+let s1PendingBar = null
+let s1PendingExpireTimer = null
+let s1PendingSendListener = null
+let s1PendingRecorded = false
 
 // ── ツイート情報抽出 ──────────────────────────────────────────
 
@@ -95,6 +99,131 @@ function s1HidePanel() {
   if (s1FloatingPanel) { s1FloatingPanel.remove(); s1FloatingPanel = null }
 }
 
+function s1RemovePendingBar() {
+  if (s1PendingExpireTimer) {
+    clearTimeout(s1PendingExpireTimer)
+    s1PendingExpireTimer = null
+  }
+  if (s1PendingSendListener) {
+    document.removeEventListener('click', s1PendingSendListener, true)
+    s1PendingSendListener = null
+  }
+  if (s1PendingBar) {
+    s1PendingBar.remove()
+    s1PendingBar = null
+  }
+}
+
+function s1ShowPendingBar(onRecord, onSkip) {
+  s1RemovePendingBar()
+  s1PendingRecorded = false
+
+  const bar = document.createElement('div')
+  s1PendingBar = bar
+  bar.id = 's1-pending-bar'
+  Object.assign(bar.style, {
+    position: 'fixed',
+    left: '16px',
+    right: '16px',
+    bottom: '16px',
+    zIndex: '999999',
+    background: '#111827',
+    color: '#fff',
+    borderRadius: '14px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.28)',
+    padding: '12px 14px',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    flexWrap: 'wrap',
+  })
+
+  const label = document.createElement('div')
+  label.textContent = '✍ 返信を送信したら'
+  Object.assign(label.style, {
+    flex: '1 1 auto',
+    minWidth: '180px',
+    fontSize: '12px',
+    fontWeight: '700',
+  })
+
+  const recordBtn = document.createElement('button')
+  recordBtn.type = 'button'
+  recordBtn.textContent = '送信済みとして記録する'
+  Object.assign(recordBtn.style, {
+    background: '#16a34a',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '8px 12px',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  })
+
+  const skipBtn = document.createElement('button')
+  skipBtn.type = 'button'
+  skipBtn.textContent = '記録しない'
+  Object.assign(skipBtn.style, {
+    background: '#374151',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '8px 12px',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+  })
+
+  const status = document.createElement('div')
+  status.textContent = '送信検知が使えない場合は、ここから手動で記録できます。'
+  Object.assign(status.style, {
+    flexBasis: '100%',
+    fontSize: '11px',
+    color: '#d1d5db',
+  })
+
+  const finish = async (recorded) => {
+    if (!s1PendingBar) return
+    s1RemovePendingBar()
+    if (recorded && typeof onRecord === 'function') {
+      s1PendingRecorded = true
+      await onRecord()
+      s1Toast('送信を検知しました。タッチを記録します。', false)
+    } else if (!recorded && typeof onSkip === 'function') {
+      onSkip()
+    }
+  }
+
+  recordBtn.addEventListener('click', () => { void finish(true) })
+  skipBtn.addEventListener('click', () => { void finish(false) })
+
+  bar.appendChild(label)
+  bar.appendChild(recordBtn)
+  bar.appendChild(skipBtn)
+  bar.appendChild(status)
+  document.body.appendChild(bar)
+
+  s1PendingSendListener = (e) => {
+    const btn = e.target?.closest?.('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]')
+    if (!btn || !s1PendingBar) return
+    setTimeout(() => {
+      if (s1PendingBar && !s1PendingRecorded) {
+        void finish(true)
+      }
+    }, 800)
+  }
+  document.addEventListener('click', s1PendingSendListener, true)
+
+  s1PendingExpireTimer = setTimeout(() => {
+    if (!s1PendingBar) return
+    s1RemovePendingBar()
+    try { chrome.runtime.sendMessage({ type: 's1_touch_cancelled' }) } catch (_) {}
+    s1Toast('送信が確認できなかったため記録をスキップしました。', true)
+  }, 10 * 60 * 1000)
+}
+
 async function s1SendReply(tweetUrl, sentText, aiSuggestedText) {
   // 該当ツイートの返信ボタンを押す
   const articles = document.querySelectorAll('article[data-testid="tweet"]')
@@ -127,7 +256,18 @@ async function s1SendReply(tweetUrl, sentText, aiSuggestedText) {
     s1Toast('テキストをクリップボードにコピーしました。返信欄に貼り付けてください。', false)
   }
 
-  chrome.runtime.sendMessage({ type: 's1_touch_sent', sentText, aiSuggestedText })
+  s1ShowPendingBar(
+    () => {
+      try {
+        chrome.runtime.sendMessage({ type: 's1_touch_sent', sentText, aiSuggestedText })
+      } catch (_) {}
+    },
+    () => {
+      try {
+        chrome.runtime.sendMessage({ type: 's1_touch_cancelled' })
+      } catch (_) {}
+    },
+  )
   s1HidePanel()
 }
 
@@ -202,19 +342,25 @@ function s1InjectButtons() {
     btn.textContent = '💬 S1接触'
     btn.setAttribute('type', 'button')
 
-    btn.addEventListener('click', (e) => {
-      e.preventDefault()
-      e.stopPropagation()
-
+    const tweetText = s1GetTweetText(article)
+    const sendStart = (force) => {
       btn.textContent = '⏳ 取得中...'
       btn.disabled = true
 
-      const tweetText = s1GetTweetText(article)
-
       chrome.runtime.sendMessage(
-        { type: 's1_touch_start', handle: '@' + authorHandle, tweetUrl, tweetText },
+        { type: 's1_touch_start', handle: '@' + authorHandle, tweetUrl, tweetText, force: !!force },
         (resp) => {
           if (chrome.runtime.lastError || !resp?.ok) {
+            if (resp?.code === 'CONTEXT_EXISTS') {
+              const ok = window.confirm(`前回の ${resp.prevHandle || '未完了の接触'} への接触が未完了です。破棄してこのツイートで続行しますか？`)
+              if (ok) {
+                sendStart(true)
+                return
+              }
+              btn.textContent = '💬 S1接触'
+              btn.disabled = false
+              return
+            }
             const msg = resp?.message || 'エラーが発生しました'
             s1Toast(msg, true)
             btn.textContent = '💬 S1接触'
@@ -230,6 +376,12 @@ function s1InjectButtons() {
           }
         },
       )
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      sendStart(false)
     })
 
     // 既存の os2-btn-wrapper があれば追加、なければ新規作成
@@ -276,6 +428,7 @@ function s1HandleUrlChange() {
   if (url === s1LastUrl) return
   s1LastUrl = url
   s1HidePanel()
+  s1RemovePendingBar()
   document.querySelectorAll('article[data-s1-injected]').forEach(el => {
     delete el.dataset.s1Injected
   })
