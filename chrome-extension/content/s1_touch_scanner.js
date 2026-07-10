@@ -474,10 +474,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
   s1LoadPipelineHandles()
 })
 
-setInterval(s1ScheduleScan, 3000)
+setTimeout(s1InjectButtons, 800)
+setInterval(s1InjectButtons, 3000)
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') s1ScheduleScan()
+  if (document.visibilityState === 'visible') s1InjectButtons()
 })
 
 s1ScheduleScan()

@@ -229,10 +229,12 @@ window.addEventListener('popstate', () => setTimeout(os2HandleUrlChange, 150))
 const os2DomObserver = new MutationObserver(os2ScheduleScan)  // ← domObserver から改名
 os2DomObserver.observe(document.body, { childList: true, subtree: true })
 
-setInterval(os2ScheduleScan, 3000)
+// デバウンスをバイパスして確実にスキャンを実行（初回・定期・タブ復帰）
+setTimeout(os2Scan, 800)    // 初回: ページ読み込み後800msで強制スキャン
+setInterval(os2Scan, 3000)  // 定期: 3秒ごとに確実にスキャン（DOMが多忙でもスキップしない）
 
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') os2ScheduleScan()
+  if (document.visibilityState === 'visible') os2Scan()  // タブ復帰時も直接スキャン
 })
 
-os2ScheduleScan()
+os2ScheduleScan()  // MutationObserver 用の初期デバウンスは維持
