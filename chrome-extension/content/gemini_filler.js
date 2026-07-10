@@ -117,25 +117,24 @@ function setAutoCaptureEnabled(enabled) {
   }
 }
 
+const USER_QUERY_SELECTORS = ['user-query', '[data-test-id="user-query"]', '.user-query', '.user-input', '[data-testid="user-query"]']
+
+function isInsideUserQuery(node) {
+  return USER_QUERY_SELECTORS.some(sel => node.closest(sel))
+}
+
 function extractLastModelResponse(marker) {
   for (const sel of GEMINI_RESPONSE_SELECTORS) {
     const nodes = Array.from(document.querySelectorAll(sel))
     for (let i = nodes.length - 1; i >= 0; i--) {
+      if (isInsideUserQuery(nodes[i])) continue
       const text = (nodes[i].innerText || '').trim()
       if (text && (!marker || text.includes(marker))) {
         return text
       }
     }
   }
-
-  if (marker) {
-    const body = document.body?.innerText || ''
-    const lastIdx = body.lastIndexOf(marker)
-    if (lastIdx !== -1) {
-      return body.slice(Math.max(0, lastIdx - 200), Math.min(body.length, lastIdx + 20000)).trim()
-    }
-  }
-
+  // body.innerText fallback removed — prone to capturing prompt echo
   return null
 }
 
@@ -219,7 +218,7 @@ function startS1AutoCaptureWatch() {
       s1AutoCaptureStableCount = 1
     }
 
-    if (s1AutoCaptureStableCount < 2) return
+    if (s1AutoCaptureStableCount < 4) return
     if (isTouchMode) {
       void captureTouchOutput(current, true, '自動取込しました。', touchGeminiPanelMeta)
     } else {
@@ -738,7 +737,7 @@ async function tryFillOS0() {
   const ctx = stored[OS0_CONTEXT_KEY]
   if (!ctx || !ctx.promptText) return
   if (ctx.setAt && ctx.setAt === lastHandledOS0SetAt) return
-  if (Date.now() - ctx.setAt > 30 * 60 * 1000) {
+  if (Date.now() - ctx.setAt > 10 * 60 * 1000) {
     chrome.storage.local.remove(OS0_CONTEXT_KEY)
     return
   }
@@ -767,7 +766,7 @@ async function tryFillS1() {
   const ctx = stored[S1_TOUCH_KEY]
   if (!ctx || !ctx.promptText) return
   if (ctx.setAt && ctx.setAt === lastHandledS1SetAt) return
-  if (Date.now() - ctx.setAt > 30 * 60 * 1000) {
+  if (Date.now() - ctx.setAt > 10 * 60 * 1000) {
     chrome.storage.local.remove(S1_TOUCH_KEY)
     return
   }

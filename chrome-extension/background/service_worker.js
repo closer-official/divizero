@@ -133,7 +133,7 @@ async function findOrOpenWebappTabId() {
     return await waitForTabComplete(existing.id)
   }
 
-  const newTab = await chrome.tabs.create({ url: webappUrl })
+  const newTab = await chrome.tabs.create({ url: webappUrl, active: false })
   return await waitForTabComplete(newTab.id)
 }
 
@@ -197,8 +197,9 @@ async function openOrFocusGemini() {
 // ── タッチ出力の A/B パース（フォールバック専用。正規実装は src/utils/touchPrompt.ts）─────────
 
 function parseTouchOutputBasic(raw) {
-  const block = raw.match(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/)?.[1]
-  if (!block) return null
+  const matches = [...raw.matchAll(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/g)]
+  if (matches.length === 0) return null
+  const block = matches[matches.length - 1][1]
 
   const pick = (label) => {
     const m = block.match(new RegExp(label + '\\s*[:：]\\s*(.+)'))
@@ -374,7 +375,7 @@ async function handleS1TouchStart(params, sendResponse) {
     if (!force) {
       const stored = await chrome.storage.local.get([S1_TOUCH_KEY])
       const prev = stored[S1_TOUCH_KEY]
-      if (prev && prev.setAt && Date.now() - prev.setAt < 30 * 60 * 1000) {
+      if (prev && prev.setAt && Date.now() - prev.setAt < 10 * 60 * 1000) {
         sendResponse({ ok: false, code: 'CONTEXT_EXISTS', prevHandle: prev.handle || prev.accountName || '@unknown' })
         return
       }
@@ -414,7 +415,10 @@ async function handleS1TouchStart(params, sendResponse) {
 
     const { promptText, pipelineItemId, accountName } = bridgeResp.payload
 
-    // 3. API直接実行を試みる
+    // 3. API直接実行を試みる（事前にXタブへ状況通知）
+    if (xTabId) {
+      try { chrome.tabs.sendMessage(xTabId, { type: 's1_api_trying', accountName }) } catch (_) {}
+    }
     let aiResp = null
     try {
       aiResp = await callWebAppBridge(webappTabId, 'RUN_AI', { prompt: promptText }, 95000)
@@ -746,6 +750,7 @@ async function handleS1TouchSent(message) {
   const ctx = stored[S1_TOUCH_KEY]
   if (!ctx) return
 
+  let ok = false
   try {
     const webappTabId = ctx.webappTabId || (await findOrOpenWebappTabId())
     await repairWebappBridgeIfNeeded(webappTabId)
@@ -756,9 +761,19 @@ async function handleS1TouchSent(message) {
       sentText: message.sentText,
       aiSuggestedText: message.aiSuggestedText || '',
     })
+    ok = true
   } catch (err) {
     console.error('[S1 Touch] handleS1TouchSent error:', err)
-  } finally {
+    if (ctx.xTabId) {
+      try {
+        chrome.tabs.sendMessage(ctx.xTabId, {
+          type: 's1_error',
+          message: 'タッチ記録に失敗しました。Webアプリを開いて手動で記録してください。',
+        })
+      } catch (_) {}
+    }
+  }
+  if (ok) {
     chrome.storage.local.remove(S1_TOUCH_KEY)
   }
 }

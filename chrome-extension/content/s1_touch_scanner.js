@@ -15,6 +15,7 @@ let s1PendingExpireTimer = null
 let s1PendingSendListener = null
 let s1PendingRecorded = false
 let s1PendingActive = false
+let s1ActiveBtn = null
 
 // ── ツイート情報抽出 ──────────────────────────────────────────
 
@@ -353,6 +354,7 @@ function s1InjectButtons() {
 
     const tweetText = s1GetTweetText(article)
     const sendStart = (force) => {
+      s1ActiveBtn = btn
       btn.textContent = '⏳ 取得中...'
       btn.disabled = true
 
@@ -430,9 +432,30 @@ function s1InjectButtons() {
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 's1_ab_ready') {
     s1ShowAbPanel(message.tweetUrl, message.optionA, message.optionB, message.accountName)
+    s1ActiveBtn = null
+    return false
+  }
+  if (message.type === 's1_api_trying') {
+    if (s1ActiveBtn) {
+      s1ActiveBtn.textContent = '⏳ AI実行中...'
+      s1ActiveBtn.style.background = '#ede9fe'
+      s1ActiveBtn.style.color = '#6d28d9'
+      s1ActiveBtn.style.borderColor = '#c4b5fd'
+    }
+    if (message.accountName) {
+      s1Toast(`「${message.accountName}」のプロンプトをAIで自動実行中です（最大90秒）。`, false)
+    }
     return false
   }
   if (message.type === 's1_error') {
+    if (s1ActiveBtn) {
+      s1ActiveBtn.textContent = '💬 S1接触'
+      s1ActiveBtn.style.background = ''
+      s1ActiveBtn.style.color = ''
+      s1ActiveBtn.style.borderColor = ''
+      s1ActiveBtn.disabled = false
+      s1ActiveBtn = null
+    }
     s1Toast(message.message, !message.isWarning)
     return false
   }

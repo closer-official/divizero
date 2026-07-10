@@ -132,8 +132,9 @@ export async function buildInboundTouchPrompt(
 }
 
 export function parseTouchOutput(raw: string): ParsedTouch | null {
-  const block = raw.match(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/)?.[1]
-  if (!block) return null
+  const matches = [...raw.matchAll(/={1,3}TOUCH_START={1,3}([\s\S]*?)={1,3}TOUCH_END={1,3}/g)]
+  if (matches.length === 0) return null
+  const block = matches[matches.length - 1][1]
 
   const pick = (label: string): string => {
     const m = block.match(new RegExp(`${label}\\s*[:：]\\s*(.+)`))

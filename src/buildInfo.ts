@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/10 OS②ボタン初回表示修正: デバウンスバイパスで強制スキャン";
+export const BUILD_LABEL = "07/11 Chrome拡張: Gemini誤取込・誤遷移の根本修正";
