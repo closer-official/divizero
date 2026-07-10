@@ -329,7 +329,12 @@ function s1ShowAbPanel(tweetUrl, optionA, optionB, accountName) {
 function s1InjectButtons() {
   const articles = document.querySelectorAll('article[data-testid="tweet"]')
   for (const article of articles) {
-    if (article.dataset.s1Injected) continue
+    const hasBtn = !!article.querySelector('.s1-touch-btn')
+    if (article.dataset.s1Injected && hasBtn) continue
+    if (article.dataset.s1Injected && !hasBtn) {
+      delete article.dataset.s1Injected
+    }
+    if (hasBtn) { article.dataset.s1Injected = '1'; continue }
     if (s1IsRetweet(article)) continue
 
     const tweetUrl = s1GetTweetUrl(article)
@@ -371,12 +376,26 @@ function s1InjectButtons() {
             btn.disabled = false
             return
           }
-          btn.textContent = '✓ Gemini起動中'
-          btn.style.background = '#d1fae5'
-          btn.style.color = '#065f46'
-          btn.style.borderColor = '#6ee7b7'
-          if (resp.accountName) {
-            s1Toast(`「${resp.accountName}」のプロンプトをGeminiに送りました。スクショ追加後、送信して【取込】を押してください。`, false)
+          if (resp.mode === 'api_success') {
+            // API成功 → ボタンは ab_ready で更新される。ここでは一時表示のみ
+            btn.textContent = '✓ AI生成中...'
+            btn.style.background = '#ede9fe'
+            btn.style.color = '#6d28d9'
+            btn.style.borderColor = '#c4b5fd'
+            // A/Bパネルが表示されたらボタンを戻す（s1_ab_readyで処理済み）
+          } else {
+            btn.textContent = '✓ Gemini起動中'
+            btn.style.background = '#d1fae5'
+            btn.style.color = '#065f46'
+            btn.style.borderColor = '#6ee7b7'
+            if (resp.accountName) {
+              const hasTweet = !!(tweetText && tweetText.trim())
+              const hint = hasTweet
+                ? 'Geminiでそのまま送信してください（スクショ追加は任意）。'
+                : 'スクショ追加後、送信して【取込】を押してください。'
+              const prefix = resp.mode === 'gemini_fallback' ? '⚠ APIエラー → ' : ''
+              s1Toast(`${prefix}「${resp.accountName}」のプロンプトをGeminiに送りました。${hint}`, false)
+            }
           }
         },
       )
@@ -414,7 +433,7 @@ chrome.runtime.onMessage.addListener((message) => {
     return false
   }
   if (message.type === 's1_error') {
-    s1Toast(message.message, true)
+    s1Toast(message.message, !message.isWarning)
     return false
   }
   return false
@@ -453,6 +472,12 @@ s1LoadPipelineHandles()
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[S1_PIPELINE_CACHE_KEY]) return
   s1LoadPipelineHandles()
+})
+
+setInterval(s1ScheduleScan, 3000)
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') s1ScheduleScan()
 })
 
 s1ScheduleScan()

@@ -1,3 +1,9 @@
+import crypto from 'crypto';
+
+function computeAiToken(adminPass) {
+  return crypto.createHash('sha256').update(adminPass + '::os_ai_v1').digest('hex');
+}
+
 export default function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -11,7 +17,8 @@ export default function handler(req, res) {
 
   const adminPass = process.env.ADMIN_PASSWORD;
   if (adminPass && password === adminPass) {
-    return res.status(200).json({ success: true, role: 'admin' });
+    const aiToken = computeAiToken(adminPass);
+    return res.status(200).json({ success: true, role: 'admin', aiToken });
   }
 
   const viewerPass = process.env.VIEWER_PASSWORD;

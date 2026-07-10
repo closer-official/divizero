@@ -47,7 +47,13 @@ function channelLabel(channel: string): string {
   return channel
 }
 
-export function buildTouchPromptFromTemplate(item: PipelineItem, touches: Touch[], template: string): string {
+export interface TargetPostInfo {
+  url?: string
+  text?: string
+  postedAt?: string
+}
+
+export function buildTouchPromptFromTemplate(item: PipelineItem, touches: Touch[], template: string, targetPost?: TargetPostInfo): string {
   const recentTouches = [...touches].reverse()
   const likeReturnCount = touches.filter(t => hasReaction(t.reactionType, 'いいね返り')).length
   const followReturned = touches.some(t => hasReaction(t.reactionType, 'フォロー返し'))
@@ -69,12 +75,25 @@ export function buildTouchPromptFromTemplate(item: PipelineItem, touches: Touch[
     lastTouchedAt: lastTouchedAt ? formatDate(lastTouchedAt) : 'なし',
   }
 
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => replacements[key] ?? '')
+  const base = template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => replacements[key] ?? '')
+  if (!targetPost || (!targetPost.text?.trim() && !targetPost.url?.trim())) return base
+  const lines = [
+    '',
+    '━━━━━━━━━━━━━━━━━━',
+    '【今回の接触対象投稿（拡張機能が自動取得）】',
+    targetPost.url?.trim() ? `投稿URL: ${targetPost.url.trim()}` : '',
+    targetPost.postedAt?.trim() ? `投稿日時: ${targetPost.postedAt.trim()}` : '',
+    targetPost.text?.trim() ? `投稿本文:\n${targetPost.text.trim()}` : '',
+    '',
+    '※スクリーンショットが添付されない場合は、上記の投稿本文を接触対象として処理してください。',
+    '※画像の内容やリプ欄の温度が判断に必要な場合のみ、スクリーンショットを併用してください。',
+  ].filter(Boolean)
+  return base + '\n' + lines.join('\n')
 }
 
-export async function buildTouchPrompt(item: PipelineItem, touches: Touch[]): Promise<string> {
+export async function buildTouchPrompt(item: PipelineItem, touches: Touch[], targetPost?: TargetPostInfo): Promise<string> {
   const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
-  return buildTouchPromptFromTemplate(item, touches, template)
+  return buildTouchPromptFromTemplate(item, touches, template, targetPost)
 }
 
 export async function buildInboundTouchPrompt(

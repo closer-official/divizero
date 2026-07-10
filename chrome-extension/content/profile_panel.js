@@ -110,7 +110,12 @@ function os2InjectButtons(handle) {
   const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
 
   for (const article of articles) {
-    if (article.dataset.os2Injected) continue
+    const hasBtn = !!article.querySelector('.os2-select-btn')
+    if (article.dataset.os2Injected && hasBtn) continue
+    if (article.dataset.os2Injected && !hasBtn) {
+      delete article.dataset.os2Injected
+    }
+    if (hasBtn) { article.dataset.os2Injected = '1'; continue }
     if (os2IsRetweet(article)) continue
 
     const tweetUrl = os2GetTweetUrl(article)
@@ -223,5 +228,11 @@ window.addEventListener('popstate', () => setTimeout(os2HandleUrlChange, 150))
 
 const os2DomObserver = new MutationObserver(os2ScheduleScan)  // ← domObserver から改名
 os2DomObserver.observe(document.body, { childList: true, subtree: true })
+
+setInterval(os2ScheduleScan, 3000)
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') os2ScheduleScan()
+})
 
 os2ScheduleScan()

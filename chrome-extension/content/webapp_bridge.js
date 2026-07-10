@@ -27,13 +27,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     location.origin,
   )
 
+  const timeoutMs = (typeof message.timeoutMs === 'number' && message.timeoutMs > 0)
+    ? message.timeoutMs
+    : 12000
+
   setTimeout(() => {
     if (!done) {
       done = true
       cleanup()
       sendResponse({ ok: false, error: 'timeout' })
     }
-  }, 12000)
+  }, timeoutMs)
 
   return true
 })

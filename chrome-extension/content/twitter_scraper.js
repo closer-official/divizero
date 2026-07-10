@@ -270,11 +270,17 @@ async function buildAndSendToAI() {
       throw new Error(startResp?.message || 'Gemini起動に失敗しました')
     }
 
-    btn.textContent = startResp.excludedApplied
-      ? `✓ ${cards.length}件 → Gemini処理中`
-      : `✓ ${cards.length}件 → Gemini処理中（除外なし）`
-    btn.style.background = '#22c55e'
-    setTimeout(() => resetBtn(btn, originalText), 5000)
+    if (startResp.mode === 'api_trying') {
+      btn.textContent = `🤖 AI選別中…（そのままお待ちください）`
+      btn.style.background = '#7c3aed'
+      // 結果は os0_api_result メッセージで更新される（disabled のまま保持）
+    } else {
+      btn.textContent = startResp.excludedApplied
+        ? `✓ ${cards.length}件 → Gemini処理中`
+        : `✓ ${cards.length}件 → Gemini処理中（除外なし）`
+      btn.style.background = '#22c55e'
+      setTimeout(() => resetBtn(btn, originalText), 5000)
+    }
 
   } catch (err) {
     console.error('[OS Ext]', err)
@@ -344,5 +350,31 @@ window.addEventListener('popstate', () => setTimeout(handleUrlChange, 150))
 
 const domObserver = new MutationObserver(scheduleScan)
 domObserver.observe(document.body, { childList: true, subtree: true })
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type !== 'os0_api_result') return false
+  const btn = document.getElementById('os-ext-send-btn')
+  const r = message.result
+  if (r?.ok) {
+    const passed = Array.isArray(r.passed) ? r.passed.length : 0
+    if (btn) {
+      btn.textContent = `✓ 取込完了: 通過${passed} / NG${r.ngCount ?? 0} / 重複${r.skippedDuplicates ?? 0}`
+      btn.style.background = '#22c55e'
+      setTimeout(() => resetBtn(btn, null), 6000)
+    }
+  } else if (r?.fallback) {
+    if (btn) {
+      btn.textContent = '⚠ APIエラー → Geminiで続行'
+      // Geminiに画面が遷移するので表示は簡潔でよい
+    }
+  } else {
+    if (btn) {
+      btn.textContent = `⚠ 取込失敗: ${(r?.missing || []).join('/') || r?.code || '不明'}`
+      btn.style.background = '#ef4444'
+      setTimeout(() => resetBtn(btn, null), 6000)
+    }
+  }
+  return false
+})
 
 scheduleScan()

@@ -7,6 +7,7 @@ import { getActiveNotifications } from './utils/analysisNotification'
 import { BUILD_LABEL } from './buildInfo'
 import { registerExtensionBridge } from './services/extensionBridge'
 import { ReceiveService } from './services/receive/ReceiveService'
+import { isAiModeEnabled, setAiModeEnabled } from './services/aiRun'
 const Tab0 = lazy(() => import('./components/tabs/Tab0'))
 const Tab1 = lazy(() => import('./components/tabs/Tab1'))
 const Tab2 = lazy(() => import('./components/tabs/Tab2'))
@@ -61,6 +62,7 @@ export default function App() {
   const [loginPw, setLoginPw] = useState('')
   const [loginError, setLoginError] = useState('')
   const [loginBusy, setLoginBusy] = useState(false)
+  const [aiModeOn, setAiModeOn] = useState(isAiModeEnabled)
   const [prefilledOS3, setPrefilledOS3] = useState<PrefilledOS3 | null>(null)
   const [focusPipelineItemId, setFocusPipelineItemId] = useState<string | null>(null)
   const headerRef = useRef<HTMLElement | null>(null)
@@ -383,6 +385,22 @@ export default function App() {
             {BUILD_LABEL}
           </span>
           <div className="flex items-center gap-2" style={{ flexWrap: 'nowrap', overflowX: 'auto' }}>
+            {/* AI mode toggle (admin only) */}
+            {role === 'admin' && (
+              <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-medium text-slate-600" title="ONにするとAI APIを直接使用（失敗時は自動フォールバック）">
+                <span className="hidden sm:inline">🤖 AI直接実行</span>
+                <div
+                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors ${aiModeOn ? 'bg-violet-600' : 'bg-slate-300'}`}
+                  onClick={() => {
+                    const next = !aiModeOn
+                    setAiModeEnabled(next)
+                    setAiModeOn(next)
+                  }}
+                >
+                  <span className={`inline-block h-4 w-4 mt-0.5 rounded-full bg-white shadow transition-transform ${aiModeOn ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                </div>
+              </label>
+            )}
             {/* Refresh */}
             <button
               className="btn-sec text-xs py-2 px-2.5"

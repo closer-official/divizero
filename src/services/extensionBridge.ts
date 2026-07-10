@@ -12,6 +12,8 @@ import type {
 import { addToExcluded, normalizeHandle, todayStr, uid } from '../utils/helpers'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../utils/parser'
 import { buildTouchPromptFromTemplate, parseTouchOutput } from '../utils/touchPrompt'
+import type { TargetPostInfo } from '../utils/touchPrompt'
+import { runAi } from './aiRun'
 
 interface BridgeEnvelope<T = unknown> {
   source: 'salesos-ext' | 'salesos-app'
@@ -411,9 +413,14 @@ export function registerExtensionBridge({
           respond(message.requestId, 'TOUCH_PROMPT', { found: false })
           return
         }
+        const tweetText = typeof payload.tweetText === 'string' ? payload.tweetText : ''
+        const tweetUrl = typeof payload.tweetUrl === 'string' ? payload.tweetUrl : ''
+        const targetPost: TargetPostInfo | undefined = (tweetText || tweetUrl)
+          ? { url: tweetUrl, text: tweetText }
+          : undefined
         try {
           const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
-          const promptText = buildTouchPromptFromTemplate(item, item.touches || [], template)
+          const promptText = buildTouchPromptFromTemplate(item, item.touches || [], template, targetPost)
           respond(message.requestId, 'TOUCH_PROMPT', {
             found: true,
             promptText,
@@ -492,6 +499,21 @@ export function registerExtensionBridge({
           return { next: { ...prev, pipeline }, result: { ok: true, code: '', touchId: newTouch.id } }
         })
         respond(message.requestId, 'RECORD_TOUCH_RESULT', result)
+        return
+      }
+
+      case 'RUN_AI': {
+        if (role !== 'admin') {
+          respond(message.requestId, 'RUN_AI_RESULT', { ok: false, code: 'READONLY' })
+          return
+        }
+        const prompt = typeof payload.prompt === 'string' ? payload.prompt : ''
+        if (!prompt) {
+          respond(message.requestId, 'RUN_AI_RESULT', { ok: false, code: 'INVALID_PAYLOAD' })
+          return
+        }
+        const aiResult = await runAi(prompt)
+        respond(message.requestId, 'RUN_AI_RESULT', aiResult)
         return
       }
 

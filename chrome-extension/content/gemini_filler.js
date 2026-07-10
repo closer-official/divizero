@@ -417,13 +417,14 @@ function showTouchCapturePanel(meta, promptText) {
     maxWidth: '340px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   })
 
+  const hasTweetText = !!(meta && meta.tweetText && meta.tweetText.trim())
   panel.innerHTML = `
     <div style="font-size:13px;font-weight:700;color:#6d28d9;margin-bottom:6px">
       💬 OS②タッチ — <span id="touch-panel-name"></span>
     </div>
     <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
-      ① プロンプト挿入済み<br>
-      ② スクショを追加して送信<br>
+      ① プロンプト挿入済み（投稿原文も自動付加）<br>
+      ② ${hasTweetText ? 'そのまま送信（画像・リプ欄が重要な時だけスクショ追加）' : 'スクショを追加して送信'}<br>
       ③ 応答が完了したら下の【取込】を押す（コピー不要）<br>
       ④ 必要なら自動取込をONにする
     </div>
@@ -570,13 +571,14 @@ function showS1CapturePanel(ctx) {
     maxWidth: '320px', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   })
 
+  const hasTweetText_ = !!(ctx && ctx.tweetText && ctx.tweetText.trim())
   panel.innerHTML = `
     <div style="font-size:13px;font-weight:700;color:#065f46;margin-bottom:6px">
       💬 S1接触 — <span id="s1-panel-handle"></span>
     </div>
     <div style="font-size:11px;color:#374151;line-height:1.6;margin-bottom:10px">
-      ① プロンプト挿入済み<br>
-      ② スクショを追加して送信<br>
+      ① プロンプト挿入済み（投稿原文も自動付加）<br>
+      ② ${hasTweetText_ ? 'そのまま送信（画像・リプ欄が重要な時だけスクショ追加）' : 'スクショを追加して送信'}<br>
       ③ 応答が完了したら下の【取込】を押す（コピー不要）<br>
       ④ 必要なら自動取込をONにする
     </div>

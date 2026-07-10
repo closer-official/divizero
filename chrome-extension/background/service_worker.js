@@ -146,19 +146,17 @@ async function findExistingWebappTabId() {
 
 // ── webapp_bridge.js 経由でウェブアプリの extensionBridge を呼ぶ ──
 
-function callWebAppBridge(tabId, bridgeType, payload) {
+function callWebAppBridge(tabId, bridgeType, payload, timeoutMs) {
   return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(
-      tabId,
-      { type: 'webapp_bridge', bridgeType, payload: payload || {} },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message))
-        } else {
-          resolve(response)
-        }
-      },
-    )
+    const msg = { type: 'webapp_bridge', bridgeType, payload: payload || {} }
+    if (timeoutMs) msg.timeoutMs = timeoutMs
+    chrome.tabs.sendMessage(tabId, msg, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message))
+      } else {
+        resolve(response)
+      }
+    })
   })
 }
 
@@ -392,7 +390,7 @@ async function handleS1TouchStart(params, sendResponse) {
     let bridgeResp
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        bridgeResp = await callWebAppBridge(webappTabId, 'GET_TOUCH_PROMPT', { handle })
+        bridgeResp = await callWebAppBridge(webappTabId, 'GET_TOUCH_PROMPT', { handle, tweetText, tweetUrl })
         break
       } catch (err) {
         if (attempt < 2) await new Promise(r => setTimeout(r, 1200))
@@ -416,7 +414,45 @@ async function handleS1TouchStart(params, sendResponse) {
 
     const { promptText, pipelineItemId, accountName } = bridgeResp.payload
 
-    // 3. ストレージに保存
+    // 3. API直接実行を試みる
+    let aiResp = null
+    try {
+      aiResp = await callWebAppBridge(webappTabId, 'RUN_AI', { prompt: promptText }, 95000)
+    } catch (_) { aiResp = null }
+
+    const apiOk = aiResp?.ok && aiResp.payload?.ok && aiResp.payload.text
+    const apiModeOff = aiResp?.payload?.code === 'AI_MODE_OFF' || aiResp?.payload?.code === 'NO_TOKEN'
+
+    if (apiOk) {
+      // API成功 → パースしてXタブにA/Bパネルを表示
+      let parsed = null
+      try {
+        const parseResp = await callWebAppBridge(webappTabId, 'PARSE_TOUCH_OUTPUT', { raw: aiResp.payload.text })
+        if (parseResp?.ok && parseResp.payload?.ok) {
+          parsed = { optionA: parseResp.payload.optionA, optionB: parseResp.payload.optionB }
+        }
+      } catch (_) {}
+      if (!parsed) {
+        parsed = parseTouchOutputBasic(aiResp.payload.text)
+      }
+      if (parsed) {
+        const updatedCtx = { handle, tweetUrl, tweetText, pipelineItemId, accountName, promptText, xTabId, webappTabId, setAt: Date.now(), capturedRaw: aiResp.payload.text, optionA: parsed.optionA, optionB: parsed.optionB }
+        await chrome.storage.local.set({ [S1_TOUCH_KEY]: updatedCtx })
+        sendResponse({ ok: true, accountName, mode: 'api_success' })
+        if (xTabId) {
+          setTimeout(() => {
+            chrome.tabs.update(xTabId, { active: true }).catch(() => {})
+            setTimeout(() => {
+              chrome.tabs.sendMessage(xTabId, { type: 's1_ab_ready', tweetUrl, optionA: parsed.optionA, optionB: parsed.optionB, accountName }).catch(() => {})
+            }, 500)
+          }, 300)
+        }
+        return
+      }
+      // パース失敗 → フォールバック
+    }
+
+    // 4. ストレージに保存（Geminiフロー用）
     const ctx = {
       handle,
       tweetUrl,
@@ -430,10 +466,21 @@ async function handleS1TouchStart(params, sendResponse) {
     }
     await chrome.storage.local.set({ [S1_TOUCH_KEY]: ctx })
 
-    // 4. Gemini を開く
+    // 5. APIオフ/失敗のとき、X側にフォールバック中であることを通知（オフ時は案内不要）
+    if (!apiModeOff && aiResp !== null && !apiOk && xTabId) {
+      try {
+        chrome.tabs.sendMessage(xTabId, {
+          type: 's1_error',
+          message: `API実行に失敗しました（${aiResp?.payload?.code || 'UNKNOWN'}）。Geminiで続行します。`,
+          isWarning: true,
+        })
+      } catch (_) {}
+    }
+
+    // 6. Gemini を開く
     await openOrFocusGemini()
 
-    sendResponse({ ok: true, accountName })
+    sendResponse({ ok: true, accountName, mode: apiModeOff ? 'gemini' : 'gemini_fallback' })
   } catch (err) {
     console.error('[S1 Touch] handleS1TouchStart error:', err)
     sendResponse({ ok: false, message: err.message || 'エラーが発生しました' })
@@ -472,6 +519,57 @@ async function handleOS0Start(message, senderTabId, sendResponse) {
     }
 
     const payload = await prepareOS0PromptPayload({ accountsSection, sourceContext })
+
+    // API直接実行を試みる（Webアプリタブがある場合のみ）
+    const webappTabId = await findExistingWebappTabId()
+    if (webappTabId != null) {
+      await repairWebappBridgeIfNeeded(webappTabId)
+
+      // 先行返却（AI実行は長時間かかるため）
+      sendResponse({
+        ok: true,
+        accountCount,
+        excludedApplied: payload.excludedApplied,
+        excludedCount: payload.excludedCount,
+        mode: 'api_trying',
+      })
+
+      let aiResp = null
+      try {
+        aiResp = await callWebAppBridge(webappTabId, 'RUN_AI', { prompt: payload.promptText }, 95000)
+      } catch (_) { aiResp = null }
+
+      const apiOk = aiResp?.ok && aiResp.payload?.ok && aiResp.payload.text
+      const apiModeOff = aiResp?.payload?.code === 'AI_MODE_OFF' || aiResp?.payload?.code === 'NO_TOKEN'
+
+      if (apiOk) {
+        // API成功 → OS0_IMPORT
+        const importResult = await importOS0Output(aiResp.payload.text, {
+          channel: 'twitter',
+          sourceContext,
+          webappTabId,
+        })
+        if (senderTabId) {
+          try {
+            chrome.tabs.sendMessage(senderTabId, { type: 'os0_api_result', result: importResult })
+          } catch (_) {}
+        }
+        return
+      }
+
+      // API失敗 → フォールバック（オフ時は案内なし）
+      if (!apiModeOff && senderTabId) {
+        try {
+          chrome.tabs.sendMessage(senderTabId, {
+            type: 'os0_api_result',
+            result: { ok: false, fallback: true, code: aiResp?.payload?.code || 'BRIDGE_FAILED' },
+          })
+        } catch (_) {}
+      }
+      // ↓ 従来フロー（os0_context保存 → Gemini）へ続行
+    }
+
+    // Geminiフロー（API未使用、またはWebアプリタブが存在しない場合）
     const ctx = {
       promptText: payload.promptText,
       channel: 'twitter',
@@ -485,16 +583,37 @@ async function handleOS0Start(message, senderTabId, sendResponse) {
     await chrome.storage.local.set({ [OS0_CONTEXT_KEY]: ctx })
     await openOrFocusGemini()
 
-    sendResponse({
-      ok: true,
-      accountCount,
-      excludedApplied: payload.excludedApplied,
-      excludedCount: payload.excludedCount,
-    })
+    // sendResponseが先行返却済みでない場合のみ返す
+    if (webappTabId == null) {
+      sendResponse({
+        ok: true,
+        accountCount,
+        excludedApplied: payload.excludedApplied,
+        excludedCount: payload.excludedCount,
+      })
+    }
   } catch (err) {
     console.error('[OS0] start failed:', err)
     sendResponse({ ok: false, message: err?.message || 'prompt_build_failed' })
   }
+}
+
+async function importOS0Output(rawText, { channel, sourceContext, webappTabId: providedTabId } = {}) {
+  let result = null
+  try {
+    const webappTabId = providedTabId ?? (await findOrOpenWebappTabId())
+    await repairWebappBridgeIfNeeded(webappTabId)
+    const bridgeResp = await callWebAppBridge(webappTabId, 'OS0_IMPORT', {
+      aiOutput: rawText,
+      channel: channel || 'twitter',
+      sourceContext,
+    })
+    result = bridgeResp?.payload || null
+  } catch (err) {
+    console.error('[OS0] import failed:', err)
+    result = { ok: false, missing: ['webapp_bridge_failed'] }
+  }
+  return result
 }
 
 async function handleOS0Captured(rawText, geminiTabId) {
@@ -505,20 +624,7 @@ async function handleOS0Captured(rawText, geminiTabId) {
     return
   }
 
-  let result = null
-  try {
-    const webappTabId = await findOrOpenWebappTabId()
-    await repairWebappBridgeIfNeeded(webappTabId)
-    const bridgeResp = await callWebAppBridge(webappTabId, 'OS0_IMPORT', {
-      aiOutput: rawText,
-      channel: ctx.channel || 'twitter',
-      sourceContext: ctx.sourceContext,
-    })
-    result = bridgeResp?.payload || null
-  } catch (err) {
-    console.error('[OS0] import failed:', err)
-    result = { ok: false, missing: ['webapp_bridge_failed'] }
-  }
+  const result = await importOS0Output(rawText, { channel: ctx.channel, sourceContext: ctx.sourceContext })
 
   if (geminiTabId) {
     try {

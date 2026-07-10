@@ -1,1 +1,1 @@
-export const BUILD_LABEL = "07/09 検証指摘修正: 48hチェック無限書込ループ・forceフラグ欠落・自動取込meta欠落・送信検知バー競合";
+export const BUILD_LABEL = "07/10 フェーズ8-10実装: DOMリサイクル対策・投稿原文自動挿入・Gemini API連携";

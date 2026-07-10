@@ -9,6 +9,7 @@ import { parseOS2, block, field } from '../../utils/parser'
 import { buildPhenomenonFuturePrompt, parsePhenomenonFutureOutput, type PhenomenonFutureResult } from '../../utils/phenomenonFuturePrompt'
 import { buildOS2ConversationPrompt, parseOS2CheckpointOutput, type OS2CheckpointResult } from '../../utils/os2Prompt'
 import { buildTouchPrompt, buildInboundTouchPrompt, parseTouchOutput } from '../../utils/touchPrompt'
+import type { TargetPostInfo } from '../../utils/touchPrompt'
 import { buildBatchS1ActionPrompt, parseBatchS1ActionOutput, type BatchS1ActionItem } from '../../utils/batchS1ActionPrompt'
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
@@ -2333,6 +2334,12 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoStartTouch, item.id])
 
+  function buildTargetPost(): TargetPostInfo | undefined {
+    const hasData = tPostUrl.trim() || tPostRawText.trim() || tPostText.trim()
+    if (!hasData) return undefined
+    return { url: tPostUrl, text: tPostRawText.trim() || tPostText.trim(), postedAt: tPostDateTime }
+  }
+
   async function handleCopyPrompt() {
     setAutoFillError(null)
     try {
@@ -2357,7 +2364,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
         }
         prompt = buildPhenomenonFuturePrompt(item, dummyTouch, prompts.PHENOMENON_FUTURE)
       } else {
-        prompt = await buildTouchPrompt(item, touches)
+        prompt = await buildTouchPrompt(item, touches, buildTargetPost())
       }
       await copyText(prompt)
       setCopyBtnState('copied')
@@ -2378,7 +2385,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             inboundReactions: tInboundReactions,
             inboundChannel: tInboundChannel,
           })
-        : await buildTouchPrompt(item, touches)
+        : await buildTouchPrompt(item, touches, buildTargetPost())
       await copyText(prompt)
       if (extConnected) await setGeminiPrompt(prompt, { pipelineItemId: item.id, kind: 'touch' }).catch(() => {})
       setGeminiCopyState('copied')
