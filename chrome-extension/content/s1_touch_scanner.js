@@ -36,6 +36,20 @@ function s1GetTweetAuthor(article) {
   return parts[0].replace(/^\//, '').toLowerCase()
 }
 
+function s1GetReplyToHandle(article) {
+  const divs = article.querySelectorAll('div')
+  for (const div of divs) {
+    const t = (div.textContent || '').trim()
+    if (!t.startsWith('返信先') && !t.startsWith('Replying to')) continue
+    const a = div.querySelector('a[href^="/"]')
+    if (!a) return null
+    const href = a.getAttribute('href') || ''
+    const handle = href.replace(/^\//, '').split(/[/?]/)[0].toLowerCase()
+    return handle || null
+  }
+  return null
+}
+
 function s1GetTweetText(article) {
   const el = article.querySelector('[data-testid="tweetText"]')
   return el ? el.innerText.trim().slice(0, 300) : ''
@@ -344,6 +358,7 @@ function s1InjectButtons() {
     const authorHandle = s1GetTweetAuthor(article)
     if (!authorHandle) continue
     if (Array.isArray(s1PipelineHandles) && !s1PipelineHandles.includes(authorHandle)) continue
+    const replyToHandle = s1GetReplyToHandle(article)
 
     article.dataset.s1Injected = '1'
 
@@ -359,7 +374,7 @@ function s1InjectButtons() {
       btn.disabled = true
 
       chrome.runtime.sendMessage(
-        { type: 's1_touch_start', handle: '@' + authorHandle, tweetUrl, tweetText, force: !!force },
+        { type: 's1_touch_start', handle: '@' + authorHandle, tweetUrl, tweetText, replyToHandle, force: !!force },
         (resp) => {
           if (chrome.runtime.lastError || !resp?.ok) {
             if (resp?.code === 'CONTEXT_EXISTS') {
@@ -378,25 +393,32 @@ function s1InjectButtons() {
             btn.disabled = false
             return
           }
+          const continuationNote = resp.touchMode === 'reply'
+            ? '会話の継続として処理します（前回タッチの反応も記録されます）'
+            : resp.needsMyHandle === true
+              ? '設定（Tab2上部）で自分のXハンドルを登録すると、返信を会話の継続として記録できます'
+              : ''
           if (resp.mode === 'api_success') {
             // API成功 → ボタンは ab_ready で更新される。ここでは一時表示のみ
             btn.textContent = '✓ AI生成中...'
             btn.style.background = '#ede9fe'
             btn.style.color = '#6d28d9'
             btn.style.borderColor = '#c4b5fd'
+            if (continuationNote) s1Toast(continuationNote, false)
             // A/Bパネルが表示されたらボタンを戻す（s1_ab_readyで処理済み）
           } else {
             btn.textContent = '✓ Gemini起動中'
             btn.style.background = '#d1fae5'
             btn.style.color = '#065f46'
             btn.style.borderColor = '#6ee7b7'
-            if (resp.accountName) {
+            if (resp.accountName || continuationNote) {
               const hasTweet = !!(tweetText && tweetText.trim())
               const hint = hasTweet
                 ? 'Geminiでそのまま送信してください（スクショ追加は任意）。'
                 : 'スクショ追加後、送信して【取込】を押してください。'
               const prefix = resp.mode === 'gemini_fallback' ? '⚠ APIエラー → ' : ''
-              s1Toast(`${prefix}「${resp.accountName}」のプロンプトをGeminiに送りました。${hint}`, false)
+              const accountNote = resp.accountName ? `「${resp.accountName}」のプロンプトをGeminiに送りました。` : ''
+              s1Toast(`${continuationNote ? continuationNote + ' ' : ''}${prefix}${accountNote}${hint}`, false)
             }
           }
         },

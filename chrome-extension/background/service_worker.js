@@ -332,8 +332,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // ── S1接触 開始 ───────────────────────────────────────────────
   if (message.type === 's1_touch_start') {
     const xTabId = sender.tab?.id
-    const { handle, tweetUrl, tweetText, force } = message
-    handleS1TouchStart({ handle, tweetUrl, tweetText, force, xTabId }, sendResponse)
+    const { handle, tweetUrl, tweetText, replyToHandle, force } = message
+    handleS1TouchStart({ handle, tweetUrl, tweetText, replyToHandle, force, xTabId }, sendResponse)
     return true
   }
 
@@ -369,7 +369,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── S1接触 フロー ─────────────────────────────────────────────
 
 async function handleS1TouchStart(params, sendResponse) {
-  const { handle, tweetUrl, tweetText, xTabId, force } = params
+  const { handle, tweetUrl, tweetText, replyToHandle, xTabId, force } = params
 
   try {
     if (!force) {
@@ -391,7 +391,7 @@ async function handleS1TouchStart(params, sendResponse) {
     let bridgeResp
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        bridgeResp = await callWebAppBridge(webappTabId, 'GET_TOUCH_PROMPT', { handle, tweetText, tweetUrl })
+        bridgeResp = await callWebAppBridge(webappTabId, 'GET_TOUCH_PROMPT', { handle, tweetText, tweetUrl, replyToHandle })
         break
       } catch (err) {
         if (attempt < 2) await new Promise(r => setTimeout(r, 1200))
@@ -413,7 +413,8 @@ async function handleS1TouchStart(params, sendResponse) {
       return
     }
 
-    const { promptText, pipelineItemId, accountName } = bridgeResp.payload
+    const { promptText, pipelineItemId, accountName, mode, touchId, needsMyHandle } = bridgeResp.payload
+    const touchMode = mode === 'reply' ? 'reply' : 'new'
 
     // 3. API直接実行を試みる（事前にXタブへ状況通知）
     if (xTabId) {
@@ -440,9 +441,26 @@ async function handleS1TouchStart(params, sendResponse) {
         parsed = parseTouchOutputBasic(aiResp.payload.text)
       }
       if (parsed) {
-        const updatedCtx = { handle, tweetUrl, tweetText, pipelineItemId, accountName, promptText, xTabId, webappTabId, setAt: Date.now(), capturedRaw: aiResp.payload.text, optionA: parsed.optionA, optionB: parsed.optionB }
+        const updatedCtx = {
+          handle,
+          tweetUrl,
+          tweetText,
+          replyToHandle,
+          pipelineItemId,
+          accountName,
+          promptText,
+          mode: touchMode,
+          touchId: touchMode === 'reply' ? touchId || '' : '',
+          needsMyHandle: !!needsMyHandle,
+          xTabId,
+          webappTabId,
+          setAt: Date.now(),
+          capturedRaw: aiResp.payload.text,
+          optionA: parsed.optionA,
+          optionB: parsed.optionB,
+        }
         await chrome.storage.local.set({ [S1_TOUCH_KEY]: updatedCtx })
-        sendResponse({ ok: true, accountName, mode: 'api_success' })
+        sendResponse({ ok: true, accountName, mode: 'api_success', touchMode, needsMyHandle: !!needsMyHandle })
         if (xTabId) {
           setTimeout(() => {
             chrome.tabs.update(xTabId, { active: true }).catch(() => {})
@@ -461,9 +479,13 @@ async function handleS1TouchStart(params, sendResponse) {
       handle,
       tweetUrl,
       tweetText,
+      replyToHandle,
       pipelineItemId,
       accountName,
       promptText,
+      mode: touchMode,
+      touchId: touchMode === 'reply' ? touchId || '' : '',
+      needsMyHandle: !!needsMyHandle,
       xTabId,
       webappTabId,
       setAt: Date.now(),
@@ -484,7 +506,7 @@ async function handleS1TouchStart(params, sendResponse) {
     // 6. Gemini を開く
     await openOrFocusGemini()
 
-    sendResponse({ ok: true, accountName, mode: apiModeOff ? 'gemini' : 'gemini_fallback' })
+    sendResponse({ ok: true, accountName, mode: apiModeOff ? 'gemini' : 'gemini_fallback', touchMode, needsMyHandle: !!needsMyHandle })
   } catch (err) {
     console.error('[S1 Touch] handleS1TouchStart error:', err)
     sendResponse({ ok: false, message: err.message || 'エラーが発生しました' })
@@ -760,6 +782,9 @@ async function handleS1TouchSent(message) {
       postText: ctx.tweetText,
       sentText: message.sentText,
       aiSuggestedText: message.aiSuggestedText || '',
+      mode: ctx.mode || 'new',
+      touchId: ctx.touchId || '',
+      replyText: ctx.tweetText || '',
     })
     ok = true
   } catch (err) {

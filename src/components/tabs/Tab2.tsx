@@ -14,6 +14,7 @@ import { buildBatchS1ActionPrompt, parseBatchS1ActionOutput, type BatchS1ActionI
 import { buildS1ActionPrompt, parseS1ActionOutput, type S1ActionResult } from '../../utils/s1ActionPrompt'
 import { buildDMJudgmentPrompt, parseDMJudgmentOutput, type DMJudgmentResult } from '../../utils/dmJudgmentPrompt'
 import { buildJudgmentPrompt, parseJudgmentOutput } from '../../utils/judgmentPrompt'
+import { runAi, isAiModeEnabled } from '../../services/aiRun'
 import { buildBatchJudgmentPrompt, parseBatchJudgmentOutput } from '../../utils/batchJudgmentPrompt'
 import {
   getOpportunityFitLabel,
@@ -394,8 +395,10 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
   const [searchQuery, setSearchQuery] = useState('')
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null)
   const [drawerWidth, setDrawerWidth] = useState<number | null>(null)
+  const [aiGenerating, setAiGenerating] = useState(false)
   const handledQueueIdsRef = useRef<Set<string>>(new Set())
   const autoStartTouchItemIdRef = useRef<string | null>(null)
+  const isMountedRef = useRef(true)
   useEffect(() => {
     const resetMobileDrawerWidth = () => {
       if (window.innerWidth < 640) setDrawerWidth(null)
@@ -403,6 +406,11 @@ export default function Tab2({ data, saveData, prompts, role, toast, confirm, on
     resetMobileDrawerWidth()
     window.addEventListener('resize', resetMobileDrawerWidth)
     return () => window.removeEventListener('resize', resetMobileDrawerWidth)
+  }, [])
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
   }, [])
   const [continuousMode, setContinuousMode] = useState(false)
   const drawerRef = useRef<HTMLDivElement>(null)
@@ -2236,11 +2244,19 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const [tPostUrl, setTPostUrl] = useState('')
   const [tCommentUrl, setTCommentUrl] = useState('')
   const [geminiCopyState, setGeminiCopyState] = useState<'idle' | 'copied'>('idle')
+  const [aiGenerating, setAiGenerating] = useState(false)
   const [os2Applied, setOs2Applied] = useState(false)
   const touchOutputAppliedRef = useRef<Set<string>>(new Set())
+  const isMountedRef = useRef(true)
 
   // close
   const [closeResult, setCloseResult] = useState('断り')
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const touches = item.touches || []
   const s1Count = touches.length
@@ -2254,6 +2270,7 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
   const daysUntilRecontact = item.recontact_date
     ? Math.round((new Date(item.recontact_date).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000)
     : null
+  const aiModeEnabled = isAiModeEnabled()
 
   const latestOs2Touch = [...touches].reverse().find(t => t.os2Judgment)
   const displayJudgment = latestOs2Touch?.os2Judgment || item.judgment
@@ -2370,12 +2387,14 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
       setCopyBtnState('copied')
       setTimeout(() => setCopyBtnState('idle'), 2000)
     } catch {
+      if (isMountedRef.current) setAiGenerating(false)
       setAutoFillError('プロンプトのコピーに失敗しました。')
     }
   }
 
   async function handleCopyAndOpenGemini() {
     setAutoFillError(null)
+    setGeminiCopyState('idle')
     try {
       const prompt = tTouchMode === 'inbound'
         ? await buildInboundTouchPrompt(item, touches, {
@@ -2386,10 +2405,34 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
             inboundChannel: tInboundChannel,
           })
         : await buildTouchPrompt(item, touches, buildTargetPost())
+      if (aiModeEnabled) {
+        if (isMountedRef.current) setAiGenerating(true)
+        try {
+          const result = await runAi(prompt)
+          if (!isMountedRef.current) return
+          if (result.ok) {
+            setAiOutput(result.text)
+            const parsed = handleAutoFill(result.text)
+            if (parsed) {
+              toast.show('🤖 AIで生成しました', 3000)
+              return
+            }
+            toast.show('AI出力の形式が不正のためGemini画面で続行します', 3500)
+          } else if (result.code !== 'AI_MODE_OFF') {
+            toast.show(`APIエラー(${result.code})のためGemini画面で続行します`, 3500)
+          }
+        } finally {
+          if (isMountedRef.current) setAiGenerating(false)
+        }
+      }
       await copyText(prompt)
       if (extConnected) await setGeminiPrompt(prompt, { pipelineItemId: item.id, kind: 'touch' }).catch(() => {})
-      setGeminiCopyState('copied')
-      setTimeout(() => setGeminiCopyState('idle'), 2500)
+      if (isMountedRef.current) {
+        setGeminiCopyState('copied')
+        setTimeout(() => {
+          if (isMountedRef.current) setGeminiCopyState('idle')
+        }, 2500)
+      }
       window.open('https://gemini.google.com/', '_blank')
     } catch {
       setAutoFillError('プロンプトのコピーに失敗しました。')
@@ -3201,18 +3244,27 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 {tTouchMode !== 'dm' && (
                   <button
                     className={`btn-sec text-xs py-2 justify-center ${
+                      aiGenerating ? 'opacity-70 cursor-not-allowed' : ''
+                    } ${
                       geminiCopyState === 'copied'
                         ? 'text-emerald-600 border-emerald-300 bg-emerald-50'
                         : 'text-indigo-700 border-indigo-300 bg-indigo-50 hover:bg-indigo-100'
                     }`}
                     onClick={handleCopyAndOpenGemini}
+                    disabled={aiGenerating}
                   >
-                    <i className={`fa-solid ${geminiCopyState === 'copied' ? 'fa-check' : 'fa-paper-plane'} mr-1`} />
-                    {geminiCopyState === 'copied' ? '✓ Geminiを開きました' : 'コピー＆Geminiへ送る'}
+                    <i className={`fa-solid ${aiGenerating ? 'fa-spinner fa-spin' : geminiCopyState === 'copied' ? 'fa-check' : 'fa-paper-plane'} mr-1`} />
+                    {aiGenerating
+                      ? '🤖 AI生成中…'
+                      : geminiCopyState === 'copied'
+                        ? '✓ Geminiを開きました'
+                        : aiModeEnabled
+                          ? '🤖 AIで生成'
+                          : 'コピー＆Geminiへ送る'}
                   </button>
                 )}
                 <p className="text-[10px] text-slate-400 text-center">
-                  {tTouchMode === 'dm' ? '↓ ChatGPT等に貼り付けて実行' : '↓ 「Geminiへ送る」で自動入力 → スクショを追加して実行'}
+                  {tTouchMode === 'dm' ? '↓ ChatGPT等に貼り付けて実行' : aiModeEnabled ? '↓ 「AIで生成」または「Geminiへ送る」で実行' : '↓ 「Geminiへ送る」で自動入力 → スクショを追加して実行'}
                 </p>
 
                 <p className="text-xs font-bold text-indigo-700 mt-1">② AI出力を貼り付け</p>
@@ -3245,14 +3297,23 @@ function CaseCard({ item, expanded, onToggle, data: _data, saveData, prompts, ro
                 </button>
                 <button
                   className={`btn-sec text-xs py-2 justify-center ${
+                    aiGenerating ? 'opacity-70 cursor-not-allowed' : ''
+                  } ${
                     geminiCopyState === 'copied'
                       ? 'text-emerald-600 border-emerald-300 bg-emerald-50'
                       : 'text-teal-700 border-teal-300 bg-teal-50 hover:bg-teal-100'
                   }`}
                   onClick={handleCopyAndOpenGemini}
+                  disabled={aiGenerating}
                 >
-                  <i className={`fa-solid ${geminiCopyState === 'copied' ? 'fa-check' : 'fa-paper-plane'} mr-1`} />
-                  {geminiCopyState === 'copied' ? '✓ Geminiを開きました' : 'コピー＆Geminiへ送る'}
+                  <i className={`fa-solid ${aiGenerating ? 'fa-spinner fa-spin' : geminiCopyState === 'copied' ? 'fa-check' : 'fa-paper-plane'} mr-1`} />
+                  {aiGenerating
+                    ? '🤖 AI生成中…'
+                    : geminiCopyState === 'copied'
+                      ? '✓ Geminiを開きました'
+                      : aiModeEnabled
+                        ? '🤖 AIで生成'
+                        : 'コピー＆Geminiへ送る'}
                 </button>
                 <textarea
                   rows={3}

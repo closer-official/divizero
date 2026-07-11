@@ -1,6 +1,7 @@
 import type { Role } from '../hooks/useAuth'
 import type {
   AppData,
+  ConversationTurn,
   Channel,
   PipelineItem,
   Prompts,
@@ -11,7 +12,7 @@ import type {
 } from '../types'
 import { addToExcluded, normalizeHandle, todayStr, uid } from '../utils/helpers'
 import { parseOS0, parseOS0NG, parseOS1, parseOS1Instagram, parseOS1Threads } from '../utils/parser'
-import { buildTouchPromptFromTemplate, parseTouchOutput } from '../utils/touchPrompt'
+import { buildInboundTouchPrompt, buildTouchPromptFromTemplate, parseTouchOutput } from '../utils/touchPrompt'
 import type { TargetPostInfo } from '../utils/touchPrompt'
 import { runAi } from './aiRun'
 
@@ -415,17 +416,51 @@ export function registerExtensionBridge({
         }
         const tweetText = typeof payload.tweetText === 'string' ? payload.tweetText : ''
         const tweetUrl = typeof payload.tweetUrl === 'string' ? payload.tweetUrl : ''
+        const replyToHandle = typeof payload.replyToHandle === 'string' ? extractHandleOnly(payload.replyToHandle) : ''
+        const myHandle = extractHandleOnly(data.settings?.myXHandle || '')
+        let mode: 'reply' | 'new' = 'new'
+        let continuationTouch: Touch | undefined
+        let needsMyHandle = false
+
+        if (replyToHandle) {
+          if (!myHandle) {
+            needsMyHandle = true
+          } else if (replyToHandle === myHandle) {
+            const touches = item.touches || []
+            continuationTouch =
+              [...touches].reverse().find(t => t.status === 'awaiting_reaction') ||
+              [...touches].reverse().find(t => t.threadStatus === 'active') ||
+              touches[touches.length - 1]
+            if (continuationTouch) mode = 'reply'
+          }
+        }
+
         const targetPost: TargetPostInfo | undefined = (tweetText || tweetUrl)
           ? { url: tweetUrl, text: tweetText }
           : undefined
         try {
-          const template = await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text())
-          const promptText = buildTouchPromptFromTemplate(item, item.touches || [], template, targetPost)
+          const promptText = mode === 'reply'
+            ? await buildInboundTouchPrompt(item, item.touches || [], {
+                ownPostText: continuationTouch!.actualSentText,
+                ownPostRawText: continuationTouch!.actualSentText,
+                inboundMemo: tweetText,
+                inboundReactions: ['テキスト返信'],
+                inboundChannel: 'リプ',
+              })
+            : buildTouchPromptFromTemplate(
+                item,
+                item.touches || [],
+                await fetch('/prompts/OS_継続接触_タッチ生成_latest.md').then(r => r.text()),
+                targetPost,
+              )
           respond(message.requestId, 'TOUCH_PROMPT', {
             found: true,
             promptText,
             pipelineItemId: item.id,
             accountName: item.accountName,
+            mode,
+            touchId: continuationTouch?.id ?? '',
+            needsMyHandle,
           })
         } catch (_) {
           respond(message.requestId, 'ERROR', { code: 'PROMPT_BUILD_FAILED' })
@@ -462,6 +497,9 @@ export function registerExtensionBridge({
         const postText = typeof payload.postText === 'string' ? payload.postText : ''
         const sentText = typeof payload.sentText === 'string' ? payload.sentText : ''
         const aiSuggestedText = typeof payload.aiSuggestedText === 'string' ? payload.aiSuggestedText : ''
+        const mode = payload.mode === 'reply' ? 'reply' : 'new'
+        const touchId = typeof payload.touchId === 'string' ? payload.touchId : ''
+        const replyText = typeof payload.replyText === 'string' ? payload.replyText : ''
         if (!pipelineItemId || !sentText) {
           respond(message.requestId, 'RECORD_TOUCH_RESULT', { ok: false, code: 'INVALID_PAYLOAD' })
           return
@@ -482,6 +520,91 @@ export function registerExtensionBridge({
           reactionType: '未記録',
           reactionNote: '',
         } as Touch
+
+        if (mode === 'reply' && touchId) {
+          const result = await commit(prev => {
+            const itemIdx = prev.pipeline.findIndex(p => p.id === pipelineItemId)
+            if (itemIdx === -1) {
+              return { next: prev, result: { ok: false, code: 'NOT_FOUND', touchId: '' } }
+            }
+
+            const target = prev.pipeline[itemIdx]
+            const touches = target.touches || []
+            const tIdx = touches.findIndex(t => t.id === touchId)
+            if (tIdx === -1) {
+              return { next: prev, result: { ok: false, code: 'TOUCH_NOT_FOUND', touchId: '' } }
+            }
+
+            const touch = touches[tIdx]
+            const now = new Date().toISOString()
+            const partnerTurn: ConversationTurn = {
+              id: uid(),
+              role: '相手',
+              text: replyText || '相手から返信あり',
+              timestamp: now,
+              channel: 'リプ',
+              sentStatus: 'sent',
+            }
+            const selfTurn: ConversationTurn = {
+              id: uid(),
+              role: '自分',
+              text: sentText,
+              timestamp: now,
+              channel: 'リプ',
+              sentStatus: 'sent',
+              sentAt: now,
+            }
+            const baseTurns = (touch.conversationTurns && touch.conversationTurns.length > 0)
+              ? touch.conversationTurns
+              : [{
+                  id: uid(),
+                  role: '自分' as const,
+                  text: touch.actualSentText,
+                  timestamp: touch.date,
+                  channel: 'リプ' as const,
+                  sentStatus: 'sent' as const,
+                  sentAt: touch.date,
+                }]
+
+            const existingReactions = Array.isArray(touch.reactionType)
+              ? touch.reactionType
+              : (touch.reactionType === '未記録' ? [] : [touch.reactionType])
+            const reactionType = (existingReactions.includes('テキスト返信')
+              ? existingReactions
+              : [...existingReactions, 'テキスト返信']) as Touch['reactionType']
+
+            const updatedTouch: Touch = {
+              ...touch,
+              status: 'reacted',
+              reactionType,
+              reactionNote: touch.reactionNote ? touch.reactionNote : (replyText || ''),
+              reactionReplyMode: 'text',
+              touchMode: 'conversation',
+              threadStatus: 'active',
+              conversationTurns: [...baseTurns, partnerTurn, selfTurn],
+              repExchangeCount: (touch.repExchangeCount || 0) + 1,
+            }
+
+            const newTouches = [...touches]
+            newTouches[tIdx] = updatedTouch
+            const currentStep = target.currentStep === 'S1' ? 'S2' : target.currentStep
+            const pipeline = prev.pipeline.map((p, i) =>
+              i === itemIdx
+                ? {
+                    ...p,
+                    touches: newTouches,
+                    lastContactDate: today,
+                    currentStep,
+                    state: 'active' as const,
+                  }
+                : p,
+            )
+            return { next: { ...prev, pipeline }, result: { ok: true, code: '', touchId: touch.id } }
+          })
+          respond(message.requestId, 'RECORD_TOUCH_RESULT', result)
+          return
+        }
+
         const result = await commit(prev => {
           if (!prev.pipeline.some(p => p.id === pipelineItemId)) {
             return { next: prev, result: { ok: false, code: 'NOT_FOUND', touchId: '' } }
