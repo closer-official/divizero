@@ -601,8 +601,10 @@ export function registerExtensionBridge({
             )
             return { next: { ...prev, pipeline }, result: { ok: true, code: '', touchId: touch.id } }
           })
-          respond(message.requestId, 'RECORD_TOUCH_RESULT', result)
-          return
+          if (result.ok) {
+            respond(message.requestId, 'RECORD_TOUCH_RESULT', result)
+            return
+          }
         }
 
         const result = await commit(prev => {
